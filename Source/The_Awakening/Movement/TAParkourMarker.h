@@ -29,6 +29,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
+	UPROPERTY()
+	TWeakObjectPtr<AActor> CurrentOverlappingActor;
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

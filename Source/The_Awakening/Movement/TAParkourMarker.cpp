@@ -12,7 +12,8 @@
 
 ATAParkourMarker::ATAParkourMarker()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	TriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TriggerBox"));
 	RootComponent = TriggerBox;
@@ -223,6 +224,8 @@ void ATAParkourMarker::OnBeginOverlap(
 
 	if (UTAParkourComponent* ParkourComp = OtherActor->FindComponentByClass<UTAParkourComponent>())
 	{
+		CurrentOverlappingActor = OtherActor;
+		SetActorTickEnabled(true);
 		ParkourComp->RegisterMarker(this);
 	}
 }
@@ -241,6 +244,11 @@ void ATAParkourMarker::OnEndOverlap(
 	if (UTAParkourComponent* ParkourComp = OtherActor->FindComponentByClass<UTAParkourComponent>())
 	{
 		ParkourComp->UnregisterMarker(this);
+		if (CurrentOverlappingActor.Get() == OtherActor)
+		{
+			CurrentOverlappingActor.Reset();
+			SetActorTickEnabled(false);
+		}
 	}
 }
 
@@ -250,4 +258,24 @@ void ATAParkourMarker::SetPromptVisible(bool bVisible)
 	{
 		PromptWidget->SetVisibility(bVisible);
 	}
+}
+
+void ATAParkourMarker::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (!CurrentOverlappingActor.IsValid() || !LandingTargetComponent)
+	{
+		return;
+	}
+
+	const FVector PlayerLocation =
+		CurrentOverlappingActor->GetActorLocation();
+
+	const FVector CurrentLandingLocation =
+		GetLandingLocation(PlayerLocation);
+
+	LandingTargetComponent->SetWorldLocation(
+		CurrentLandingLocation
+	);
 }
