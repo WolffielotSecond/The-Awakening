@@ -9,6 +9,7 @@ class UChildActorComponent;
 class UWidgetComponent;
 class UTexture2D;
 class USplineComponent;
+class USceneComponent;
 
 UENUM(BlueprintType)
 enum class ETAParkourMarkerType : uint8
@@ -45,6 +46,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USplineComponent> LandingSpline;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour")
 	ETAParkourMarkerType MarkerType = ETAParkourMarkerType::JumpToPoint;

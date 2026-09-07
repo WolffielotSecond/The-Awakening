@@ -15,8 +15,12 @@ ATAParkourMarker::ATAParkourMarker()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	RootComponent = SceneRoot;
+
 	TriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TriggerBox"));
-	RootComponent = TriggerBox;
+	TriggerBox->SetupAttachment(SceneRoot);
+
 	TriggerBox->SetBoxExtent(FVector(80.f, 80.f, 60.f));
 	TriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	TriggerBox->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -24,13 +28,13 @@ ATAParkourMarker::ATAParkourMarker()
 	TriggerBox->SetGenerateOverlapEvents(true);
 
 	LandingTargetComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("LandingTargetComponent"));
-	LandingTargetComponent->SetupAttachment(RootComponent);
+	LandingTargetComponent->SetupAttachment(SceneRoot);
 	LandingTargetComponent->SetRelativeLocation(FVector(300.f, 0.f, 0.f));
 	LandingTargetComponent->SetChildActorClass(ATargetPoint::StaticClass());
 
 	//落点换成SplineComponent，方便后续做轨迹显示
 	LandingSpline = CreateDefaultSubobject<USplineComponent>(TEXT("LandingSpline"));
-	LandingSpline->SetupAttachment(RootComponent);
+	LandingSpline->SetupAttachment(SceneRoot);
 	LandingSpline->ClearSplinePoints(false);
 
 	LandingSpline->AddSplinePoint(
