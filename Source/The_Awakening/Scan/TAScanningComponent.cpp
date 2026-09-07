@@ -12,6 +12,7 @@
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMaterialLibrary.h"
+#include "GameFramework/PlayerController.h"
 
 // Sets default values for this component's properties
 UTAScanningComponent::UTAScanningComponent()
@@ -729,6 +730,7 @@ void UTAScanningComponent::CancelHighlightHideTimer()
 
 bool UTAScanningComponent::StartScan()
 {
+	
 	switch (ScanState)
 	{
 		case ETAScanState::FadeOut:
@@ -739,6 +741,11 @@ bool UTAScanningComponent::StartScan()
 			if (IsValid(HighlightPPActor))
 			{
 				CancelHighlightHideTimer();
+			}
+
+			if (PlayerController)
+			{
+				PlayerController->bShowMouseCursor = true;
 			}
 
 			return UpdateScanState(
@@ -768,6 +775,11 @@ bool UTAScanningComponent::EndScan()
 			if (IsValid(HighlightPPActor))
 			{
 				StartHighlightHideTimer();
+			}
+
+			if (PlayerController)
+			{
+				PlayerController->bShowMouseCursor = false;
 			}
 
 			return UpdateScanState(
