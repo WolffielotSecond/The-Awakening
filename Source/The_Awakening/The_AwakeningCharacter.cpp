@@ -63,6 +63,8 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
+	//GetCharacterMovement()->bCanWalkOffLedges = false;
+
 	// 相机
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -342,9 +344,12 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 	float SafeForward = Forward;
 	float SafeRight = Right;
 
+	FVector DesiredDirection = FVector::ZeroVector;
+	
 	if (!FMath::IsNearlyZero(Forward))
 	{
 		const FVector Dir = ForwardDirection * FMath::Sign(Forward);
+		DesiredDirection += ForwardDirection * Forward;
 		if (!IsSafeToMoveToward(Dir))
 		{
 			SafeForward = 0.f;
@@ -354,12 +359,25 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 	if (!FMath::IsNearlyZero(Right))
 	{
 		const FVector Dir = RightDirection * FMath::Sign(Right);
+		DesiredDirection += RightDirection * Right;
 		if (!IsSafeToMoveToward(Dir))
 		{
 			SafeRight = 0.f;
 		}
 	}
 
+	if (!DesiredDirection.IsNearlyZero())
+	{
+		DesiredDirection.Z = 0.f;
+		DesiredDirection.Normalize();
+
+		const FRotator DesiredRotation = DesiredDirection.Rotation();
+
+		SetActorRotation(
+			FRotator(0.f, DesiredRotation.Yaw, 0.f)
+		);
+	}
+	
 	if (FMath::IsNearlyZero(SafeForward) && FMath::IsNearlyZero(SafeRight))
 	{
 		return;
