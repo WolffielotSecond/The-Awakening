@@ -8,6 +8,7 @@ class UBoxComponent;
 class UChildActorComponent;
 class UWidgetComponent;
 class UTexture2D;
+class USplineComponent;
 
 UENUM(BlueprintType)
 enum class ETAParkourMarkerType : uint8
@@ -39,6 +40,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> PromptWidget;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USplineComponent> LandingSpline;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour")
 	ETAParkourMarkerType MarkerType = ETAParkourMarkerType::JumpToPoint;
 
@@ -51,11 +55,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour", meta = (ClampMin = "0.05"))
 	float JumpDuration = 0.5f;
 
+	/** true: X为深度轴，false: Y为深度轴 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour")
+	bool bUseXAsDepthAxis = true;
+
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
 	bool IsValidMarker() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
-	FVector GetLandingLocation() const;
+	FVector GetLandingLocation(const FVector& PlayerWorldLocation) const;
 
 	UWidgetComponent* GetPromptWidgetComponent() const { return PromptWidget; }
 

@@ -56,7 +56,9 @@ bool UTAParkourComponent::StartParkour(ATAParkourMarker* Marker)
 	}
 
 	ParkourStart = OwnerCharacter->GetActorLocation();
-	ParkourEnd = Marker->GetLandingLocation();
+	//ParkourEnd = Marker->GetLandingLocation();
+	ParkourEnd = Marker->GetLandingLocation(ParkourStart);
+
 	ParkourArcHeight = Marker->ArcHeight;
 	ParkourDuration = FMath::Max(Marker->JumpDuration, 0.05f);
 	ParkourTime = 0.f;

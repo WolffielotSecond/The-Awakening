@@ -8,6 +8,7 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "UI/TAPromptWidgetUtils.h"
+#include "Components/SplineComponent.h"
 
 ATAParkourMarker::ATAParkourMarker()
 {
@@ -25,6 +26,25 @@ ATAParkourMarker::ATAParkourMarker()
 	LandingTargetComponent->SetupAttachment(RootComponent);
 	LandingTargetComponent->SetRelativeLocation(FVector(300.f, 0.f, 0.f));
 	LandingTargetComponent->SetChildActorClass(ATargetPoint::StaticClass());
+
+	//落点换成SplineComponent，方便后续做轨迹显示
+	LandingSpline = CreateDefaultSubobject<USplineComponent>(TEXT("LandingSpline"));
+	LandingSpline->SetupAttachment(RootComponent);
+	LandingSpline->ClearSplinePoints(false);
+
+	LandingSpline->AddSplinePoint(
+		FVector(-100.f, 300.f, 0.f),
+		ESplineCoordinateSpace::Local,
+		false
+	);
+
+	LandingSpline->AddSplinePoint(
+		FVector(100.f, 300.f, 0.f),
+		ESplineCoordinateSpace::Local,
+		false
+	);
+
+	LandingSpline->UpdateSpline();
 
 	PromptWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("PromptWidget"));
 	PromptWidget->SetupAttachment(LandingTargetComponent);
@@ -64,20 +84,112 @@ void ATAParkourMarker::BindLandingTargetFromChild()
 
 bool ATAParkourMarker::IsValidMarker() const
 {
-	return LandingTarget != nullptr;
+	//return LandingTarget != nullptr;
+	return LandingSpline && LandingSpline->GetNumberOfSplinePoints() >= 2;
 }
-
+/*
 FVector ATAParkourMarker::GetLandingLocation() const
 {
 	return LandingTarget ? LandingTarget->GetActorLocation() : GetActorLocation();
 }
+*/
 
-void ATAParkourMarker::SetPromptVisible(bool bVisible)
+FVector ATAParkourMarker::GetLandingLocation(const FVector& PlayerWorldLocation) const
 {
-	if (PromptWidget)
+	if (!LandingSpline || LandingSpline->GetNumberOfSplinePoints() < 2)
 	{
-		PromptWidget->SetVisibility(bVisible);
+		return GetActorLocation();
 	}
+
+	// 玩家世界坐标转换成 Marker 局部坐标
+	const FVector PlayerLocal =
+		GetActorTransform().InverseTransformPosition(PlayerWorldLocation);
+
+	const int32 NumPoints = LandingSpline->GetNumberOfSplinePoints();
+
+	const FVector FirstPoint =
+		LandingSpline->GetLocationAtSplinePoint(
+			0,
+			ESplineCoordinateSpace::Local
+		);
+
+	const FVector LastPoint =
+		LandingSpline->GetLocationAtSplinePoint(
+			NumPoints - 1,
+			ESplineCoordinateSpace::Local
+		);
+
+	// 根据设置决定哪个轴是“前后深度轴”
+	const float PlayerDepth =
+		bUseXAsDepthAxis ? PlayerLocal.X : PlayerLocal.Y;
+
+	const float FirstDepth =
+		bUseXAsDepthAxis ? FirstPoint.X : FirstPoint.Y;
+
+	const float LastDepth =
+		bUseXAsDepthAxis ? LastPoint.X : LastPoint.Y;
+
+	const float MinDepth = FMath::Min(FirstDepth, LastDepth);
+	const float MaxDepth = FMath::Max(FirstDepth, LastDepth);
+
+	// 玩家深度限制在 LandingSpline 覆盖范围内
+	const float TargetDepth =
+		FMath::Clamp(PlayerDepth, MinDepth, MaxDepth);
+
+	float LowKey = 0.f;
+	float HighKey = static_cast<float>(NumPoints - 1);
+
+	const bool bIncreasingDepth =
+		LastDepth >= FirstDepth;
+
+	// 根据深度轴反查 Spline 上对应位置
+	for (int32 i = 0; i < 20; ++i)
+	{
+		const float MidKey =
+			(LowKey + HighKey) * 0.5f;
+
+		const FVector MidLocation =
+			LandingSpline->GetLocationAtSplineInputKey(
+				MidKey,
+				ESplineCoordinateSpace::Local
+			);
+
+		const float MidDepth =
+			bUseXAsDepthAxis
+			? MidLocation.X
+			: MidLocation.Y;
+
+		if (bIncreasingDepth)
+		{
+			if (MidDepth < TargetDepth)
+			{
+				LowKey = MidKey;
+			}
+			else
+			{
+				HighKey = MidKey;
+			}
+		}
+		else
+		{
+			if (MidDepth > TargetDepth)
+			{
+				LowKey = MidKey;
+			}
+			else
+			{
+				HighKey = MidKey;
+			}
+		}
+	}
+
+	const float FinalKey =
+		(LowKey + HighKey) * 0.5f;
+
+	return LandingSpline->GetLocationAtSplineInputKey(
+		FinalKey,
+		ESplineCoordinateSpace::World
+	);
 }
 
 void ATAParkourMarker::RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText)
@@ -129,5 +241,13 @@ void ATAParkourMarker::OnEndOverlap(
 	if (UTAParkourComponent* ParkourComp = OtherActor->FindComponentByClass<UTAParkourComponent>())
 	{
 		ParkourComp->UnregisterMarker(this);
+	}
+}
+
+void ATAParkourMarker::SetPromptVisible(bool bVisible)
+{
+	if (PromptWidget)
+	{
+		PromptWidget->SetVisibility(bVisible);
 	}
 }
