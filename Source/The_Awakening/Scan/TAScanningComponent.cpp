@@ -780,6 +780,7 @@ bool UTAScanningComponent::EndScan()
 			if (PlayerController)
 			{
 				PlayerController->bShowMouseCursor = false;
+				PlayerController->SetInputMode(FInputModeGameOnly());
 			}
 
 			return UpdateScanState(
