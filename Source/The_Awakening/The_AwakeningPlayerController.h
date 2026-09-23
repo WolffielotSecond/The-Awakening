@@ -40,6 +40,9 @@ public:
 	AThe_AwakeningPlayerController();
 	void NotifyRawInputKey(const FKey& Key);
 
+	/** 进入/退出对话输入模式（移除/恢复默认移动等映射，供剧情系统调用） */
+	void SetDialogueModeActive(bool bActive);
+
 protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
 	TArray<UInputMappingContext*> DefaultMappingContexts;

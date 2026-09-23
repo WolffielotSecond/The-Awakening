@@ -1,0 +1,34 @@
+// Source/The_Awakening/Story/ATAStoryTriggerActor.h
+// 剧情触发器：玩家按交互键后播放指定剧情
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Interaction/TAInteractableActor.h"
+#include "ATAStoryTriggerActor.generated.h"
+
+/**
+ * StoryId 对应 Content/Stories/{StoryId}.json（不带扩展名）。
+ * 交互提示自动使用 Interact_Talk（"对话"）。
+ */
+UCLASS()
+class THE_AWAKENING_API ATAStoryTriggerActor : public ATAInteractableActor
+{
+	GENERATED_BODY()
+
+public:
+	ATAStoryTriggerActor();
+
+	virtual void OnInteract_Implementation(AActor* Interactor) override;
+	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
+
+	/** 剧情 ID（不带 .json 扩展名） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story")
+	FString StoryId;
+
+	/** 是否只触发一次 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story")
+	bool bTriggerOnce = true;
+
+protected:
+	bool bPlayed = false;
+};

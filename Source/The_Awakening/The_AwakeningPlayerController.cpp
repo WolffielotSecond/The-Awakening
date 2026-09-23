@@ -93,6 +93,44 @@ void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 	}
 }
 
+void AThe_AwakeningPlayerController::SetDialogueModeActive(bool bActive)
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	{
+		if (bActive)
+		{
+			// 对话期间移除默认映射（移动/交互等），由对话 UI 的高优先级上下文接管
+			for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
+			{
+				Subsystem->RemoveMappingContext(CurrentContext);
+			}
+			for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
+			{
+				Subsystem->RemoveMappingContext(CurrentContext);
+			}
+		}
+		else
+		{
+			for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
+			{
+				Subsystem->AddMappingContext(CurrentContext, 0);
+			}
+			if (!SVirtualJoystick::ShouldDisplayTouchInterface())
+			{
+				for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
+				{
+					Subsystem->AddMappingContext(CurrentContext, 0);
+				}
+			}
+		}
+	}
+}
+
 void AThe_AwakeningPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();

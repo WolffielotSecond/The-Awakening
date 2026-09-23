@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "storyId": "ST_Demo",
+  "entry": "start",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "dialogue",
+      "speakerId": "Alice",
+      "speakerNameId": "Char_Alice_Name",
+      "textId": "ST_Demo_001",
+      "portraits": [
+        {
+          "characterId": "Alice",
+          "base": "",
+          "eyesOpen": "",
+          "eyesClosed": "",
+          "mouthOpen": "",
+          "mouthClosed": "",
+          "position": { "x": 0.25, "y": 0.0 },
+          "scale": 1.0
+        },
+        {
+          "characterId": "Bob",
+          "base": "",
+          "eyesOpen": "",
+          "eyesClosed": "",
+          "mouthOpen": "",
+          "mouthClosed": "",
+          "position": { "x": 0.75, "y": 0.0 },
+          "scale": 1.0
+        }
+      ],
+      "eventsOnEnter": [
+        { "name": "BGM_Calm" },
+        { "name": "SetFlag", "params": { "flag": "MetAlice", "value": "true" } }
+      ],
+      "next": "bob_moves"
+    },
+    {
+      "id": "bob_moves",
+      "type": "dialogue",
+      "speakerId": "Bob",
+      "speakerNameId": "Char_Bob_Name",
+      "textId": "ST_Demo_002",
+      "portraits": [
+        {
+          "characterId": "Bob",
+          "position": { "x": 0.65, "y": 0.05 }
+        }
+      ],
+      "next": "choice_1"
+    },
+    {
+      "id": "choice_1",
+      "type": "choice",
+      "choices": [
+        {
+          "textId": "ST_Demo_Choice_A",
+          "conditions": [
+            { "type": "Money", "op": ">=", "value": 100 }
+          ],
+          "events": [
+            { "name": "GiveKeycard", "params": { "item": "Item_Keycard" } }
+          ],
+          "target": "reply_rich"
+        },
+        {
+          "textId": "ST_Demo_Choice_B",
+          "conditions": [
+            { "type": "Flag", "flag": "MetAlice", "op": "==", "value": true }
+          ],
+          "target": "reply_met"
+        },
+        {
+          "textId": "ST_Demo_Choice_C",
+          "conditions": [],
+          "target": "bye"
+        }
+      ]
+    },
+    {
+      "id": "reply_rich",
+      "type": "dialogue",
+      "speakerId": "Alice",
+      "speakerNameId": "Char_Alice_Name",
+      "textId": "ST_Demo_003",
+      "next": "end"
+    },
+    {
+      "id": "reply_met",
+      "type": "dialogue",
+      "speakerId": "Bob",
+      "speakerNameId": "Char_Bob_Name",
+      "textId": "ST_Demo_004",
+      "next": "end"
+    },
+    {
+      "id": "bye",
+      "type": "dialogue",
+      "speakerId": "Alice",
+      "speakerNameId": "Char_Alice_Name",
+      "textId": "ST_Demo_004",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

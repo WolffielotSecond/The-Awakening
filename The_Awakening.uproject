@@ -13,6 +13,11 @@
 				"Engine",
 				"UMG"
 			]
+		},
+		{
+			"Name": "The_AwakeningEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [

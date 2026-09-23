@@ -18,5 +18,14 @@
   "ItemType_Weapon": "Weapon",
   "ItemType_SkillBook": "Skill Book",
   "Parkour_Jump": "Vault",
-  "Parkour_Drop": "Drop"
+  "Parkour_Drop": "Drop",
+  "Char_Alice_Name": "Alice",
+  "Char_Bob_Name": "Bob",
+  "ST_Demo_001": "Hello, welcome to the town.",
+  "ST_Demo_002": "Nice to meet you!",
+  "ST_Demo_003": "Money talks. Here, take this.",
+  "ST_Demo_004": "See you next time!",
+  "ST_Demo_Choice_A": "(Rich) Give me something good",
+  "ST_Demo_Choice_B": "(Met Alice) Let's talk about last time",
+  "ST_Demo_Choice_C": "Goodbye"
 }

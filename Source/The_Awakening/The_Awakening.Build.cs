@@ -27,7 +27,8 @@ public class The_Awakening : ModuleRules
 			"JsonUtilities",
 			"Niagara",
 			"Paper2D",
-			"PaperZD"
+			"PaperZD",
+			"AssetRegistry"
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
@@ -48,6 +49,9 @@ public class The_Awakening : ModuleRules
 			"The_Awakening/Variant_SideScrolling/Interfaces",
 			"The_Awakening/Variant_SideScrolling/UI"
 		});
+
+		// 剧情编辑器模块（The_AwakeningEditor）需要引用本模块头文件（Story/...、Core/... 等）
+		PublicIncludePaths.Add(ModuleDirectory);
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -18,5 +18,14 @@
   "ItemType_Weapon": "武器",
   "ItemType_SkillBook": "技能書",
   "Parkour_Jump": "越过",
-  "Parkour_Drop": "跳下"
+  "Parkour_Drop": "跳下",
+  "Char_Alice_Name": "愛麗絲",
+  "Char_Bob_Name": "鮑勃",
+  "ST_Demo_001": "你好，歡迎來到小鎮。",
+  "ST_Demo_002": "很高興見到你！",
+  "ST_Demo_003": "有錢就是好說話，給，這是你要的好東西。",
+  "ST_Demo_004": "下次再見！",
+  "ST_Demo_Choice_A": "（有錢）給我來個好東西",
+  "ST_Demo_Choice_B": "（見過愛麗絲）聊聊上次的事",
+  "ST_Demo_Choice_C": "再見"
 }
