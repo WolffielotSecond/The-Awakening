@@ -480,6 +480,13 @@ void UTADialogueWidget::OnAdvancePressed()
 		// intentionally ignores for branches.
 		if (Controller->IsChoiceNode())
 		{
+			// Mouse clicks are handled by the specific choice button's OnClicked
+			// callback, which carries that button's index. Do not also treat the
+			// left mouse button as confirmation of the keyboard/gamepad selection.
+			if (FSlateApplication::IsInitialized() && FSlateApplication::Get().GetPressedMouseButtons().Contains(EKeys::LeftMouseButton))
+			{
+				return;
+			}
 			OnChoiceConfirmPressed();
 			return;
 		}
