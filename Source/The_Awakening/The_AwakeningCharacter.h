@@ -247,6 +247,29 @@ protected:
 	UFUNCTION()
 	void OnPromptRelatedSettingsChanged();
 
+	UPROPERTY(EditAnywhere, Category = "Input")
+	UInputAction* SprintAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement",
+		meta = (ClampMin = "0.0"))
+	float WalkSpeed = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement",
+		meta = (ClampMin = "0.0"))
+	float SprintSpeed = 750.f;
+
+	// 避免摇杆回中漂移；设为 0 可取消此死区
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement",
+		meta = (ClampMin = "0.0", ClampMax = "0.49"))
+	float StickDeadZone = 0.1f;
+
+	bool bSprintHeld = false;
+	FVector2D StickInput = FVector2D::ZeroVector;
+
+	void OnSprintStarted(const FInputActionValue& Value);
+	void OnSprintEnded(const FInputActionValue& Value);
+	void OnMoveStopped(const FInputActionValue& Value);
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoMove(float Right, float Forward);
