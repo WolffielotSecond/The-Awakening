@@ -109,6 +109,7 @@ protected:
 	// 位置/尺寸补间
 	bool bPendingTarget = false;
 	bool bHasTarget = false;
+	bool bHasInitialPlacement = false;
 	FVector2D TargetPositionPx = FVector2D::ZeroVector;
 	FVector2D TargetSizePx = FVector2D::ZeroVector;
 	FVector2D StartPositionPx = FVector2D::ZeroVector;

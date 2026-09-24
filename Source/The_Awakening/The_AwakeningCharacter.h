@@ -181,6 +181,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UTADialogueHistoryWidget> DialogueHistoryWidgetClass;
 
+	/** 手柄左摇杆控制菜单鼠标光标的移动速度。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI", meta = (ClampMin = "100.0", UIMin = "100.0"))
+	float MenuCursorSpeed = 1100.0f;
+
 	UPROPERTY()
 	TObjectPtr<UTAInventoryPanelWidget> InventoryPanelInstance;
 
@@ -200,6 +204,8 @@ protected:
 	
 public:
 	AThe_AwakeningCharacter();
+	void ClearMovementInput();
+	float GetMenuCursorSpeed() const { return MenuCursorSpeed; }
 
 	// IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -230,6 +236,7 @@ protected:
 	void OnMoveRightReleased(const FInputActionValue& Value);
 
 	void UpdateMovementInput();
+	bool IsUIInputActive() const;
 
 	void OnParkourJump(const FInputActionValue& Value);
 	void OnParkourDrop(const FInputActionValue& Value);

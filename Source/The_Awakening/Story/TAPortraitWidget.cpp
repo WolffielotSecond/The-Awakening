@@ -223,6 +223,20 @@ void UTAPortraitWidget::ResolvePixelTargets(const FVector2D& ViewportSize)
 
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Slot))
 	{
+		// Place a newly spawned NPC directly at its first authored position. The
+		// movement tween is reserved for changes after the portrait is on screen.
+		if (!bHasInitialPlacement)
+		{
+			CanvasSlot->SetPosition(NewPosition);
+			CanvasSlot->SetSize(NewSize);
+			StartPositionPx = TargetPositionPx = NewPosition;
+			StartSizePx = TargetSizePx = NewSize;
+			TweenProgress = 1.f;
+			bHasTarget = false;
+			bHasInitialPlacement = true;
+			return;
+		}
+
 		if (!bHasTarget)
 		{
 			StartPositionPx = CanvasSlot->GetPosition();

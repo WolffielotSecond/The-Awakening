@@ -13,17 +13,19 @@ class UTADialoguePortraitLayerWidget;
 class UTAPortraitWidget;
 class UTADialogueChoiceButton;
 class UTADialogueHistoryWidget;
+class UTAActionPromptWidget;
 class UTALocalizeSubsystem;
 class UTAInputIconSubsystem;
 class UTextBlock;
 class UButton;
 class UImage;
+class UHorizontalBox;
+class UInputAction;
+class UInputMappingContext;
 class UWidget;
 class UCanvasPanel;
 class UVerticalBox;
 class UPanelWidget;
-class UInputAction;
-class UInputMappingContext;
 
 /**
  * 控件命名约定（WBP_Dialogue，布局全部在编辑器里摆，C++ 只绑定逻辑）：
@@ -76,6 +78,14 @@ protected:
 	void RefreshHistory();
 	void RefreshIcons();
 	void RefreshPromptLabels();
+	void BuildActionPromptBar();
+	void RefreshActionPromptBar();
+	void UpdateChoiceHighlights();
+	void UpdateChoiceSelectionFromMouse();
+	void EnsureChoiceInputActions();
+	void OnChoicePreviousPressed();
+	void OnChoiceNextPressed();
+	void OnChoiceConfirmPressed();
 	void UpdateTalkingFlags();
 
 	UFUNCTION()
@@ -97,6 +107,10 @@ protected:
 
 	UFUNCTION()
 	void OnChoiceClicked(int32 Index);
+	UFUNCTION()
+	void OnChoiceFocused(int32 Index);
+	UFUNCTION()
+	void OnActionPromptClicked(UTAActionPromptWidget* Prompt);
 
 	UFUNCTION()
 	void CloseHistoryOverlay();
@@ -114,6 +128,20 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Dialogue|Input")
 	TObjectPtr<UInputAction> HistoryAction;
+
+	/** Enhanced Input actions for choice navigation and confirmation. Missing actions are created at runtime. */
+	UPROPERTY(EditAnywhere, Category = "Dialogue|Input|Choices")
+	TObjectPtr<UInputAction> ChoicePreviousAction;
+
+	UPROPERTY(EditAnywhere, Category = "Dialogue|Input|Choices")
+	TObjectPtr<UInputAction> ChoiceNextAction;
+
+	UPROPERTY(EditAnywhere, Category = "Dialogue|Input|Choices")
+	TObjectPtr<UInputAction> ChoiceConfirmAction;
+
+	/** Optional styled prompt WBP; falls back to the native action-prompt widget. */
+	UPROPERTY(EditAnywhere, Category = "Dialogue|Input|Choices")
+	TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;
 
 	/** 对话期间激活的映射上下文（高优先级屏蔽移动等） */
 	UPROPERTY(EditAnywhere, Category = "Dialogue|Input")
@@ -157,6 +185,9 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_HistoryText;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UHorizontalBox> HorizontalBox_Controls;
+
 	// ==================== 动态创建 ====================
 
 	UPROPERTY()
@@ -172,6 +203,18 @@ protected:
 	UPROPERTY()
 	TArray<TObjectPtr<UTADialogueChoiceButton>> ChoiceWidgets;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTAActionPromptWidget>> ChoicePromptWidgets;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTAActionPromptWidget>> BasePromptWidgets;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTAActionPromptWidget>> ActionPromptWidgets;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> RuntimeChoiceMappingContext;
+
 	UPROPERTY()
 	TObjectPtr<UTADialogueController> Controller;
 
@@ -186,8 +229,12 @@ protected:
 
 	/** 输入绑定句柄（解绑用） */
 	TArray<uint32> InputBindingHandles;
-	bool bChangedPlayerInputMode = false;
-	bool bPreviousShowMouseCursor = false;
+	/** 防止同一物理按键同时映射到 AdvanceAction 和 HistoryAction 时打开历史。 */
+	uint64 AdvancePressedFrame = MAX_uint64;
+	/** 防止同一物理按键同时映射到 AdvanceAction 和 ChoiceConfirmAction 时重复选择。 */
+	uint64 ChoiceConfirmPressedFrame = MAX_uint64;
+	FVector2D LastChoiceMousePosition = FVector2D::ZeroVector;
+	bool bHasLastChoiceMousePosition = false;
 	bool bRefreshIconsOnNextTick = false;
 	ESlateVisibility ContinueButtonVisibilityBeforeHistory = ESlateVisibility::Visible;
 	ESlateVisibility HistoryButtonVisibilityBeforeHistory = ESlateVisibility::Visible;

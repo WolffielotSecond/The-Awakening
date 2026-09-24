@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dialogue")
 	void MoveSelection(int32 Delta);
 
+	/** 更新当前高亮项，不触发选项列表重建。 */
+	void SetSelectedChoiceIndex(int32 VisibleIndex);
+
 	// ==================== 状态查询（UI 渲染用） ====================
 
 	UFUNCTION(BlueprintPure, Category = "Dialogue")

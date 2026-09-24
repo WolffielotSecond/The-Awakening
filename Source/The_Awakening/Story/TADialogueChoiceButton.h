@@ -11,6 +11,7 @@ class UTextBlock;
 class UImage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryChoiceClicked, int32, Index);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryChoiceFocused, int32, Index);
 
 /**
  * 控件命名约定（WBP_DialogueChoiceButton）：
@@ -25,16 +26,21 @@ class THE_AWAKENING_API UTADialogueChoiceButton : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
+	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent) override;
 
 	/** 设置文本与可见序号（序号用于点击回调） */
 	void Setup(int32 InIndex, const FText& Text);
 
 	/** 高亮（当前选中项） */
 	void SetHighlighted(bool bHighlighted);
+	void FocusChoice();
 
 	/** 点击回调（对话 UI 绑定） */
 	UPROPERTY(BlueprintAssignable, Category = "Dialogue")
 	FOnStoryChoiceClicked OnClickedIndex;
+
+	UPROPERTY(BlueprintAssignable, Category = "Dialogue")
+	FOnStoryChoiceFocused OnFocusedIndex;
 
 protected:
 	UFUNCTION()
@@ -50,4 +56,6 @@ protected:
 	TObjectPtr<UImage> Image_Highlight;
 
 	int32 Index = INDEX_NONE;
+	FLinearColor UnselectedBackgroundColor = FLinearColor::White;
+	bool bHasCachedButtonBackground = false;
 };

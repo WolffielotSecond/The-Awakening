@@ -28,6 +28,7 @@
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "UI/Inventory/TAInventoryPanelWidget.h"
+#include "The_AwakeningPlayerController.h"
 
 AThe_AwakeningCharacter::AThe_AwakeningCharacter()
 {
@@ -215,6 +216,10 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 //IA Scan的started
 void AThe_AwakeningCharacter::OnScanStarted(const FInputActionValue& Value)
 {
+	if (IsUIInputActive())
+	{
+		return;
+	}
 	AController* CharacterController = GetController();
 	if (!CharacterController)
 	{
@@ -254,6 +259,10 @@ void AThe_AwakeningCharacter::OnScanEnded(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::Move(const FInputActionValue& Value)
 {
+	if (IsUIInputActive())
+	{
+		return;
+	}
 	// 手柄摇杆直接使用
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 	DoMove(MovementVector.X, MovementVector.Y);
@@ -261,21 +270,25 @@ void AThe_AwakeningCharacter::Move(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::OnMoveForward(const FInputActionValue& Value)
 {
+	if (IsUIInputActive()) return;
 	bMoveForward = true;
 }
 
 void AThe_AwakeningCharacter::OnMoveBackward(const FInputActionValue& Value)
 {
+	if (IsUIInputActive()) return;
 	bMoveBackward = true;
 }
 
 void AThe_AwakeningCharacter::OnMoveLeft(const FInputActionValue& Value)
 {
+	if (IsUIInputActive()) return;
 	bMoveLeft = true;
 }
 
 void AThe_AwakeningCharacter::OnMoveRight(const FInputActionValue& Value)
 {
+	if (IsUIInputActive()) return;
 	bMoveRight = true;
 }
 
@@ -326,6 +339,10 @@ void AThe_AwakeningCharacter::Look(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 {
+	if (IsUIInputActive())
+	{
+		return;
+	}
 
 	if (ParkourComponent && ParkourComponent->IsParkouring())
 	{
@@ -389,6 +406,10 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 
 void AThe_AwakeningCharacter::DoLook(float Yaw, float Pitch)
 {
+	if (IsUIInputActive())
+	{
+		return;
+	}
 	float FinalYaw = bInvertCameraX ? -Yaw : Yaw;
 	float FinalPitch = bInvertCameraY ? Pitch : -Pitch;
 
@@ -494,6 +515,10 @@ void AThe_AwakeningCharacter::InitAbilityActorInfo()
 
 void AThe_AwakeningCharacter::TryInteract()
 {
+	if (IsUIInputActive())
+	{
+		return;
+	}
 	if (CurrentInteractTarget.IsValid())
 	{
 		AActor* Target = CurrentInteractTarget.Get();
@@ -670,7 +695,7 @@ bool AThe_AwakeningCharacter::IsSafeToMoveToward(const FVector& WorldDirection) 
 
 void AThe_AwakeningCharacter::OnParkourJump(const FInputActionValue& Value)
 {
-	if (ParkourComponent)
+	if (!IsUIInputActive() && ParkourComponent)
 	{
 		ParkourComponent->TryParkourJump();
 	}
@@ -678,7 +703,7 @@ void AThe_AwakeningCharacter::OnParkourJump(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::OnParkourDrop(const FInputActionValue& Value)
 {
-	if (ParkourComponent)
+	if (!IsUIInputActive() && ParkourComponent)
 	{
 		ParkourComponent->TryParkourDrop();
 	}
@@ -686,7 +711,7 @@ void AThe_AwakeningCharacter::OnParkourDrop(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::ToggleInventory()
 {
-	APlayerController* PC = Cast<APlayerController>(GetController());
+	AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetController());
 	if (!PC)
 	{
 		return;
@@ -697,8 +722,7 @@ void AThe_AwakeningCharacter::ToggleInventory()
 		InventoryPanelInstance->RemoveFromParent();
 		InventoryPanelInstance = nullptr;
 
-		PC->SetShowMouseCursor(false);
-		PC->SetInputMode(FInputModeGameOnly());
+		PC->EndUIInputMode();
 		return;
 	}
 
@@ -729,12 +753,21 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	InventoryPanelInstance->Init(InventoryComponent);
 	InventoryPanelInstance->AddToViewport(50);
 
-	PC->SetShowMouseCursor(true);
-	FInputModeGameAndUI InputMode;
-	InputMode.SetWidgetToFocus(InventoryPanelInstance->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
-	PC->SetInputMode(InputMode);
+	PC->BeginUIInputMode(InventoryPanelInstance);
+}
+
+bool AThe_AwakeningCharacter::IsUIInputActive() const
+{
+	const AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	return PC && PC->IsUIInputModeActive();
+}
+
+void AThe_AwakeningCharacter::ClearMovementInput()
+{
+	bMoveForward = false;
+	bMoveBackward = false;
+	bMoveLeft = false;
+	bMoveRight = false;
 }
 
 void AThe_AwakeningCharacter::OnPromptRelatedSettingsChanged()

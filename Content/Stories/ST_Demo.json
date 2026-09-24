@@ -112,7 +112,7 @@
 			"speakerId": "Alice",
 			"speakerNameId": "Char_Alice_Name",
 			"textId": "ST_Demo_003",
-			"next": "end"
+			"next": "node_1"
 		},
 		{
 			"id": "reply_met",
@@ -120,7 +120,7 @@
 			"speakerId": "Bob",
 			"speakerNameId": "Char_Bob_Name",
 			"textId": "ST_Demo_004",
-			"next": "end"
+			"next": "node_1"
 		},
 		{
 			"id": "bye",
@@ -128,11 +128,19 @@
 			"speakerId": "Alice",
 			"speakerNameId": "Char_Alice_Name",
 			"textId": "ST_Demo_004",
-			"next": "end"
+			"next": "node_1"
 		},
 		{
 			"id": "end",
 			"type": "end"
+		},
+		{
+			"id": "node_1",
+			"type": "dialogue",
+			"speakerId": "Alice",
+			"speakerNameId": "Char_Alice_Name",
+			"textId": "ST_Demo_005",
+			"next": "end"
 		}
 	]
 }

@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
 	UTexture2D* GetIconForKey(FKey Key) const;
 
+	/** 获取指定按键对应的手柄图标，未检测到手柄类型时使用 Xbox 图标。 */
+	UTexture2D* GetGamepadIconForKey(FKey Key) const;
+
 	/** 获取指定 InputAction 当前绑定按键的图标 */
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
 	UTexture2D* GetIconForAction(UInputAction* Action) const;

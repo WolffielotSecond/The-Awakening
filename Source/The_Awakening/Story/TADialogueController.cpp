@@ -167,6 +167,15 @@ void UTADialogueController::MoveSelection(int32 Delta)
 	OnChoicesChanged.Broadcast();
 }
 
+void UTADialogueController::SetSelectedChoiceIndex(int32 VisibleIndex)
+{
+	if (!bActive || !IsChoiceNode() || !VisibleChoiceIndices.IsValidIndex(VisibleIndex))
+	{
+		return;
+	}
+	SelectedChoiceIndex = VisibleIndex;
+}
+
 // ------------------------------------------------------------
 // Tick（打字机）
 // ------------------------------------------------------------

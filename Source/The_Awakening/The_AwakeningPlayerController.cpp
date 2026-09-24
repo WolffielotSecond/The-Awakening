@@ -11,6 +11,11 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "InputKeyEventArgs.h"
+#include "Engine/GameViewportClient.h"
+#include "Widgets/SViewport.h"
+#include "The_AwakeningCharacter.h"
+#include "Components/Button.h"
+#include "Blueprint/WidgetTree.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
@@ -25,6 +30,41 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 		Owner->NotifyRawInputKey(InKeyEvent.GetKey());
 	}
 	return false;
+}
+
+bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent&)
+{
+	return false;
+}
+
+bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, const FAnalogInputEvent& InAnalogInputEvent)
+{
+	if (!Owner)
+	{
+		return false;
+	}
+
+	const FKey Key = InAnalogInputEvent.GetKey();
+	Owner->NotifyRawInputKey(Key);
+	if (!Owner->IsUIInputModeActive() || !Key.IsGamepadKey())
+	{
+		return false;
+	}
+
+	if (Key == EKeys::Gamepad_LeftX || Key == EKeys::Gamepad_LeftY)
+	{
+		Owner->SetVirtualCursorAxis(Key, InAnalogInputEvent.GetAnalogValue());
+		return true;
+	}
+	return false;
+}
+
+void FTAInputDeviceDetector::Tick(const float DeltaTime, FSlateApplication& SoftApp, TSharedRef<ICursor> Cursor)
+{
+	if (Owner)
+	{
+		Owner->TickVirtualCursor(DeltaTime);
+	}
 }
 
 bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent)
@@ -94,11 +134,25 @@ void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 	}
 }
 
-void AThe_AwakeningPlayerController::SetDialogueModeActive(bool bActive)
+void AThe_AwakeningPlayerController::SetDialogueModeActive(bool bActive, UUserWidget* FocusWidget)
 {
 	if (!IsLocalPlayerController())
 	{
 		return;
+	}
+
+	if (bDialogueModeActive == bActive)
+	{
+		return;
+	}
+	bDialogueModeActive = bActive;
+	if (bActive)
+	{
+		BeginUIInputMode(FocusWidget);
+	}
+	else
+	{
+		EndUIInputMode();
 	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
@@ -154,6 +208,135 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 			}
 		}
 	}
+}
+
+void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+
+	++ActiveUIModeCount;
+	if (ActiveUIModeCount > 1)
+	{
+		return;
+	}
+
+	bUIInputModeActive = true;
+	VirtualCursorAxis = FVector2D::ZeroVector;
+	if (AThe_AwakeningCharacter* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn()))
+	{
+		ControlledCharacter->ClearMovementInput();
+	}
+	bPreviousShowMouseCursor = bShowMouseCursor;
+	SetShowMouseCursor(true);
+	FInputModeGameAndUI InputMode;
+	if (FocusWidget)
+	{
+		InputMode.SetWidgetToFocus(FocusWidget->TakeWidget());
+	}
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	SetUIFocusWidget(FocusWidget);
+}
+
+void AThe_AwakeningPlayerController::EndUIInputMode()
+{
+	if (!IsLocalPlayerController() || ActiveUIModeCount <= 0)
+	{
+		return;
+	}
+
+	--ActiveUIModeCount;
+	if (ActiveUIModeCount > 0)
+	{
+		return;
+	}
+
+	bUIInputModeActive = false;
+	VirtualCursorAxis = FVector2D::ZeroVector;
+	SetShowMouseCursor(bPreviousShowMouseCursor);
+	SetInputMode(FInputModeGameOnly());
+}
+
+void AThe_AwakeningPlayerController::SetUIFocusWidget(UUserWidget* FocusWidget)
+{
+	if (!bUIInputModeActive || !IsValid(FocusWidget))
+	{
+		return;
+	}
+
+	UButton* FirstFocusableButton = nullptr;
+	if (FocusWidget->WidgetTree)
+	{
+		FocusWidget->WidgetTree->ForEachWidgetAndDescendants([&FirstFocusableButton](UWidget* Widget)
+		{
+			UButton* Button = Cast<UButton>(Widget);
+			if (!FirstFocusableButton && Button && Button->GetIsFocusable() &&
+				Button->GetVisibility() == ESlateVisibility::Visible && Button->GetIsEnabled())
+			{
+				FirstFocusableButton = Button;
+			}
+		});
+	}
+
+	if (FirstFocusableButton)
+	{
+		FirstFocusableButton->SetUserFocus(this);
+	}
+	else
+	{
+		FocusWidget->SetUserFocus(this);
+	}
+}
+
+void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, float Value)
+{
+	constexpr float DeadZone = 0.18f;
+	const float Magnitude = FMath::Abs(Value);
+	const float Remapped = Magnitude <= DeadZone ? 0.0f : FMath::Sign(Value) * ((Magnitude - DeadZone) / (1.0f - DeadZone));
+	if (AxisKey == EKeys::Gamepad_LeftX)
+	{
+		VirtualCursorAxis.X = Remapped;
+	}
+	else if (AxisKey == EKeys::Gamepad_LeftY)
+	{
+		VirtualCursorAxis.Y = Remapped;
+	}
+}
+
+void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
+{
+	if (!bUIInputModeActive || VirtualCursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	UGameViewportClient* ViewportClient = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	const TSharedPtr<SViewport> ViewportWidget = ViewportClient ? ViewportClient->GetGameViewportWidget() : nullptr;
+	if (!ViewportWidget.IsValid())
+	{
+		return;
+	}
+
+	const FGeometry Geometry = ViewportWidget->GetCachedGeometry();
+	const FVector2D ViewportOrigin(Geometry.GetAbsolutePosition());
+	const FVector2D ViewportSize(Geometry.GetAbsoluteSize());
+	if (ViewportSize.X <= 1.0f || ViewportSize.Y <= 1.0f)
+	{
+		return;
+	}
+
+	FSlateApplication& SlateApp = FSlateApplication::Get();
+	FVector2D CursorPosition(SlateApp.GetCursorPos());
+	const AThe_AwakeningCharacter* PlayerCharacter = Cast<AThe_AwakeningCharacter>(GetPawn());
+	const float CursorSpeed = PlayerCharacter ? PlayerCharacter->GetMenuCursorSpeed() : 1100.0f;
+	CursorPosition += FVector2D(VirtualCursorAxis.X, -VirtualCursorAxis.Y) * CursorSpeed * DeltaTime;
+	CursorPosition.X = FMath::Clamp(CursorPosition.X, ViewportOrigin.X, ViewportOrigin.X + ViewportSize.X - 1.0f);
+	CursorPosition.Y = FMath::Clamp(CursorPosition.Y, ViewportOrigin.Y, ViewportOrigin.Y + ViewportSize.Y - 1.0f);
+	SlateApp.SetCursorPos(CursorPosition);
 }
 
 bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)

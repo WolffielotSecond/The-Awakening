@@ -244,6 +244,20 @@ UTexture2D* UTAInputIconSubsystem::GetIconForKey(FKey Key) const
 	return LoadIconFromPath(Path);
 }
 
+UTexture2D* UTAInputIconSubsystem::GetGamepadIconForKey(FKey Key) const
+{
+	const FString LogicalName = KeyToAssetName(Key);
+	if (LogicalName.IsEmpty() || !Key.IsGamepadKey())
+	{
+		return GetIconForKey(Key);
+	}
+
+	const bool bUsePlayStationIcons = CurrentDeviceType == EInputDeviceType::PS5;
+	const FString Folder = bUsePlayStationIcons ? TEXT("PS") : TEXT("Xbox");
+	const FString AssetName = bUsePlayStationIcons ? PSAssetName(LogicalName) : XboxAssetName(LogicalName);
+	return LoadIconFromPath(FString::Printf(TEXT("%s/%s/%s"), *IconRootPath, *Folder, *AssetName));
+}
+
 UTexture2D* UTAInputIconSubsystem::GetIconForAction(UInputAction* Action) const
 {
 	if (!Action)

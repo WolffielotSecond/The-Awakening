@@ -9,6 +9,7 @@
 
 class UInputMappingContext;
 class UUserWidget;
+class UWidget;
 class UTAScanningComponent;
 struct FInputKeyEventArgs;
 /**
@@ -22,9 +23,11 @@ public:
 	{
 	}
 
-	virtual void Tick(const float DeltaTime, FSlateApplication& SoftApp, TSharedRef<ICursor> Cursor) override {}
+	virtual void Tick(const float DeltaTime, FSlateApplication& SoftApp, TSharedRef<ICursor> Cursor) override;
 
 	virtual bool HandleKeyDownEvent(FSlateApplication& SoftApp, const FKeyEvent& InKeyEvent) override;
+	virtual bool HandleKeyUpEvent(FSlateApplication& SoftApp, const FKeyEvent& InKeyEvent) override;
+	virtual bool HandleAnalogInputEvent(FSlateApplication& SoftApp, const FAnalogInputEvent& InAnalogInputEvent) override;
 	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 	virtual bool HandleMouseMoveEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 
@@ -43,7 +46,15 @@ public:
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	/** 进入/退出对话输入模式（移除/恢复默认移动等映射，供剧情系统调用） */
-	void SetDialogueModeActive(bool bActive);
+	void SetDialogueModeActive(bool bActive, UUserWidget* FocusWidget = nullptr);
+
+	/** 所有可交互 UI 共用的输入模式。调用需成对，支持多个 UI 同时打开。 */
+	void BeginUIInputMode(UUserWidget* FocusWidget = nullptr);
+	void EndUIInputMode();
+	void SetUIFocusWidget(UUserWidget* FocusWidget);
+	bool IsUIInputModeActive() const { return bUIInputModeActive; }
+	void SetVirtualCursorAxis(const FKey& AxisKey, float Value);
+	void TickVirtualCursor(float DeltaTime);
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
@@ -58,6 +69,11 @@ protected:
 	TObjectPtr<UUserWidget> MobileControlsWidget;
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
+	int32 ActiveUIModeCount = 0;
+	bool bUIInputModeActive = false;
+	bool bDialogueModeActive = false;
+	bool bPreviousShowMouseCursor = false;
+	FVector2D VirtualCursorAxis = FVector2D::ZeroVector;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
