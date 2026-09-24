@@ -4,10 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "Interaction/TAInteractableActor.h"
+#include "Story/TAStoryAsset.h"
 #include "ATAStoryTriggerActor.generated.h"
 
 /**
- * StoryId 对应 Content/Stories/{StoryId}.json（不带扩展名）。
+ * 指向一个已编译的 Unreal 剧情资产。
  * 交互提示自动使用 Interact_Talk（"对话"）。
  */
 UCLASS()
@@ -25,9 +26,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<class USphereComponent> TriggerCollision;
 
-	/** 剧情 ID（不带 .json 扩展名） */
+	/** 要播放的 Unreal 剧情资产 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story")
-	FString StoryId;
+	TObjectPtr<UTAStoryAsset> StoryAsset;
 
 	/** 是否只触发一次 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story")

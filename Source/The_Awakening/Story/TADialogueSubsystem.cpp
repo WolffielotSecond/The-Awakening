@@ -1,5 +1,6 @@
 // Source/The_Awakening/Story/TADialogueSubsystem.cpp
 #include "Story/TADialogueSubsystem.h"
+#include "Story/TAStoryAsset.h"
 #include "Story/TADialogueController.h"
 #include "Story/TADialogueWidget.h"
 #include "Story/TADialoguePortraitLayerWidget.h"
@@ -164,50 +165,8 @@ void UTADialogueSubsystem::BroadcastStoryEvent(FName EventName, const TMap<FStri
 }
 
 // ------------------------------------------------------------
-// 剧情加载与解析
+// Legacy JSON serialization helpers (no longer used by runtime playback)
 // ------------------------------------------------------------
-
-FString UTADialogueSubsystem::GetStoryFilePath(const FString& StoryId) const
-{
-	FString CleanId = StoryId;
-	if (CleanId.EndsWith(TEXT(".json"), ESearchCase::IgnoreCase))
-	{
-		CleanId.LeftChopInline(5);
-	}
-	return FPaths::ProjectContentDir() / StoriesFolder / (CleanId + TEXT(".json"));
-}
-
-const FTAStoryData* UTADialogueSubsystem::LoadStory(const FString& StoryId)
-{
-	FString CleanId = StoryId;
-	if (CleanId.EndsWith(TEXT(".json"), ESearchCase::IgnoreCase))
-	{
-		CleanId.LeftChopInline(5);
-	}
-
-	if (const FTAStoryData* Cached = LoadedStories.Find(CleanId))
-	{
-		return Cached;
-	}
-
-	const FString FilePath = GetStoryFilePath(CleanId);
-	FString JsonString;
-	if (!FFileHelper::LoadFileToString(JsonString, *FilePath))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 找不到剧情文件: %s"), *FilePath);
-		return nullptr;
-	}
-
-	FTAStoryData Parsed;
-	FString Error;
-	if (!ParseStoryJson(JsonString, CleanId, Parsed, Error))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 剧情解析失败 %s: %s"), *CleanId, *Error);
-		return nullptr;
-	}
-
-	return &LoadedStories.Add(CleanId, MoveTemp(Parsed));
-}
 
 FString UTADialogueSubsystem::JsonScalarToString(const TSharedPtr<FJsonValue>& Value)
 {
@@ -311,11 +270,11 @@ namespace
 			return false;
 		}
 
-		Out.Base = GetOptionalStringField(Obj, TEXT("base"));
-		Out.EyesOpen = GetOptionalStringField(Obj, TEXT("eyesOpen"));
-		Out.EyesClosed = GetOptionalStringField(Obj, TEXT("eyesClosed"));
-		Out.MouthOpen = GetOptionalStringField(Obj, TEXT("mouthOpen"));
-		Out.MouthClosed = GetOptionalStringField(Obj, TEXT("mouthClosed"));
+		Out.Base = FSoftObjectPath(GetOptionalStringField(Obj, TEXT("base")));
+		Out.EyesOpen = FSoftObjectPath(GetOptionalStringField(Obj, TEXT("eyesOpen")));
+		Out.EyesClosed = FSoftObjectPath(GetOptionalStringField(Obj, TEXT("eyesClosed")));
+		Out.MouthOpen = FSoftObjectPath(GetOptionalStringField(Obj, TEXT("mouthOpen")));
+		Out.MouthClosed = FSoftObjectPath(GetOptionalStringField(Obj, TEXT("mouthClosed")));
 
 		const TSharedPtr<FJsonObject>* PosObj = nullptr;
 		if (Obj->TryGetObjectField(TEXT("position"), PosObj))
@@ -585,11 +544,11 @@ bool UTADialogueSubsystem::StoryToJson(const FTAStoryData& Story, FString& OutJs
 			{
 				TSharedRef<FJsonObject> PObj = MakeShared<FJsonObject>();
 				PObj->SetStringField(TEXT("characterId"), Entry.CharacterId);
-				if (!Entry.Base.IsEmpty())        PObj->SetStringField(TEXT("base"), Entry.Base);
-				if (!Entry.EyesOpen.IsEmpty())    PObj->SetStringField(TEXT("eyesOpen"), Entry.EyesOpen);
-				if (!Entry.EyesClosed.IsEmpty())  PObj->SetStringField(TEXT("eyesClosed"), Entry.EyesClosed);
-				if (!Entry.MouthOpen.IsEmpty())   PObj->SetStringField(TEXT("mouthOpen"), Entry.MouthOpen);
-				if (!Entry.MouthClosed.IsEmpty()) PObj->SetStringField(TEXT("mouthClosed"), Entry.MouthClosed);
+				if (!Entry.Base.IsNull())        PObj->SetStringField(TEXT("base"), Entry.Base.ToSoftObjectPath().ToString());
+				if (!Entry.EyesOpen.IsNull())    PObj->SetStringField(TEXT("eyesOpen"), Entry.EyesOpen.ToSoftObjectPath().ToString());
+				if (!Entry.EyesClosed.IsNull())  PObj->SetStringField(TEXT("eyesClosed"), Entry.EyesClosed.ToSoftObjectPath().ToString());
+				if (!Entry.MouthOpen.IsNull())   PObj->SetStringField(TEXT("mouthOpen"), Entry.MouthOpen.ToSoftObjectPath().ToString());
+				if (!Entry.MouthClosed.IsNull()) PObj->SetStringField(TEXT("mouthClosed"), Entry.MouthClosed.ToSoftObjectPath().ToString());
 
 				if (Entry.bPositionSpecified)
 				{
@@ -676,11 +635,17 @@ bool UTADialogueSubsystem::StoryToJson(const FTAStoryData& Story, FString& OutJs
 // 对话会话
 // ------------------------------------------------------------
 
-bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initiator)
+bool UTADialogueSubsystem::StartDialogueAsset(UTAStoryAsset* StoryAsset, UObject* Initiator)
 {
-	const FTAStoryData* Story = LoadStory(StoryId);
+	if (!StoryAsset)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] StartDialogueAsset: no story asset was assigned."));
+		return false;
+	}
+	const FTAStoryData* Story = StoryAsset->GetCompiledStory();
 	if (!Story)
 	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 故事资产 %s 尚未编译；请在 Story Editor 中运行 Compile / Validate。"), *StoryAsset->GetName());
 		return false;
 	}
 
@@ -688,6 +653,17 @@ bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initia
 	{
 		StopDialogue();
 	}
+	ActiveStoryAsset = StoryAsset;
+	if (!StartDialogueFromData(*Story, Initiator))
+	{
+		ActiveStoryAsset = nullptr;
+		return false;
+	}
+	return true;
+}
+
+bool UTADialogueSubsystem::StartDialogueFromData(const FTAStoryData& Story, UObject* Initiator)
+{
 
 	UWorld* World = Initiator ? Initiator->GetWorld() : GetWorld();
 	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
@@ -697,7 +673,7 @@ bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initia
 	}
 	if (!PC)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Dialogue] StartDialogue: 找不到 PlayerController"));
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] StartDialogueAsset: 找不到 PlayerController"));
 		return false;
 	}
 
@@ -716,7 +692,7 @@ bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initia
 	}
 
 	UTADialogueController* Controller = NewObject<UTADialogueController>(this);
-	Controller->Initialize(this, *Story, Initiator);
+	Controller->Initialize(this, Story, Initiator);
 
 	UTADialogueWidget* Widget = CreateWidget<UTADialogueWidget>(PC, RuntimeDialogueWidgetClass);
 	if (!Widget)
@@ -763,6 +739,7 @@ void UTADialogueSubsystem::StopDialogue()
 
 	ActiveController->Shutdown();
 	ActiveController = nullptr;
+	ActiveStoryAsset = nullptr;
 
 	OnDialogueEnded.Broadcast();
 }

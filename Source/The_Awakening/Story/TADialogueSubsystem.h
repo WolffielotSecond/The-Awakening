@@ -13,6 +13,7 @@ class UTADialogueWidget;
 class UTADialoguePortraitLayerWidget;
 class UTAPortraitWidget;
 class UTADialogueChoiceButton;
+class UTAStoryAsset;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDialogueEnded);
 
@@ -29,17 +30,6 @@ class THE_AWAKENING_API UTADialogueSubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-
-	// ==================== 剧情加载 ====================
-
-	/** 加载并缓存剧情；失败返回 nullptr */
-	const FTAStoryData* LoadStory(const FString& StoryId);
-
-	/** 剧情文件完整路径 */
-	FString GetStoryFilePath(const FString& StoryId) const;
-
-	UFUNCTION(BlueprintCallable, Category = "Dialogue")
-	bool IsStoryLoaded(const FString& StoryId) const { return LoadedStories.Contains(StoryId); }
 
 	// ==================== 旗标 ====================
 
@@ -77,9 +67,9 @@ public:
 
 	// ==================== 对话会话 ====================
 
-	/** 开始一段对话（需要 DefaultGame.ini 配置 DialogueWidgetClass） */
+	/** Start a dialogue from a compiled Unreal story asset. */
 	UFUNCTION(BlueprintCallable, Category = "Dialogue")
-	bool StartDialogue(const FString& StoryId, UObject* Initiator = nullptr);
+	bool StartDialogueAsset(UTAStoryAsset* StoryAsset, UObject* Initiator = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "Dialogue")
 	void StopDialogue();
@@ -105,7 +95,7 @@ public:
 	void UpdateStoryProgress(const FString& StoryId, const FString& NodeId);
 	void MarkStoryCompleted(const FString& StoryId);
 
-	// ==================== JSON 读写（编辑器复用同一实现） ====================
+	// Legacy JSON parsing helpers are retained for compatibility only; playback now uses story assets.
 
 	static bool ParseStoryJson(const FString& JsonString, const FString& SourceName, FTAStoryData& OutData, FString& OutError);
 	static bool StoryToJson(const FTAStoryData& Story, FString& OutJson);
@@ -114,10 +104,6 @@ public:
 	static FString JsonScalarToString(const TSharedPtr<FJsonValue>& Value);
 
 	// ==================== 配置 ====================
-
-	/** 剧情 JSON 所在 Content 相对目录 */
-	UPROPERTY(Config, EditAnywhere, Category = "Dialogue")
-	FString StoriesFolder = TEXT("Stories");
 
 	/** 对话 UI 蓝图类（WBP_Dialogue） */
 	UPROPERTY(Config, EditAnywhere, Category = "Dialogue|UI")
@@ -136,13 +122,12 @@ public:
 	float CharsPerSecond = 40.f;
 
 protected:
+	bool StartDialogueFromData(const FTAStoryData& Story, UObject* Initiator);
+
 	/** 保留名处理器：SetFlag */
 	void HandleReservedSetFlag(const FTAStoryEventPayload& Payload);
 
 protected:
-	UPROPERTY()
-	TMap<FString, FTAStoryData> LoadedStories;
-
 	UPROPERTY()
 	TMap<FString, int32> Flags;
 
@@ -160,6 +145,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTADialoguePortraitLayerWidget> ActivePortraitLayer;
+
+	UPROPERTY()
+	TObjectPtr<UTAStoryAsset> ActiveStoryAsset;
 
 	TArray<TSharedPtr<ITADialogueConditionEvaluator>> ConditionEvaluators;
 	TMap<FName, TFunction<void(const FTAStoryEventPayload&)>> ReservedHandlers;

@@ -130,47 +130,47 @@ void UTAPortraitWidget::FadeOutAndRemove()
 	}
 }
 
-UTexture2D* UTAPortraitWidget::LoadTexture(const FString& Path)
+UTexture2D* UTAPortraitWidget::LoadTexture(const TSoftObjectPtr<UTexture2D>& TextureAsset)
 {
-	if (Path.IsEmpty())
+	if (TextureAsset.IsNull())
 	{
 		return nullptr;
 	}
 
-	UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, *Path);
+	UTexture2D* Tex = TextureAsset.LoadSynchronous();
 	if (!Tex)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 立绘贴图加载失败: %s"), *Path);
+		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 立绘贴图加载失败: %s"), *TextureAsset.ToSoftObjectPath().ToString());
 	}
 	return Tex;
 }
 
 void UTAPortraitWidget::UpdateLayerTextures()
 {
-	if (LastBasePath != Current.Base)
+	if (LastBaseAsset != Current.Base)
 	{
 		TexBase = LoadTexture(Current.Base);
-		LastBasePath = Current.Base;
+		LastBaseAsset = Current.Base;
 	}
-	if (LastEyesOpenPath != Current.EyesOpen)
+	if (LastEyesOpenAsset != Current.EyesOpen)
 	{
 		TexEyesOpen = LoadTexture(Current.EyesOpen);
-		LastEyesOpenPath = Current.EyesOpen;
+		LastEyesOpenAsset = Current.EyesOpen;
 	}
-	if (LastEyesClosedPath != Current.EyesClosed)
+	if (LastEyesClosedAsset != Current.EyesClosed)
 	{
 		TexEyesClosed = LoadTexture(Current.EyesClosed);
-		LastEyesClosedPath = Current.EyesClosed;
+		LastEyesClosedAsset = Current.EyesClosed;
 	}
-	if (LastMouthOpenPath != Current.MouthOpen)
+	if (LastMouthOpenAsset != Current.MouthOpen)
 	{
 		TexMouthOpen = LoadTexture(Current.MouthOpen);
-		LastMouthOpenPath = Current.MouthOpen;
+		LastMouthOpenAsset = Current.MouthOpen;
 	}
-	if (LastMouthClosedPath != Current.MouthClosed)
+	if (LastMouthClosedAsset != Current.MouthClosed)
 	{
 		TexMouthClosed = LoadTexture(Current.MouthClosed);
-		LastMouthClosedPath = Current.MouthClosed;
+		LastMouthClosedAsset = Current.MouthClosed;
 	}
 
 	if (Image_Base)

@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Localization")
 	TArray<FString> GetAvailableLanguages() const;
 
+	/** Shared by runtime loading and the project localization editor. */
+	FString GetLocalizationDirectory() const;
+
 	/** 语言切换时触发 */
 	UPROPERTY(BlueprintAssignable, Category = "Localization")
 	FOnLanguageChanged OnLanguageChanged;

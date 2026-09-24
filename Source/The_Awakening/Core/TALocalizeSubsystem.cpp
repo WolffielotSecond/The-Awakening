@@ -4,6 +4,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+#include "HAL/FileManager.h"
 
 void UTALocalizeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -29,7 +30,7 @@ bool UTALocalizeSubsystem::SetLanguage(const FString& LanguageCode)
 
 bool UTALocalizeSubsystem::LoadLanguageFile(const FString& LanguageCode)
 {
-	const FString FilePath = FPaths::ProjectContentDir() / LocalizationFolder / (LanguageCode + TEXT(".json"));
+	const FString FilePath = GetLocalizationDirectory() / (LanguageCode + TEXT(".json"));
 
 	FString JsonString;
 	if (!FFileHelper::LoadFileToString(JsonString, *FilePath))
@@ -65,7 +66,7 @@ FText UTALocalizeSubsystem::GetText(const FString& TextId) const
 {
 	if (const FString* Found = TextMap.Find(TextId))
 	{
-		return FText::FromString(*Found);
+		return FText::FromString(Found->IsEmpty() ? TextId : *Found);
 	}
 
 	// 找不到时返回 ID 本身
@@ -74,5 +75,19 @@ FText UTALocalizeSubsystem::GetText(const FString& TextId) const
 
 TArray<FString> UTALocalizeSubsystem::GetAvailableLanguages() const
 {
-	return { TEXT("zh-CN"), TEXT("zh-TW"), TEXT("en") };
+	TArray<FString> Files;
+	IFileManager::Get().FindFiles(Files, *(GetLocalizationDirectory() / TEXT("*.json")), true, false);
+	TArray<FString> Languages;
+	for (const FString& File : Files) { Languages.Add(FPaths::GetBaseFilename(File)); }
+	Languages.Sort();
+	for (const FString& Preferred : { FString(TEXT("en")), FString(TEXT("zh-TW")), FString(TEXT("zh-CN")) })
+	{
+		if (Languages.Remove(Preferred)) { Languages.Insert(Preferred, 0); }
+	}
+	return Languages;
+}
+
+FString UTALocalizeSubsystem::GetLocalizationDirectory() const
+{
+	return FPaths::ProjectContentDir() / LocalizationFolder;
 }

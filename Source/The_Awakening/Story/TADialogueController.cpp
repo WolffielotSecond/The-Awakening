@@ -455,11 +455,14 @@ void UTADialogueController::ApplyPortraitEntries(const TArray<FTAPortraitEntry>&
 		if (Existing)
 		{
 			// 只覆盖显式指定的字段（表情差分）
-			if (!Entry.Base.IsEmpty())        Existing->Base = Entry.Base;
-			if (!Entry.EyesOpen.IsEmpty())    Existing->EyesOpen = Entry.EyesOpen;
-			if (!Entry.EyesClosed.IsEmpty())  Existing->EyesClosed = Entry.EyesClosed;
-			if (!Entry.MouthOpen.IsEmpty())   Existing->MouthOpen = Entry.MouthOpen;
-			if (!Entry.MouthClosed.IsEmpty()) Existing->MouthClosed = Entry.MouthClosed;
+			if (Entry.bImagesSpecified)
+			{
+				if (!Entry.Base.IsNull())        Existing->Base = Entry.Base;
+				if (!Entry.EyesOpen.IsNull())    Existing->EyesOpen = Entry.EyesOpen;
+				if (!Entry.EyesClosed.IsNull())  Existing->EyesClosed = Entry.EyesClosed;
+				if (!Entry.MouthOpen.IsNull())   Existing->MouthOpen = Entry.MouthOpen;
+				if (!Entry.MouthClosed.IsNull()) Existing->MouthClosed = Entry.MouthClosed;
+			}
 			if (Entry.bPositionSpecified)     Existing->Position = Entry.Position;
 			if (Entry.bScaleSpecified)        Existing->Scale = Entry.Scale;
 			if (Entry.bVisibleSpecified)      Existing->bVisible = Entry.bVisible;

@@ -56,7 +56,7 @@ public:
 	float BaseHeightRatio = 0.6f;
 
 protected:
-	UTexture2D* LoadTexture(const FString& Path);
+	UTexture2D* LoadTexture(const TSoftObjectPtr<UTexture2D>& TextureAsset);
 
 	void UpdateLayerTextures();
 	void ScheduleNextBlink();
@@ -86,12 +86,12 @@ protected:
 	TObjectPtr<UTexture2D> TexMouthOpen;
 	TObjectPtr<UTexture2D> TexMouthClosed;
 
-	// 上一次应用的贴图路径（JSON 里存的是包路径，直接字符串比较）
-	FString LastBasePath;
-	FString LastEyesOpenPath;
-	FString LastEyesClosedPath;
-	FString LastMouthOpenPath;
-	FString LastMouthClosedPath;
+	// 上一次应用的资产引用，避免重复加载。
+	TSoftObjectPtr<UTexture2D> LastBaseAsset;
+	TSoftObjectPtr<UTexture2D> LastEyesOpenAsset;
+	TSoftObjectPtr<UTexture2D> LastEyesClosedAsset;
+	TSoftObjectPtr<UTexture2D> LastMouthOpenAsset;
+	TSoftObjectPtr<UTexture2D> LastMouthClosedAsset;
 
 	bool bTalking = false;
 	bool bMouthOpen = false;

@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "TADialogueTypes.generated.h"
 
+class UTexture2D;
+
 // ============================================================
 // 立绘
 // ============================================================
@@ -39,39 +41,46 @@ struct FTAPortraitEntry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
 	FString CharacterId;
 
-	/** 基础立绘贴图路径 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
-	FString Base;
+	/** 基础立绘贴图资产 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bImagesSpecified"))
+	TSoftObjectPtr<UTexture2D> Base;
 
 	/** 眼睛层：睁眼贴图 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
-	FString EyesOpen;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bImagesSpecified"))
+	TSoftObjectPtr<UTexture2D> EyesOpen;
 
 	/** 眼睛层：闭眼贴图 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
-	FString EyesClosed;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bImagesSpecified"))
+	TSoftObjectPtr<UTexture2D> EyesClosed;
 
 	/** 嘴巴层：张嘴贴图 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
-	FString MouthOpen;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bImagesSpecified"))
+	TSoftObjectPtr<UTexture2D> MouthOpen;
 
 	/** 嘴巴层：闭嘴贴图 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
-	FString MouthClosed;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bImagesSpecified"))
+	TSoftObjectPtr<UTexture2D> MouthClosed;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (DisplayName = "Apply Images"))
+	bool bImagesSpecified = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bPositionSpecified"))
 	FTAPortraitPosition Position;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (DisplayName = "Apply Position"))
+	bool bPositionSpecified = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bScaleSpecified"))
 	float Scale = 1.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (DisplayName = "Apply Scale"))
+	bool bScaleSpecified = false;
+
 	/** false = 移除该角色立绘 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (EditCondition = "bVisibleSpecified"))
 	bool bVisible = true;
 
-	// ---- 解析/编辑元数据（不写入 JSON，用于区分「未指定」与「显式赋值」）----
-	bool bPositionSpecified = false;
-	bool bScaleSpecified = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait", meta = (DisplayName = "Apply Visibility"))
 	bool bVisibleSpecified = false;
 };
 
@@ -175,7 +184,7 @@ struct FTAStoryChoice
 	TArray<FTAStoryEvent> Events;
 
 	/** 目标节点 ID（空 = 结束对话） */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Choice")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Choice")
 	FString Target;
 };
 
@@ -189,7 +198,7 @@ struct FTAStoryNode
 	FString Id;
 
 	/** dialogue / choice / end */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Node")
 	FString Type = TEXT("dialogue");
 
 	/** 说话角色的 CharacterId（空 = 旁白，无人动嘴） */
@@ -219,7 +228,7 @@ struct FTAStoryNode
 	TArray<FTAStoryChoice> Choices;
 
 	/** dialogue 的下一个节点；空 = 结束 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Node")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Node")
 	FString Next;
 };
 

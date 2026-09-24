@@ -12,17 +12,17 @@ public class The_AwakeningEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"UnrealEd",
+			"AssetTools",
+			"GraphEditor",
+			"PropertyEditor",
 			"Slate",
 			"SlateCore",
 			"UMG",
-			"Blutility",
-			"Json",
-			"JsonUtilities",
 			"AssetRegistry",
 			"InputCore",
 			"The_Awakening"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ToolMenus", "ApplicationCore", "Json", "DesktopPlatform" });
 	}
 }

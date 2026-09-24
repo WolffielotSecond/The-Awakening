@@ -33,9 +33,9 @@ ATAStoryTriggerActor::ATAStoryTriggerActor()
 
 void ATAStoryTriggerActor::OnInteract_Implementation(AActor* Interactor)
 {
-	if (StoryId.IsEmpty())
+	if (!StoryAsset)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 触发器 %s 未设置 StoryId"), *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 触发器 %s 未指定 Story Asset"), *GetName());
 		return;
 	}
 
@@ -56,7 +56,7 @@ void ATAStoryTriggerActor::OnInteract_Implementation(AActor* Interactor)
 		return;
 	}
 
-	if (Subsystem->StartDialogue(StoryId, this))
+	if (Subsystem->StartDialogueAsset(StoryAsset, this))
 	{
 		bPlayed = true;
 	}
