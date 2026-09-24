@@ -2,6 +2,7 @@
 #include "Story/TADialogueSubsystem.h"
 #include "Story/TADialogueController.h"
 #include "Story/TADialogueWidget.h"
+#include "The_AwakeningCharacter.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -244,6 +245,16 @@ FString UTADialogueSubsystem::JsonScalarToString(const TSharedPtr<FJsonValue>& V
 
 namespace
 {
+	FString GetOptionalStringField(const TSharedPtr<FJsonObject>& Obj, const TCHAR* FieldName)
+	{
+		FString Value;
+		if (Obj.IsValid())
+		{
+			Obj->TryGetStringField(FieldName, Value);
+		}
+		return Value;
+	}
+
 	bool ParseEventJson(const TSharedPtr<FJsonObject>& Obj, FTAStoryEvent& Out)
 	{
 		Out.Name = Obj->GetStringField(TEXT("name"));
@@ -271,9 +282,9 @@ namespace
 			return false;
 		}
 
-		Out.Flag = Obj->GetStringField(TEXT("flag"));
-		Out.Item = Obj->GetStringField(TEXT("item"));
-		Out.Attribute = Obj->GetStringField(TEXT("attribute"));
+		Out.Flag = GetOptionalStringField(Obj, TEXT("flag"));
+		Out.Item = GetOptionalStringField(Obj, TEXT("item"));
+		Out.Attribute = GetOptionalStringField(Obj, TEXT("attribute"));
 
 		FString Op;
 		if (Obj->TryGetStringField(TEXT("op"), Op))
@@ -299,11 +310,11 @@ namespace
 			return false;
 		}
 
-		Out.Base = Obj->GetStringField(TEXT("base"));
-		Out.EyesOpen = Obj->GetStringField(TEXT("eyesOpen"));
-		Out.EyesClosed = Obj->GetStringField(TEXT("eyesClosed"));
-		Out.MouthOpen = Obj->GetStringField(TEXT("mouthOpen"));
-		Out.MouthClosed = Obj->GetStringField(TEXT("mouthClosed"));
+		Out.Base = GetOptionalStringField(Obj, TEXT("base"));
+		Out.EyesOpen = GetOptionalStringField(Obj, TEXT("eyesOpen"));
+		Out.EyesClosed = GetOptionalStringField(Obj, TEXT("eyesClosed"));
+		Out.MouthOpen = GetOptionalStringField(Obj, TEXT("mouthOpen"));
+		Out.MouthClosed = GetOptionalStringField(Obj, TEXT("mouthClosed"));
 
 		const TSharedPtr<FJsonObject>* PosObj = nullptr;
 		if (Obj->TryGetObjectField(TEXT("position"), PosObj))
@@ -388,10 +399,10 @@ namespace
 			Out.Type = Type;
 		}
 
-		Out.SpeakerId = Obj->GetStringField(TEXT("speakerId"));
-		Out.SpeakerNameId = Obj->GetStringField(TEXT("speakerNameId"));
-		Out.TextId = Obj->GetStringField(TEXT("textId"));
-		Out.Next = Obj->GetStringField(TEXT("next"));
+		Out.SpeakerId = GetOptionalStringField(Obj, TEXT("speakerId"));
+		Out.SpeakerNameId = GetOptionalStringField(Obj, TEXT("speakerNameId"));
+		Out.TextId = GetOptionalStringField(Obj, TEXT("textId"));
+		Out.Next = GetOptionalStringField(Obj, TEXT("next"));
 
 		const TArray<TSharedPtr<FJsonValue>>* Portraits = nullptr;
 		if (Obj->TryGetArrayField(TEXT("portraits"), Portraits))
@@ -689,9 +700,11 @@ bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initia
 		return false;
 	}
 
-	if (!DialogueWidgetClass.IsValid())
+	AThe_AwakeningCharacter* PlayerCharacter = Cast<AThe_AwakeningCharacter>(PC->GetPawn());
+	UClass* RuntimeDialogueWidgetClass = PlayerCharacter ? PlayerCharacter->GetDialogueWidgetClass().Get() : nullptr;
+	if (!RuntimeDialogueWidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 未配置 DialogueWidgetClass（DefaultGame.ini [/Script/The_Awakening.TADialogueSubsystem]）"));
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 未配置 DialogueWidgetClass：请在玩家角色蓝图的 Details > UI 中指定对话窗口 Widget Class"));
 		return false;
 	}
 
@@ -699,7 +712,7 @@ bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initia
 	ActiveController = Controller;
 	Controller->Initialize(this, *Story, Initiator);
 
-	UTADialogueWidget* Widget = CreateWidget<UTADialogueWidget>(PC, DialogueWidgetClass.LoadSynchronous());
+	UTADialogueWidget* Widget = CreateWidget<UTADialogueWidget>(PC, RuntimeDialogueWidgetClass);
 	if (!Widget)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 创建对话 UI 失败"));

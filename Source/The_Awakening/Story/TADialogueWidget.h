@@ -18,6 +18,7 @@ class UTextBlock;
 class UButton;
 class UImage;
 class UCanvasPanel;
+class UOverlay;
 class UVerticalBox;
 class UPanelWidget;
 class UInputAction;
@@ -30,8 +31,8 @@ class UInputMappingContext;
  *   Text_Dialogue      UTextBlock   对话框
  *   Button_Continue    UButton      继续按钮
  *   Button_History     UButton      历史按钮
- *   Canvas_Portraits   UCanvasPanel 立绘层（充满立绘显示区域）
  *   Box_Choices        UVerticalBox 选项列表容器
+ * 立绘层由 C++ 在根 Canvas Panel 或 Overlay 下自动创建。
  * 可选：
  *   Panel_Choices      UPanelWidget 分支面板整体（显隐用；缺省时用 Box_Choices 自己）
  *   Widget_History     UTADialogueHistoryWidget（WBP_DialogueHistory 实例，历史面板）
@@ -67,6 +68,8 @@ public:
 
 protected:
 	// ==================== 渲染刷新 ====================
+	void EnsureBindings();
+	bool EnsurePortraitLayer();
 	void RefreshLine();
 	void RefreshChoices();
 	void RefreshPortraits();
@@ -117,22 +120,19 @@ protected:
 
 	// ==================== 绑定控件 ====================
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Name;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Dialogue;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Continue;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_History;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UCanvasPanel> Canvas_Portraits;
-
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> Box_Choices;
 
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -151,6 +151,10 @@ protected:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UTAPortraitWidget>> PortraitWidgets;
+
+	/** Runtime-created full-screen coordinate layer; avoids a fragile Blueprint BindWidget dependency. */
+	UPROPERTY(Transient)
+	TObjectPtr<UCanvasPanel> RuntimePortraitCanvas;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UTADialogueChoiceButton>> ChoiceWidgets;

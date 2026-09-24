@@ -102,15 +102,27 @@ public:
 	UTADialogueRowCombo()
 	{
 		// 动态委托要求 FString 按值传参
-		OnSelectionChanged.AddDynamic(this, &UTADialogueRowCombo::HandleSelectionChanged);
+		OnSelectionChanged.AddDynamic(this, &UTADialogueRowCombo::ForwardSelectionChanged);
+	}
+
+	void SetRowFont(const FSlateFontInfo& InFontInfo)
+	{
+		InitFont(InFontInfo);
+	}
+
+	void SetRowForegroundColor(const FSlateColor& InForegroundColor)
+	{
+		InitForegroundColor(InForegroundColor);
 	}
 
 	/** 与 OnSelectionChanged 等价，但支持 AddLambda */
 	FOnTAComboSelectionNative OnSelectionNative;
 
 protected:
+	virtual TSharedRef<SWidget> HandleGenerateWidget(TSharedPtr<FString> Item) const override;
+
 	UFUNCTION()
-	void HandleSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+	void ForwardSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
 	{
 		OnSelectionNative.Broadcast(SelectedItem, SelectionType);
 	}

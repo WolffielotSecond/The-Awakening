@@ -11,8 +11,10 @@
 #include "Engine/Texture2D.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "UObject/SoftObjectPath.h"
 #include "Editor.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
@@ -23,7 +25,94 @@
 #include "Components/MultiLineEditableTextBox.h"
 #include "Components/ComboBoxString.h"
 #include "Components/CheckBox.h"
+#include "Components/Border.h"
+#include "Styling/AppStyle.h"
 #include "Types/SlateEnums.h"
+#include "Widgets/Text/STextBlock.h"
+
+TSharedRef<SWidget> UTADialogueRowCombo::HandleGenerateWidget(TSharedPtr<FString> Item) const
+{
+	const FString ItemText = Item.IsValid() ? *Item : FString();
+	return SNew(STextBlock)
+		.Text(FText::FromString(ItemText))
+		.Font(GetFont());
+}
+
+namespace
+{
+	constexpr float DialogueEditorGeneratedPadding = 4.0f;
+
+	FSlateFontInfo MakeDialogueEditorFont(bool bBold = false, bool bCategory = false)
+	{
+		const FName StyleName = bCategory
+			? FName(TEXT("DetailsView.CategoryFontStyle"))
+			: (bBold ? FName(TEXT("PropertyWindow.BoldFont")) : FName(TEXT("PropertyWindow.NormalFont")));
+		return FAppStyle::GetFontStyle(StyleName);
+	}
+
+	void SetDialogueEditorFont(UWidget* Widget, bool bBold = false, bool bCategory = false)
+	{
+		const FSlateFontInfo Font = MakeDialogueEditorFont(bBold, bCategory);
+		const FTextBlockStyle& NormalTextStyle = FAppStyle::Get().GetWidgetStyle<FTextBlockStyle>(
+			bCategory ? TEXT("DetailsView.CategoryTextStyle") : TEXT("NormalText"));
+
+		if (UTextBlock* Text = Cast<UTextBlock>(Widget))
+		{
+			Text->SetFont(Font);
+			Text->SetColorAndOpacity(NormalTextStyle.ColorAndOpacity);
+		}
+		else if (UEditableTextBox* TextBox = Cast<UEditableTextBox>(Widget))
+		{
+			TextBox->WidgetStyle = FAppStyle::Get().GetWidgetStyle<FEditableTextBoxStyle>(TEXT("NormalEditableTextBox"));
+			TextBox->WidgetStyle.SetFont(Font);
+		}
+		else if (UMultiLineEditableTextBox* MultiLineBox = Cast<UMultiLineEditableTextBox>(Widget))
+		{
+			MultiLineBox->WidgetStyle = FAppStyle::Get().GetWidgetStyle<FEditableTextBoxStyle>(TEXT("NormalEditableTextBox"));
+			FTextBlockStyle TextStyle = MultiLineBox->WidgetStyle.TextStyle;
+			TextStyle.SetFont(Font);
+			MultiLineBox->SetTextStyle(TextStyle);
+		}
+		else if (UTADialogueRowCombo* Combo = Cast<UTADialogueRowCombo>(Widget))
+		{
+			Combo->SetRowFont(Font);
+			Combo->SetRowForegroundColor(FSlateColor(FLinearColor::Black));
+
+			FTableRowStyle ItemStyle = FAppStyle::Get().GetWidgetStyle<FTableRowStyle>(TEXT("DetailsView.TreeView.TableRow"));
+			const FSlateColorBrush SelectedItemBrush(FAppStyle::Get().GetSlateColor(TEXT("Colors.AccentBlue")));
+			ItemStyle.SetActiveBrush(SelectedItemBrush)
+				.SetActiveHoveredBrush(SelectedItemBrush)
+				.SetInactiveBrush(SelectedItemBrush)
+				.SetInactiveHoveredBrush(SelectedItemBrush)
+				.SetSelectedTextColor(FAppStyle::Get().GetSlateColor(TEXT("Colors.ForegroundInverted")));
+			Combo->SetItemStyle(ItemStyle);
+		}
+	}
+
+	void AddWidgetWithPadding(UPanelWidget* Parent, UWidget* Child)
+	{
+		if (!Parent || !Child)
+		{
+			return;
+		}
+
+		Parent->AddChild(Child);
+		const FMargin Padding(DialogueEditorGeneratedPadding);
+
+		if (UVerticalBoxSlot* VerticalSlot = Cast<UVerticalBoxSlot>(Child->Slot))
+		{
+			VerticalSlot->SetPadding(Padding);
+		}
+		else if (UHorizontalBoxSlot* HorizontalSlot = Cast<UHorizontalBoxSlot>(Child->Slot))
+		{
+			HorizontalSlot->SetPadding(Padding);
+		}
+		else if (UButtonSlot* ButtonSlot = Cast<UButtonSlot>(Child->Slot))
+		{
+			ButtonSlot->SetPadding(Padding);
+		}
+	}
+}
 
 namespace
 {
@@ -62,6 +151,7 @@ void UTADialogueEditorWidget::NativeConstruct()
 	if (Button_Save)     Button_Save->OnClicked.AddDynamic(this, &UTADialogueEditorWidget::SaveStory);
 	if (Button_Validate) Button_Validate->OnClicked.AddDynamic(this, &UTADialogueEditorWidget::ValidateStory);
 	if (Button_Preview)  Button_Preview->OnClicked.AddDynamic(this, &UTADialogueEditorWidget::TogglePreview);
+	SetDialogueEditorFont(Text_Status);
 
 	RebuildSimulationPanel();
 	ScanTextures();
@@ -453,13 +543,14 @@ void UTADialogueEditorWidget::AddPortraitRows(UPanelWidget* Box, TArray<FTAPortr
 
 		// 标题 + 删除
 		UHorizontalBox* TitleRow = NewObject<UHorizontalBox>(this);
-		Box->AddChild(TitleRow);
+		AddWidgetWithPadding(Box, TitleRow);
 		UTextBlock* TitleText = NewObject<UTextBlock>(this);
 		TitleText->SetText(FText::FromString(FString::Printf(TEXT("角色 #%d（%s）"), i, *(*Portraits)[i].CharacterId)));
-		TitleRow->AddChildToHorizontalBox(TitleText);
+		SetDialogueEditorFont(TitleText, true);
+		AddWidgetWithPadding(TitleRow, TitleText);
 
 		UTADialogueRowButton* RemoveBtn = MakeButtonLocal(TEXT("✕ 删除"));
-		TitleRow->AddChildToHorizontalBox(RemoveBtn);
+		AddWidgetWithPadding(TitleRow, RemoveBtn);
 		RemoveBtn->OnClickedNative.AddLambda([this, Portraits, PIdx]()
 		{
 			if (Portraits->IsValidIndex(PIdx))
@@ -556,15 +647,17 @@ void UTADialogueEditorWidget::AddEventRows(UPanelWidget* Box, const FString& Tit
 		const int32 EIdx = i;
 
 		UHorizontalBox* Row = NewObject<UHorizontalBox>(this);
-		Box->AddChild(Row);
+		AddWidgetWithPadding(Box, Row);
 
 		UTextBlock* Label = NewObject<UTextBlock>(this);
 		Label->SetText(FText::FromString(TEXT("名字")));
-		Row->AddChildToHorizontalBox(Label);
+		SetDialogueEditorFont(Label);
+		AddWidgetWithPadding(Row, Label);
 
 		UTADialogueRowTextBox* NameBox = NewObject<UTADialogueRowTextBox>(this);
+		SetDialogueEditorFont(NameBox);
 		NameBox->SetText(FText::FromString((*Events)[i].Name));
-		Row->AddChildToHorizontalBox(NameBox);
+		AddWidgetWithPadding(Row, NameBox);
 		NameBox->OnTextChangedNative.AddLambda([this, Events, EIdx](const FText& T)
 		{
 			if (Events->IsValidIndex(EIdx)) (*Events)[EIdx].Name = T.ToString();
@@ -572,18 +665,20 @@ void UTADialogueEditorWidget::AddEventRows(UPanelWidget* Box, const FString& Tit
 
 		UTextBlock* ParamLabel = NewObject<UTextBlock>(this);
 		ParamLabel->SetText(FText::FromString(TEXT("参数(k=v;k2=v2)")));
-		Row->AddChildToHorizontalBox(ParamLabel);
+		SetDialogueEditorFont(ParamLabel);
+		AddWidgetWithPadding(Row, ParamLabel);
 
 		UTADialogueRowTextBox* ParamBox = NewObject<UTADialogueRowTextBox>(this);
+		SetDialogueEditorFont(ParamBox);
 		ParamBox->SetText(FText::FromString(ParamsToString((*Events)[i].Params)));
-		Row->AddChildToHorizontalBox(ParamBox);
+		AddWidgetWithPadding(Row, ParamBox);
 		ParamBox->OnTextChangedNative.AddLambda([this, Events, EIdx](const FText& T)
 		{
 			if (Events->IsValidIndex(EIdx)) ParseParamsString(T.ToString(), (*Events)[EIdx].Params);
 		});
 
 		UTADialogueRowButton* RemoveBtn = MakeButtonLocal(TEXT("✕"));
-		Row->AddChildToHorizontalBox(RemoveBtn);
+		AddWidgetWithPadding(Row, RemoveBtn);
 		RemoveBtn->OnClickedNative.AddLambda([this, Events, EIdx]()
 		{
 			if (Events->IsValidIndex(EIdx))
@@ -797,11 +892,13 @@ void UTADialogueEditorWidget::RebuildLocalizeSection()
 	{
 		UTextBlock* Label = NewObject<UTextBlock>(this);
 		Label->SetText(FText::FromString(Lang));
-		Box_Localize->AddChildToVerticalBox(Label);
+		SetDialogueEditorFont(Label, true);
+		AddWidgetWithPadding(Box_Localize, Label);
 
 		UTADialogueRowMultiLineBox* MB = NewObject<UTADialogueRowMultiLineBox>(this);
+		SetDialogueEditorFont(MB);
 		MB->SetText(FText::FromString(FTADialogueLocalizationHelper::GetText(Key, Lang, LanguageCache)));
-		Box_Localize->AddChildToVerticalBox(MB);
+		AddWidgetWithPadding(Box_Localize, MB);
 		MB->OnTextChangedNative.AddLambda([this, Key, Lang](const FText& T)
 		{
 			FTADialogueLocalizationHelper::SetText(Key, Lang, T.ToString(), LanguageCache);
@@ -827,18 +924,22 @@ void UTADialogueEditorWidget::RebuildSimulationPanel()
 	SimItemsInput = AddTextBoxRow(Box_Simulation, TEXT("持有物品(逗号分隔)"), TEXT(""));
 
 	UHorizontalBox* FlagRow = NewObject<UHorizontalBox>(this);
-	Box_Simulation->AddChildToVerticalBox(FlagRow);
+	AddWidgetWithPadding(Box_Simulation, FlagRow);
 	UTextBlock* FlagLabel = NewObject<UTextBlock>(this);
 	FlagLabel->SetText(FText::FromString(TEXT("旗标名")));
-	FlagRow->AddChildToHorizontalBox(FlagLabel);
+	SetDialogueEditorFont(FlagLabel);
+	AddWidgetWithPadding(FlagRow, FlagLabel);
 	SimFlagInput = NewObject<UTADialogueRowTextBox>(this);
-	FlagRow->AddChildToHorizontalBox(SimFlagInput);
+	SetDialogueEditorFont(SimFlagInput);
+	AddWidgetWithPadding(FlagRow, SimFlagInput);
 	UTextBlock* ValueLabel = NewObject<UTextBlock>(this);
 	ValueLabel->SetText(FText::FromString(TEXT("值")));
-	FlagRow->AddChildToHorizontalBox(ValueLabel);
+	SetDialogueEditorFont(ValueLabel);
+	AddWidgetWithPadding(FlagRow, ValueLabel);
 	SimFlagValueInput = NewObject<UTADialogueRowTextBox>(this);
+	SetDialogueEditorFont(SimFlagValueInput);
 	SimFlagValueInput->SetText(FText::FromString(TEXT("true")));
-	FlagRow->AddChildToHorizontalBox(SimFlagValueInput);
+	AddWidgetWithPadding(FlagRow, SimFlagValueInput);
 
 	UTADialogueRowButton* SetFlagBtn = AddButtonRow(Box_Simulation, TEXT("设置旗标"));
 	if (SetFlagBtn)
@@ -918,7 +1019,7 @@ void UTADialogueEditorWidget::StartPreview()
 		return;
 	}
 
-	if (!Sub->DialogueWidgetClass.IsValid())
+	if (Sub->DialogueWidgetClass.IsNull())
 	{
 		SetStatus(TEXT("未配置 DialogueWidgetClass（DefaultGame.ini [/Script/The_Awakening.TADialogueSubsystem]）"));
 		return;
@@ -945,7 +1046,7 @@ void UTADialogueEditorWidget::StartPreview()
 
 	PreviewWidget->Setup(Sub, PreviewController);
 	PreviewWidget->SetPreviewMode(true);
-	Box_PreviewHost->AddChildToVerticalBox(PreviewWidget);
+	AddWidgetWithPadding(Box_PreviewHost, PreviewWidget);
 
 	PreviewController->SetConditionOverrides(BuildPreviewOverrides());
 	PreviewController->Start();
@@ -1022,7 +1123,7 @@ void UTADialogueEditorWidget::CollectValidationErrors(TArray<FString>& OutErrors
 		{
 			return;
 		}
-		const FAssetData Asset = FAssetRegistryModule::GetRegistry().GetAssetByObjectPath(FName(*NormalizeObjectPath(Path)));
+		const FAssetData Asset = FAssetRegistryModule::GetRegistry().GetAssetByObjectPath(FSoftObjectPath(NormalizeObjectPath(Path)));
 		if (!Asset.IsValid())
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s：贴图不存在 %s"), *Where, *Path));
@@ -1152,34 +1253,43 @@ void UTADialogueEditorWidget::AddSectionTitle(UPanelWidget* Box, const FString& 
 {
 	UTextBlock* Text = NewObject<UTextBlock>(this);
 	Text->SetText(FText::FromString(FString::Printf(TEXT("—— %s ——"), *Title)));
-	Box->AddChild(Text);
+	SetDialogueEditorFont(Text, false, true);
+	UBorder* Header = NewObject<UBorder>(this);
+	Header->SetBrush(*FAppStyle::GetBrush(TEXT("DetailsView.CategoryTop")));
+	Header->SetPadding(FMargin(4.0f, 2.0f));
+	Header->SetContent(Text);
+	AddWidgetWithPadding(Box, Header);
 }
 
 UTADialogueRowButton* UTADialogueEditorWidget::MakeButtonLocal(const FString& Label)
 {
 	UTADialogueRowButton* B = NewObject<UTADialogueRowButton>(this);
+	B->SetStyle(FAppStyle::Get().GetWidgetStyle<FButtonStyle>(TEXT("NoBorder")));
 	UTextBlock* T = NewObject<UTextBlock>(this);
 	T->SetText(FText::FromString(Label));
-	B->AddChild(T);
+	SetDialogueEditorFont(T);
+	AddWidgetWithPadding(B, T);
 	return B;
 }
 
 UTADialogueRowTextBox* UTADialogueEditorWidget::AddTextBoxRow(UPanelWidget* Box, const FString& Label, const FString& Initial)
 {
 	UHorizontalBox* Row = NewObject<UHorizontalBox>(this);
-	Box->AddChild(Row);
+	AddWidgetWithPadding(Box, Row);
 
 	UTextBlock* L = NewObject<UTextBlock>(this);
 	L->SetText(FText::FromString(Label));
-	Row->AddChildToHorizontalBox(L);
+	SetDialogueEditorFont(L);
+	AddWidgetWithPadding(Row, L);
 	if (UHorizontalBoxSlot* LS = Cast<UHorizontalBoxSlot>(L->Slot))
 	{
 		LS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
 
 	UTADialogueRowTextBox* T = NewObject<UTADialogueRowTextBox>(this);
+	SetDialogueEditorFont(T);
 	T->SetText(FText::FromString(Initial));
-	Row->AddChildToHorizontalBox(T);
+	AddWidgetWithPadding(Row, T);
 	if (UHorizontalBoxSlot* TS = Cast<UHorizontalBoxSlot>(T->Slot))
 	{
 		TS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1191,17 +1301,19 @@ UTADialogueRowTextBox* UTADialogueEditorWidget::AddTextBoxRow(UPanelWidget* Box,
 UTADialogueRowCombo* UTADialogueEditorWidget::AddComboRow(UPanelWidget* Box, const FString& Label, const TArray<FString>& Options, const FString& Selected)
 {
 	UHorizontalBox* Row = NewObject<UHorizontalBox>(this);
-	Box->AddChild(Row);
+	AddWidgetWithPadding(Box, Row);
 
 	UTextBlock* L = NewObject<UTextBlock>(this);
 	L->SetText(FText::FromString(Label));
-	Row->AddChildToHorizontalBox(L);
+	SetDialogueEditorFont(L);
+	AddWidgetWithPadding(Row, L);
 	if (UHorizontalBoxSlot* LS = Cast<UHorizontalBoxSlot>(L->Slot))
 	{
 		LS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
 
 	UTADialogueRowCombo* C = NewObject<UTADialogueRowCombo>(this);
+	SetDialogueEditorFont(C);
 	for (const FString& Option : Options)
 	{
 		C->AddOption(Option);
@@ -1210,7 +1322,7 @@ UTADialogueRowCombo* UTADialogueEditorWidget::AddComboRow(UPanelWidget* Box, con
 	{
 		C->SetSelectedOption(Selected);
 	}
-	Row->AddChildToHorizontalBox(C);
+	AddWidgetWithPadding(Row, C);
 	if (UHorizontalBoxSlot* CS = Cast<UHorizontalBoxSlot>(C->Slot))
 	{
 		CS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1222,15 +1334,16 @@ UTADialogueRowCombo* UTADialogueEditorWidget::AddComboRow(UPanelWidget* Box, con
 UTADialogueRowCheckBox* UTADialogueEditorWidget::AddCheckRow(UPanelWidget* Box, const FString& Label, bool bInitial)
 {
 	UHorizontalBox* Row = NewObject<UHorizontalBox>(this);
-	Box->AddChild(Row);
+	AddWidgetWithPadding(Box, Row);
 
 	UTextBlock* L = NewObject<UTextBlock>(this);
 	L->SetText(FText::FromString(Label));
-	Row->AddChildToHorizontalBox(L);
+	SetDialogueEditorFont(L);
+	AddWidgetWithPadding(Row, L);
 
 	UTADialogueRowCheckBox* C = NewObject<UTADialogueRowCheckBox>(this);
 	C->SetIsChecked(bInitial);
-	Row->AddChildToHorizontalBox(C);
+	AddWidgetWithPadding(Row, C);
 
 	return C;
 }
@@ -1238,39 +1351,42 @@ UTADialogueRowCheckBox* UTADialogueEditorWidget::AddCheckRow(UPanelWidget* Box, 
 UTADialogueRowButton* UTADialogueEditorWidget::AddButtonRow(UPanelWidget* Box, const FString& Label)
 {
 	UTADialogueRowButton* B = MakeButtonLocal(Label);
-	Box->AddChild(B);
+	AddWidgetWithPadding(Box, B);
 	return B;
 }
 
 UTADialogueRowTextBox* UTADialogueEditorWidget::AddImagePathRow(UPanelWidget* Box, const FString& Label, const FString& Initial)
 {
 	UHorizontalBox* Row = NewObject<UHorizontalBox>(this);
-	Box->AddChild(Row);
+	AddWidgetWithPadding(Box, Row);
 
 	UTextBlock* L = NewObject<UTextBlock>(this);
 	L->SetText(FText::FromString(Label));
-	Row->AddChildToHorizontalBox(L);
+	SetDialogueEditorFont(L);
+	AddWidgetWithPadding(Row, L);
 	if (UHorizontalBoxSlot* LS = Cast<UHorizontalBoxSlot>(L->Slot))
 	{
 		LS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
 
 	UTADialogueRowTextBox* T = NewObject<UTADialogueRowTextBox>(this);
+	SetDialogueEditorFont(T);
 	T->SetText(FText::FromString(Initial));
-	Row->AddChildToHorizontalBox(T);
+	AddWidgetWithPadding(Row, T);
 	if (UHorizontalBoxSlot* TS = Cast<UHorizontalBoxSlot>(T->Slot))
 	{
 		TS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 
 	UTADialogueRowCombo* C = NewObject<UTADialogueRowCombo>(this);
+	SetDialogueEditorFont(C);
 	C->AddOption(TEXT("（选择贴图…）"));
 	for (const FString& Path : ScannedTexturePaths)
 	{
 		C->AddOption(Path);
 	}
 	C->SetSelectedOption(TEXT("（选择贴图…）"));
-	Row->AddChildToHorizontalBox(C);
+	AddWidgetWithPadding(Row, C);
 	if (UHorizontalBoxSlot* CS = Cast<UHorizontalBoxSlot>(C->Slot))
 	{
 		CS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));

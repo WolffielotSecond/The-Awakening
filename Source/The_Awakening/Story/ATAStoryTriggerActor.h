@@ -21,6 +21,10 @@ public:
 	virtual void OnInteract_Implementation(AActor* Interactor) override;
 	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
 
+	/** 提供给交互扫描的碰撞体；默认半径与附近交互提示检测距离匹配。 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<class USphereComponent> TriggerCollision;
+
 	/** 剧情 ID（不带 .json 扩展名） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Story")
 	FString StoryId;

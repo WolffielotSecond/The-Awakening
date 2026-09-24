@@ -16,11 +16,47 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Components/PanelWidget.h"
 #include "Components/VerticalBox.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+
+namespace
+{
+	template <typename WidgetType>
+	WidgetType* FindDialogueWidget(UUserWidget* Owner, const TCHAR* WidgetName)
+	{
+		if (!Owner)
+		{
+			return nullptr;
+		}
+
+		if (WidgetType* Found = Cast<WidgetType>(Owner->GetWidgetFromName(WidgetName)))
+		{
+			return Found;
+		}
+
+		WidgetType* RecursiveResult = nullptr;
+		if (Owner->WidgetTree)
+		{
+			const FName TargetName(WidgetName);
+			Owner->WidgetTree->ForEachWidgetAndDescendants([&](UWidget* Widget)
+			{
+				if (!RecursiveResult && Widget && Widget->GetFName() == TargetName)
+				{
+					RecursiveResult = Cast<WidgetType>(Widget);
+				}
+			});
+		}
+		return RecursiveResult;
+	}
+}
 
 void UTADialogueWidget::Setup(UTADialogueSubsystem* InSubsystem, UTADialogueController* InController)
 {
@@ -28,9 +64,68 @@ void UTADialogueWidget::Setup(UTADialogueSubsystem* InSubsystem, UTADialogueCont
 	Controller = InController;
 }
 
+void UTADialogueWidget::EnsureBindings()
+{
+	if (!Text_Name) Text_Name = FindDialogueWidget<UTextBlock>(this, TEXT("Text_Name"));
+	if (!Text_Dialogue) Text_Dialogue = FindDialogueWidget<UTextBlock>(this, TEXT("Text_Dialogue"));
+	if (!Button_Continue) Button_Continue = FindDialogueWidget<UButton>(this, TEXT("Button_Continue"));
+	if (!Button_History) Button_History = FindDialogueWidget<UButton>(this, TEXT("Button_History"));
+	if (!Box_Choices) Box_Choices = FindDialogueWidget<UVerticalBox>(this, TEXT("Box_Choices"));
+	if (!Panel_Choices) Panel_Choices = FindDialogueWidget<UPanelWidget>(this, TEXT("Panel_Choices"));
+	if (!Widget_History) Widget_History = FindDialogueWidget<UTADialogueHistoryWidget>(this, TEXT("Widget_History"));
+	if (!Image_ContinueIcon) Image_ContinueIcon = FindDialogueWidget<UImage>(this, TEXT("Image_ContinueIcon"));
+	if (!Image_HistoryIcon) Image_HistoryIcon = FindDialogueWidget<UImage>(this, TEXT("Image_HistoryIcon"));
+	EnsurePortraitLayer();
+}
+
+bool UTADialogueWidget::EnsurePortraitLayer()
+{
+	if (RuntimePortraitCanvas)
+	{
+		return true;
+	}
+	if (!WidgetTree || !WidgetTree->RootWidget)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] WBP_Dialogue 没有可用的根控件，无法创建立绘层"));
+		return false;
+	}
+
+	UWidget* RootWidget = WidgetTree->RootWidget;
+	RuntimePortraitCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RuntimePortraitCanvas"));
+	if (!RuntimePortraitCanvas)
+	{
+		return false;
+	}
+
+	if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(RootWidget))
+	{
+		if (UCanvasPanelSlot* CanvasChildSlot = RootCanvas->AddChildToCanvas(RuntimePortraitCanvas))
+		{
+			CanvasChildSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			CanvasChildSlot->SetOffsets(FMargin(0.f));
+			CanvasChildSlot->SetZOrder(100);
+			return true;
+		}
+	}
+	else if (UOverlay* RootOverlay = Cast<UOverlay>(RootWidget))
+	{
+		if (UOverlaySlot* OverlayChildSlot = RootOverlay->AddChildToOverlay(RuntimePortraitCanvas))
+		{
+			OverlayChildSlot->SetHorizontalAlignment(HAlign_Fill);
+			OverlayChildSlot->SetVerticalAlignment(VAlign_Fill);
+			return true;
+		}
+	}
+
+	RuntimePortraitCanvas = nullptr;
+	UE_LOG(LogTemp, Error, TEXT("[Dialogue] WBP_Dialogue 根控件必须是 Canvas Panel 或 Overlay，才能创建全屏立绘层（当前：%s）"), *GetNameSafe(RootWidget));
+	return false;
+}
+
 void UTADialogueWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	EnsureBindings();
 
 	// 子系统（本地化 / 输入图标）
 	if (UGameInstance* GI = GetGameInstance())
@@ -334,7 +429,7 @@ void UTADialogueWidget::RefreshChoices()
 		return;
 	}
 
-	if (!Subsystem->ChoiceButtonWidgetClass.IsValid())
+	if (Subsystem->ChoiceButtonWidgetClass.IsNull())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 未配置 ChoiceButtonWidgetClass"));
 		return;
@@ -364,8 +459,12 @@ void UTADialogueWidget::RefreshPortraits()
 	{
 		return;
 	}
+	if (!EnsurePortraitLayer())
+	{
+		return;
+	}
 
-	if (!Subsystem->PortraitWidgetClass.IsValid())
+	if (Subsystem->PortraitWidgetClass.IsNull())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 未配置 PortraitWidgetClass"));
 		return;
@@ -405,7 +504,7 @@ void UTADialogueWidget::RefreshPortraits()
 			{
 				continue;
 			}
-			Canvas_Portraits->AddChildToCanvas(NewPortrait);
+			RuntimePortraitCanvas->AddChildToCanvas(NewPortrait);
 			PortraitWidgets.Add(NewPortrait);
 			Existing = &PortraitWidgets.Last();
 		}

@@ -16,6 +16,7 @@ class UTAParkourComponent;
 class UTAInventoryComponent;
 class UTAPromptComponent;
 class UTAInventoryPanelWidget;
+class UTADialogueWidget;
 class UPaperFlipbookComponent;
 class UPaperZDAnimationComponent;
 struct FInputActionValue;
@@ -166,6 +167,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UTAInventoryPanelWidget> InventoryPanelClass;
 
+	/** Runtime dialogue widget, configured on the player character Blueprint like InventoryPanelClass. */
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UTADialogueWidget> DialogueWidgetClass;
+
 	UPROPERTY()
 	TObjectPtr<UTAInventoryPanelWidget> InventoryPanelInstance;
 
@@ -235,4 +240,5 @@ public:
 public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	FORCEINLINE TSubclassOf<UTADialogueWidget> GetDialogueWidgetClass() const { return DialogueWidgetClass; }
 };
