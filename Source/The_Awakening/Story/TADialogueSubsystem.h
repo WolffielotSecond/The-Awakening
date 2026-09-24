@@ -10,6 +10,7 @@
 
 class UTADialogueController;
 class UTADialogueWidget;
+class UTADialoguePortraitLayerWidget;
 class UTAPortraitWidget;
 class UTADialogueChoiceButton;
 
@@ -156,6 +157,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTADialogueWidget> ActiveWidget;
+
+	UPROPERTY()
+	TObjectPtr<UTADialoguePortraitLayerWidget> ActivePortraitLayer;
 
 	TArray<TSharedPtr<ITADialogueConditionEvaluator>> ConditionEvaluators;
 	TMap<FName, TFunction<void(const FTAStoryEventPayload&)>> ReservedHandlers;

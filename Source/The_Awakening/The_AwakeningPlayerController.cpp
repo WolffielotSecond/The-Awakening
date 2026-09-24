@@ -10,6 +10,7 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Core/TAInputIconSubsystem.h"
+#include "InputKeyEventArgs.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
@@ -153,4 +154,13 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 			}
 		}
 	}
+}
+
+bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	if (Params.Key.IsValid())
+	{
+		NotifyRawInputKey(Params.Key);
+	}
+	return Super::InputKey(Params);
 }

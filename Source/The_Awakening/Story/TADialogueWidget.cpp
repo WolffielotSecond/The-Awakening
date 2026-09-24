@@ -2,9 +2,11 @@
 #include "Story/TADialogueWidget.h"
 #include "Story/TADialogueController.h"
 #include "Story/TADialogueSubsystem.h"
+#include "Story/TADialoguePortraitLayerWidget.h"
 #include "Story/TAPortraitWidget.h"
 #include "Story/TADialogueChoiceButton.h"
 #include "Story/TADialogueHistoryWidget.h"
+#include "The_AwakeningCharacter.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "The_AwakeningPlayerController.h"
@@ -15,8 +17,6 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/VerticalBox.h"
 #include "Blueprint/WidgetTree.h"
@@ -56,10 +56,11 @@ namespace
 	}
 }
 
-void UTADialogueWidget::Setup(UTADialogueSubsystem* InSubsystem, UTADialogueController* InController)
+void UTADialogueWidget::Setup(UTADialogueSubsystem* InSubsystem, UTADialogueController* InController, UTADialoguePortraitLayerWidget* InPortraitLayer)
 {
 	Subsystem = InSubsystem;
 	Controller = InController;
+	PortraitLayer = InPortraitLayer;
 }
 
 void UTADialogueWidget::EnsureBindings()
@@ -68,57 +69,42 @@ void UTADialogueWidget::EnsureBindings()
 	if (!Text_Dialogue) Text_Dialogue = FindDialogueWidget<UTextBlock>(this, TEXT("Text_Dialogue"));
 	if (!Button_Continue) Button_Continue = FindDialogueWidget<UButton>(this, TEXT("Button_Continue"));
 	if (!Button_History) Button_History = FindDialogueWidget<UButton>(this, TEXT("Button_History"));
-	if (!Root) Root = FindDialogueWidget<UCanvasPanel>(this, TEXT("Root"));
 	if (!Box_Choices) Box_Choices = FindDialogueWidget<UVerticalBox>(this, TEXT("Box_Choices"));
 	if (!Panel_Choices) Panel_Choices = FindDialogueWidget<UPanelWidget>(this, TEXT("Panel_Choices"));
-	if (!Widget_History) Widget_History = FindDialogueWidget<UTADialogueHistoryWidget>(this, TEXT("Widget_History"));
+	if (!LegacyEmbeddedHistoryWidget) LegacyEmbeddedHistoryWidget = FindDialogueWidget<UWidget>(this, TEXT("Widget_History"));
+	if (!LegacyEmbeddedHistoryWidget) LegacyEmbeddedHistoryWidget = FindDialogueWidget<UWidget>(this, TEXT("WBP_DialogueHistory"));
 	if (!Image_ContinueIcon) Image_ContinueIcon = FindDialogueWidget<UImage>(this, TEXT("Image_ContinueIcon"));
 	if (!Image_HistoryIcon) Image_HistoryIcon = FindDialogueWidget<UImage>(this, TEXT("Image_HistoryIcon"));
-	EnsurePortraitLayer();
-}
+	if (!Text_ContinueText) Text_ContinueText = FindDialogueWidget<UTextBlock>(this, TEXT("Text_ContinueText"));
+	if (!Text_HistoryText) Text_HistoryText = FindDialogueWidget<UTextBlock>(this, TEXT("Text_HistoryText"));
 
-bool UTADialogueWidget::EnsurePortraitLayer()
-{
-	if (RuntimePortraitCanvas)
+	bHistoryOpen = false;
+	if (LegacyEmbeddedHistoryWidget)
 	{
-		return true;
+		LegacyEmbeddedHistoryWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	UCanvasPanel* RootCanvas = Root;
-	if (!RootCanvas)
-	{
-		RootCanvas = Cast<UCanvasPanel>(GetRootWidget());
-	}
-	if (!RootCanvas)
-	{
-		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 无法绑定 WBP_Dialogue 根 Canvas Panel（层级显示 Canvas Panel_Root，控件名应为 Root）"));
-		return false;
-	}
-
-	RuntimePortraitCanvas = WidgetTree
-		? WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RuntimePortraitCanvas"))
-		: NewObject<UCanvasPanel>(this, TEXT("RuntimePortraitCanvas"));
-	if (!RuntimePortraitCanvas)
-	{
-		return false;
-	}
-
-	if (UCanvasPanelSlot* CanvasChildSlot = RootCanvas->AddChildToCanvas(RuntimePortraitCanvas))
-	{
-		CanvasChildSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-		CanvasChildSlot->SetOffsets(FMargin(0.f));
-		CanvasChildSlot->SetZOrder(100);
-		return true;
-	}
-
-	RuntimePortraitCanvas = nullptr;
-	UE_LOG(LogTemp, Error, TEXT("[Dialogue] 无法将运行时立绘层添加到根控件 Root"));
-	return false;
 }
 
 void UTADialogueWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	EnsureBindings();
+
+	// 对话期间显示光标并允许点击 WBP 控件；编辑器预览不接管宿主输入。
+	if (!bPreviewMode)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			bPreviousShowMouseCursor = PC->bShowMouseCursor;
+			PC->SetShowMouseCursor(true);
+			FInputModeGameAndUI InputMode;
+			InputMode.SetWidgetToFocus(TakeWidget());
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			InputMode.SetHideCursorDuringCapture(false);
+			PC->SetInputMode(InputMode);
+			bChangedPlayerInputMode = true;
+		}
+	}
 
 	// 子系统（本地化 / 输入图标）
 	if (UGameInstance* GI = GetGameInstance())
@@ -161,18 +147,41 @@ void UTADialogueWidget::NativeConstruct()
 	// 输入
 	BindInputActions();
 	PushDialogueMappingContext();
+	if (InputIconSubsystem)
+	{
+		if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+		{
+			InputIconSubsystem->RefreshCurrentDeviceForUser(LocalPlayer->GetPlatformUserId());
+		}
+	}
 
 	// 初始状态
 	RefreshLine();
 	RefreshChoices();
 	RefreshPortraits();
 	RefreshIcons();
+	bRefreshIconsOnNextTick = true;
+	RefreshPromptLabels();
 }
 
 void UTADialogueWidget::NativeDestruct()
 {
 	PopDialogueMappingContext();
 	UnbindInputActions();
+	if (ActiveHistoryWidget)
+	{
+		ActiveHistoryWidget->RemoveFromParent();
+		ActiveHistoryWidget = nullptr;
+	}
+	if (bChangedPlayerInputMode)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			PC->SetShowMouseCursor(bPreviousShowMouseCursor);
+			PC->SetInputMode(FInputModeGameOnly());
+		}
+		bChangedPlayerInputMode = false;
+	}
 
 	if (LocalizeSubsystem)
 	{
@@ -200,6 +209,11 @@ void UTADialogueWidget::NativeDestruct()
 void UTADialogueWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (bRefreshIconsOnNextTick)
+	{
+		bRefreshIconsOnNextTick = false;
+		RefreshIcons();
+	}
 
 	if (Controller)
 	{
@@ -328,7 +342,7 @@ void UTADialogueWidget::PopDialogueMappingContext()
 
 void UTADialogueWidget::OnAdvancePressed()
 {
-	if (Controller)
+	if (Controller && !bHistoryOpen)
 	{
 		Controller->Advance();
 	}
@@ -336,18 +350,64 @@ void UTADialogueWidget::OnAdvancePressed()
 
 void UTADialogueWidget::ToggleHistory()
 {
-	if (!Widget_History)
+	if (ActiveHistoryWidget && ActiveHistoryWidget->IsInViewport())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] WBP_Dialogue 缺少 Widget_History（WBP_DialogueHistory 实例）"));
+		CloseHistoryOverlay();
 		return;
 	}
 
-	bHistoryOpen = !bHistoryOpen;
-	Widget_History->SetVisibility(bHistoryOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-
-	if (bHistoryOpen)
+	APlayerController* PC = GetOwningPlayer();
+	AThe_AwakeningCharacter* PlayerCharacter = PC ? Cast<AThe_AwakeningCharacter>(PC->GetPawn()) : nullptr;
+	UClass* HistoryClass = PlayerCharacter ? PlayerCharacter->GetDialogueHistoryWidgetClass().Get() : nullptr;
+	if (!HistoryClass)
 	{
-		RefreshHistory();
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 未配置 DialogueHistoryWidgetClass：请在玩家角色蓝图的 Details > UI 中指定独立的 WBP_DialogueHistory"));
+		return;
+	}
+
+	ActiveHistoryWidget = CreateWidget<UTADialogueHistoryWidget>(PC, HistoryClass);
+	if (!ActiveHistoryWidget)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 创建独立历史 UI 失败"));
+		return;
+	}
+
+	bHistoryOpen = true;
+	ActiveHistoryWidget->SetupClosePrompt(HistoryAction);
+	ActiveHistoryWidget->OnCloseRequested.AddDynamic(this, &UTADialogueWidget::CloseHistoryOverlay);
+	ActiveHistoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	ActiveHistoryWidget->SetHistory(Controller ? Controller->GetHistory() : TArray<FTAStoryHistoryEntry>());
+	ActiveHistoryWidget->AddToViewport(200);
+	if (Button_Continue)
+	{
+		ContinueButtonVisibilityBeforeHistory = Button_Continue->GetVisibility();
+		bContinueButtonWasEnabledBeforeHistory = Button_Continue->GetIsEnabled();
+		Button_Continue->SetIsEnabled(false);
+		Button_Continue->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Button_History)
+	{
+		HistoryButtonVisibilityBeforeHistory = Button_History->GetVisibility();
+		Button_History->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UTADialogueWidget::CloseHistoryOverlay()
+{
+	if (ActiveHistoryWidget)
+	{
+		ActiveHistoryWidget->RemoveFromParent();
+		ActiveHistoryWidget = nullptr;
+	}
+	bHistoryOpen = false;
+	if (Button_Continue)
+	{
+		Button_Continue->SetIsEnabled(bContinueButtonWasEnabledBeforeHistory);
+		Button_Continue->SetVisibility(ContinueButtonVisibilityBeforeHistory);
+	}
+	if (Button_History)
+	{
+		Button_History->SetVisibility(HistoryButtonVisibilityBeforeHistory);
 	}
 }
 
@@ -452,8 +512,9 @@ void UTADialogueWidget::RefreshPortraits()
 	{
 		return;
 	}
-	if (!EnsurePortraitLayer())
+	if (!PortraitLayer)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 未配置 DialoguePortraitLayerClass，无法显示立绘层"));
 		return;
 	}
 
@@ -492,12 +553,16 @@ void UTADialogueWidget::RefreshPortraits()
 
 		if (!Existing)
 		{
-			UTAPortraitWidget* NewPortrait = CreateWidget<UTAPortraitWidget>(this, Subsystem->PortraitWidgetClass.LoadSynchronous());
+			UTAPortraitWidget* NewPortrait = CreateWidget<UTAPortraitWidget>(PortraitLayer, Subsystem->PortraitWidgetClass.LoadSynchronous());
 			if (!NewPortrait)
 			{
 				continue;
 			}
-			RuntimePortraitCanvas->AddChildToCanvas(NewPortrait);
+			if (!PortraitLayer->AddPortraitWidget(NewPortrait))
+			{
+				NewPortrait->RemoveFromParent();
+				continue;
+			}
 			PortraitWidgets.Add(NewPortrait);
 			Existing = &PortraitWidgets.Last();
 		}
@@ -529,9 +594,9 @@ void UTADialogueWidget::UpdateTalkingFlags()
 
 void UTADialogueWidget::RefreshHistory()
 {
-	if (Widget_History && bHistoryOpen && Controller)
+	if (ActiveHistoryWidget && bHistoryOpen && Controller)
 	{
-		Widget_History->SetHistory(Controller->GetHistory());
+		ActiveHistoryWidget->SetHistory(Controller->GetHistory());
 	}
 }
 
@@ -549,6 +614,23 @@ void UTADialogueWidget::RefreshIcons()
 	if (Image_HistoryIcon)
 	{
 		Image_HistoryIcon->SetBrushFromTexture(HistoryAction ? InputIconSubsystem->GetIconForAction(HistoryAction) : nullptr);
+	}
+}
+
+void UTADialogueWidget::RefreshPromptLabels()
+{
+	if (!LocalizeSubsystem)
+	{
+		return;
+	}
+
+	if (Text_ContinueText)
+	{
+		Text_ContinueText->SetText(LocalizeSubsystem->GetText(TEXT("UI_Dialogue_Continue")));
+	}
+	if (Text_HistoryText)
+	{
+		Text_HistoryText->SetText(LocalizeSubsystem->GetText(TEXT("UI_Dialogue_History")));
 	}
 }
 
@@ -596,6 +678,7 @@ void UTADialogueWidget::HandleLanguageChanged()
 	RefreshLine();
 	RefreshChoices();
 	RefreshHistory();
+	RefreshPromptLabels();
 }
 
 void UTADialogueWidget::HandleInputDeviceChanged()

@@ -5,6 +5,7 @@
 #include "InputMappingContext.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/InputDeviceSubsystem.h"
 
 void UTAInputIconSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -304,4 +305,31 @@ UTexture2D* UTAInputIconSubsystem::GetIconForAction(UInputAction* Action) const
 	}
 
 	return GetIconForKey(MappedKeys[0]);
+}
+
+void UTAInputIconSubsystem::RefreshCurrentDeviceForUser(FPlatformUserId UserId)
+{
+	UInputDeviceSubsystem* DeviceSubsystem = UInputDeviceSubsystem::Get();
+	if (!DeviceSubsystem || !UserId.IsValid())
+	{
+		return;
+	}
+
+	const FHardwareDeviceIdentifier Hardware = DeviceSubsystem->GetMostRecentlyUsedHardwareDevice(UserId);
+	if (!Hardware.IsValid())
+	{
+		return;
+	}
+
+	switch (Hardware.PrimaryDeviceType)
+	{
+	case EHardwareDevicePrimaryType::Gamepad:
+		SetCurrentDeviceType(EInputDeviceType::Xbox);
+		break;
+	case EHardwareDevicePrimaryType::KeyboardAndMouse:
+		SetCurrentDeviceType(EInputDeviceType::KeyboardMouse);
+		break;
+	default:
+		break;
+	}
 }

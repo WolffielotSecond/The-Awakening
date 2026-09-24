@@ -2,6 +2,7 @@
 #include "Story/TADialogueSubsystem.h"
 #include "Story/TADialogueController.h"
 #include "Story/TADialogueWidget.h"
+#include "Story/TADialoguePortraitLayerWidget.h"
 #include "The_AwakeningCharacter.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -707,21 +708,34 @@ bool UTADialogueSubsystem::StartDialogue(const FString& StoryId, UObject* Initia
 		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 未配置 DialogueWidgetClass：请在玩家角色蓝图的 Details > UI 中指定对话窗口 Widget Class"));
 		return false;
 	}
+	UClass* RuntimePortraitLayerClass = PlayerCharacter ? PlayerCharacter->GetDialoguePortraitLayerClass().Get() : nullptr;
+	if (!RuntimePortraitLayerClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 未配置 DialoguePortraitLayerClass：请在玩家角色蓝图的 Details > UI 中指定 WBP_DialoguePortraitLayer"));
+		return false;
+	}
 
 	UTADialogueController* Controller = NewObject<UTADialogueController>(this);
-	ActiveController = Controller;
 	Controller->Initialize(this, *Story, Initiator);
 
 	UTADialogueWidget* Widget = CreateWidget<UTADialogueWidget>(PC, RuntimeDialogueWidgetClass);
 	if (!Widget)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 创建对话 UI 失败"));
-		ActiveController = nullptr;
+		return false;
+	}
+	UTADialoguePortraitLayerWidget* PortraitLayer = CreateWidget<UTADialoguePortraitLayerWidget>(PC, RuntimePortraitLayerClass);
+	if (!PortraitLayer)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 创建立绘层 UI 失败"));
 		return false;
 	}
 
+	ActiveController = Controller;
 	ActiveWidget = Widget;
-	Widget->Setup(this, Controller);
+	ActivePortraitLayer = PortraitLayer;
+	Widget->Setup(this, Controller, PortraitLayer);
+	PortraitLayer->AddToViewport(90);
 	Widget->AddToViewport(100);
 
 	Controller->Start();
@@ -740,6 +754,11 @@ void UTADialogueSubsystem::StopDialogue()
 	{
 		ActiveWidget->CloseDialogue();
 		ActiveWidget = nullptr;
+	}
+	if (ActivePortraitLayer)
+	{
+		ActivePortraitLayer->RemoveFromParent();
+		ActivePortraitLayer = nullptr;
 	}
 
 	ActiveController->Shutdown();

@@ -17,6 +17,8 @@ class UTAInventoryComponent;
 class UTAPromptComponent;
 class UTAInventoryPanelWidget;
 class UTADialogueWidget;
+class UTADialoguePortraitLayerWidget;
+class UTADialogueHistoryWidget;
 class UPaperFlipbookComponent;
 class UPaperZDAnimationComponent;
 struct FInputActionValue;
@@ -171,6 +173,14 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UTADialogueWidget> DialogueWidgetClass;
 
+	/** Separate portrait-layer WBP, displayed behind DialogueWidgetClass. */
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UTADialoguePortraitLayerWidget> DialoguePortraitLayerClass;
+
+	/** Standalone dialogue history WBP, displayed above the dialogue UI. */
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UTADialogueHistoryWidget> DialogueHistoryWidgetClass;
+
 	UPROPERTY()
 	TObjectPtr<UTAInventoryPanelWidget> InventoryPanelInstance;
 
@@ -241,4 +251,6 @@ public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	FORCEINLINE TSubclassOf<UTADialogueWidget> GetDialogueWidgetClass() const { return DialogueWidgetClass; }
+	FORCEINLINE TSubclassOf<UTADialoguePortraitLayerWidget> GetDialoguePortraitLayerClass() const { return DialoguePortraitLayerClass; }
+	FORCEINLINE TSubclassOf<UTADialogueHistoryWidget> GetDialogueHistoryWidgetClass() const { return DialogueHistoryWidgetClass; }
 };

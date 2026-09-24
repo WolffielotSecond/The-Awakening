@@ -256,6 +256,12 @@ void UTADialogueController::EnterNode(int32 NodeIndex)
 	CurrentNodeIndex = NodeIndex;
 	const FTAStoryNode& Node = Story->Nodes[NodeIndex];
 
+	// Leave no stale choice buttons visible after selecting an option and entering a non-choice node.
+	if (Node.Type != TEXT("choice"))
+	{
+		OnChoicesChanged.Broadcast();
+	}
+
 	// 进入事件
 	RunEvents(Node.EventsOnEnter);
 

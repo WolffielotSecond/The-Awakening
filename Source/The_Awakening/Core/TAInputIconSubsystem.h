@@ -47,6 +47,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
 	void NotifyInputKey(const FKey& Key);
 
+	/** 从引擎记录的最近输入硬件同步当前设备类型 */
+	void RefreshCurrentDeviceForUser(FPlatformUserId UserId);
+
 
 	UPROPERTY(BlueprintAssignable, Category = "InputIcon")
 	FOnInputDeviceChanged OnInputDeviceChanged;

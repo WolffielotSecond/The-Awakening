@@ -9,6 +9,7 @@
 
 class UTADialogueController;
 class UTADialogueSubsystem;
+class UTADialoguePortraitLayerWidget;
 class UTAPortraitWidget;
 class UTADialogueChoiceButton;
 class UTADialogueHistoryWidget;
@@ -17,6 +18,7 @@ class UTAInputIconSubsystem;
 class UTextBlock;
 class UButton;
 class UImage;
+class UWidget;
 class UCanvasPanel;
 class UVerticalBox;
 class UPanelWidget;
@@ -31,10 +33,10 @@ class UInputMappingContext;
  *   Button_Continue    UButton      继续按钮
  *   Button_History     UButton      历史按钮
  *   Box_Choices        UVerticalBox 选项列表容器
- * 立绘层由 C++ 在根 Canvas Panel 下自动创建。
+ * 立绘由独立 WBP_DialoguePortraitLayer 承载，显示在主对话 UI 后方。
  * 可选：
  *   Panel_Choices      UPanelWidget 分支面板整体（显隐用；缺省时用 Box_Choices 自己）
- *   Widget_History     UTADialogueHistoryWidget（WBP_DialogueHistory 实例，历史面板）
+ *   独立历史面板 WBP_DialogueHistory 由玩家角色蓝图配置并在顶层创建。
  *   Image_ContinueIcon UImage       继续键图标（热切换显示）
  *   Image_HistoryIcon  UImage       历史键图标（热切换显示）
  */
@@ -48,8 +50,8 @@ public:
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
-	/** 由子系统调用：绑定子系统与控制器 */
-	void Setup(UTADialogueSubsystem* InSubsystem, UTADialogueController* InController);
+	/** 由子系统调用：绑定会话和独立立绘层 */
+	void Setup(UTADialogueSubsystem* InSubsystem, UTADialogueController* InController, UTADialoguePortraitLayerWidget* InPortraitLayer = nullptr);
 
 	/** 关闭并移除 UI（子系统 StopDialogue 调用） */
 	void CloseDialogue();
@@ -68,12 +70,12 @@ public:
 protected:
 	// ==================== 渲染刷新 ====================
 	void EnsureBindings();
-	bool EnsurePortraitLayer();
 	void RefreshLine();
 	void RefreshChoices();
 	void RefreshPortraits();
 	void RefreshHistory();
 	void RefreshIcons();
+	void RefreshPromptLabels();
 	void UpdateTalkingFlags();
 
 	UFUNCTION()
@@ -95,6 +97,9 @@ protected:
 
 	UFUNCTION()
 	void OnChoiceClicked(int32 Index);
+
+	UFUNCTION()
+	void CloseHistoryOverlay();
 
 	// ==================== 输入管理 ====================
 	void BindInputActions();
@@ -131,10 +136,6 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_History;
 
-	/** 根层级显示为 Canvas Panel_Root：控件类型是 Canvas Panel，实际名称是 Root。 */
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UCanvasPanel> Root;
-
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> Box_Choices;
 
@@ -142,7 +143,7 @@ protected:
 	TObjectPtr<UPanelWidget> Panel_Choices;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTADialogueHistoryWidget> Widget_History;
+	TObjectPtr<UWidget> LegacyEmbeddedHistoryWidget;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_ContinueIcon;
@@ -150,14 +151,23 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_HistoryIcon;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_ContinueText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_HistoryText;
+
 	// ==================== 动态创建 ====================
 
 	UPROPERTY()
 	TArray<TObjectPtr<UTAPortraitWidget>> PortraitWidgets;
 
-	/** Runtime-created full-screen coordinate layer; avoids a fragile Blueprint BindWidget dependency. */
+	/** Separate WBP rendered beneath this dialogue widget. */
 	UPROPERTY(Transient)
-	TObjectPtr<UCanvasPanel> RuntimePortraitCanvas;
+	TObjectPtr<UTADialoguePortraitLayerWidget> PortraitLayer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTADialogueHistoryWidget> ActiveHistoryWidget;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UTADialogueChoiceButton>> ChoiceWidgets;
@@ -176,6 +186,12 @@ protected:
 
 	/** 输入绑定句柄（解绑用） */
 	TArray<uint32> InputBindingHandles;
+	bool bChangedPlayerInputMode = false;
+	bool bPreviousShowMouseCursor = false;
+	bool bRefreshIconsOnNextTick = false;
+	ESlateVisibility ContinueButtonVisibilityBeforeHistory = ESlateVisibility::Visible;
+	ESlateVisibility HistoryButtonVisibilityBeforeHistory = ESlateVisibility::Visible;
+	bool bContinueButtonWasEnabledBeforeHistory = true;
 
 	bool bHistoryOpen = false;
 	bool bPreviewMode = false;

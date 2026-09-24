@@ -10,6 +10,7 @@
 class UInputMappingContext;
 class UUserWidget;
 class UTAScanningComponent;
+struct FInputKeyEventArgs;
 /**
  * 输入设备检测器
  */
@@ -39,6 +40,7 @@ class AThe_AwakeningPlayerController : public APlayerController
 public:
 	AThe_AwakeningPlayerController();
 	void NotifyRawInputKey(const FKey& Key);
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	/** 进入/退出对话输入模式（移除/恢复默认移动等映射，供剧情系统调用） */
 	void SetDialogueModeActive(bool bActive);
