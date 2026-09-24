@@ -18,7 +18,6 @@ class UTextBlock;
 class UButton;
 class UImage;
 class UCanvasPanel;
-class UOverlay;
 class UVerticalBox;
 class UPanelWidget;
 class UInputAction;
@@ -32,7 +31,7 @@ class UInputMappingContext;
  *   Button_Continue    UButton      继续按钮
  *   Button_History     UButton      历史按钮
  *   Box_Choices        UVerticalBox 选项列表容器
- * 立绘层由 C++ 在根 Canvas Panel 或 Overlay 下自动创建。
+ * 立绘层由 C++ 在根 Canvas Panel 下自动创建。
  * 可选：
  *   Panel_Choices      UPanelWidget 分支面板整体（显隐用；缺省时用 Box_Choices 自己）
  *   Widget_History     UTADialogueHistoryWidget（WBP_DialogueHistory 实例，历史面板）
@@ -131,6 +130,10 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_History;
+
+	/** 根层级显示为 Canvas Panel_Root：控件类型是 Canvas Panel，实际名称是 Root。 */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCanvasPanel> Root;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> Box_Choices;

@@ -17,8 +17,6 @@
 #include "Components/Image.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
-#include "Components/Overlay.h"
-#include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/VerticalBox.h"
 #include "Blueprint/WidgetTree.h"
@@ -70,6 +68,7 @@ void UTADialogueWidget::EnsureBindings()
 	if (!Text_Dialogue) Text_Dialogue = FindDialogueWidget<UTextBlock>(this, TEXT("Text_Dialogue"));
 	if (!Button_Continue) Button_Continue = FindDialogueWidget<UButton>(this, TEXT("Button_Continue"));
 	if (!Button_History) Button_History = FindDialogueWidget<UButton>(this, TEXT("Button_History"));
+	if (!Root) Root = FindDialogueWidget<UCanvasPanel>(this, TEXT("Root"));
 	if (!Box_Choices) Box_Choices = FindDialogueWidget<UVerticalBox>(this, TEXT("Box_Choices"));
 	if (!Panel_Choices) Panel_Choices = FindDialogueWidget<UPanelWidget>(this, TEXT("Panel_Choices"));
 	if (!Widget_History) Widget_History = FindDialogueWidget<UTADialogueHistoryWidget>(this, TEXT("Widget_History"));
@@ -84,41 +83,35 @@ bool UTADialogueWidget::EnsurePortraitLayer()
 	{
 		return true;
 	}
-	if (!WidgetTree || !WidgetTree->RootWidget)
+	UCanvasPanel* RootCanvas = Root;
+	if (!RootCanvas)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Dialogue] WBP_Dialogue 没有可用的根控件，无法创建立绘层"));
+		RootCanvas = Cast<UCanvasPanel>(GetRootWidget());
+	}
+	if (!RootCanvas)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Dialogue] 无法绑定 WBP_Dialogue 根 Canvas Panel（层级显示 Canvas Panel_Root，控件名应为 Root）"));
 		return false;
 	}
 
-	UWidget* RootWidget = WidgetTree->RootWidget;
-	RuntimePortraitCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RuntimePortraitCanvas"));
+	RuntimePortraitCanvas = WidgetTree
+		? WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RuntimePortraitCanvas"))
+		: NewObject<UCanvasPanel>(this, TEXT("RuntimePortraitCanvas"));
 	if (!RuntimePortraitCanvas)
 	{
 		return false;
 	}
 
-	if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(RootWidget))
+	if (UCanvasPanelSlot* CanvasChildSlot = RootCanvas->AddChildToCanvas(RuntimePortraitCanvas))
 	{
-		if (UCanvasPanelSlot* CanvasChildSlot = RootCanvas->AddChildToCanvas(RuntimePortraitCanvas))
-		{
-			CanvasChildSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-			CanvasChildSlot->SetOffsets(FMargin(0.f));
-			CanvasChildSlot->SetZOrder(100);
-			return true;
-		}
-	}
-	else if (UOverlay* RootOverlay = Cast<UOverlay>(RootWidget))
-	{
-		if (UOverlaySlot* OverlayChildSlot = RootOverlay->AddChildToOverlay(RuntimePortraitCanvas))
-		{
-			OverlayChildSlot->SetHorizontalAlignment(HAlign_Fill);
-			OverlayChildSlot->SetVerticalAlignment(VAlign_Fill);
-			return true;
-		}
+		CanvasChildSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		CanvasChildSlot->SetOffsets(FMargin(0.f));
+		CanvasChildSlot->SetZOrder(100);
+		return true;
 	}
 
 	RuntimePortraitCanvas = nullptr;
-	UE_LOG(LogTemp, Error, TEXT("[Dialogue] WBP_Dialogue 根控件必须是 Canvas Panel 或 Overlay，才能创建全屏立绘层（当前：%s）"), *GetNameSafe(RootWidget));
+	UE_LOG(LogTemp, Error, TEXT("[Dialogue] 无法将运行时立绘层添加到根控件 Root"));
 	return false;
 }
 
