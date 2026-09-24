@@ -92,6 +92,8 @@ void AThe_AwakeningCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+
 	if (CameraBoom)
 	{
 		CameraBoom->SocketOffset = FVector(0.f, 0.f, CameraHeightOffset);
@@ -138,7 +140,32 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 		// 手柄摇杆移动
 		if (MoveAction)
 		{
-			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::Move);
+			EnhancedInputComponent->BindAction(
+				MoveAction, ETriggerEvent::Triggered,
+				this, &AThe_AwakeningCharacter::Move);
+
+			EnhancedInputComponent->BindAction(
+				MoveAction, ETriggerEvent::Completed,
+				this, &AThe_AwakeningCharacter::OnMoveStopped);
+
+			EnhancedInputComponent->BindAction(
+				MoveAction, ETriggerEvent::Canceled,
+				this, &AThe_AwakeningCharacter::OnMoveStopped);
+		}
+		//疾跑
+		if (SprintAction)
+		{
+			EnhancedInputComponent->BindAction(
+				SprintAction, ETriggerEvent::Started,
+				this, &AThe_AwakeningCharacter::OnSprintStarted);
+
+			EnhancedInputComponent->BindAction(
+				SprintAction, ETriggerEvent::Completed,
+				this, &AThe_AwakeningCharacter::OnSprintEnded);
+
+			EnhancedInputComponent->BindAction(
+				SprintAction, ETriggerEvent::Canceled,
+				this, &AThe_AwakeningCharacter::OnSprintEnded);
 		}
 
 		// 键盘四方向
@@ -259,13 +286,31 @@ void AThe_AwakeningCharacter::OnScanEnded(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::Move(const FInputActionValue& Value)
 {
+	StickInput = IsUIInputActive()
+		? FVector2D::ZeroVector
+		: Value.Get<FVector2D>();
+}
+
+void AThe_AwakeningCharacter::OnMoveStopped(const FInputActionValue& Value)
+{
+	StickInput = FVector2D::ZeroVector;
+}
+
+void AThe_AwakeningCharacter::OnSprintStarted(const FInputActionValue& Value)
+{
 	if (IsUIInputActive())
 	{
 		return;
 	}
-	// 手柄摇杆直接使用
-	const FVector2D MovementVector = Value.Get<FVector2D>();
-	DoMove(MovementVector.X, MovementVector.Y);
+
+	bSprintHeld = true;
+	GetCharacterMovement()->MaxWalkSpeed = SprintSpeed;
+}
+
+void AThe_AwakeningCharacter::OnSprintEnded(const FInputActionValue& Value)
+{
+	bSprintHeld = false;
+	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 }
 
 void AThe_AwakeningCharacter::OnMoveForward(const FInputActionValue& Value)
@@ -314,20 +359,54 @@ void AThe_AwakeningCharacter::OnMoveRightReleased(const FInputActionValue& Value
 
 void AThe_AwakeningCharacter::UpdateMovementInput()
 {
-	float FinalForward = 0.f;
-	float FinalRight = 0.f;
-
-	if (bMoveForward)  FinalForward += 1.f;
-	if (bMoveBackward) FinalForward -= 1.f;
-	if (bMoveRight)    FinalRight += 1.f;
-	if (bMoveLeft)     FinalRight -= 1.f;
-
-	FinalForward = FMath::Clamp(FinalForward, -1.f, 1.f);
-	FinalRight = FMath::Clamp(FinalRight, -1.f, 1.f);
-
-	if (!FMath::IsNearlyZero(FinalForward) || !FMath::IsNearlyZero(FinalRight))
+	if (IsUIInputActive())
 	{
-		DoMove(FinalRight, FinalForward);
+		ClearMovementInput();
+		return;
+	}
+
+	// 跑酷期间不覆盖跑酷组件的移动设置
+	if (ParkourComponent && ParkourComponent->IsParkouring())
+	{
+		return;
+	}
+
+	FVector2D MoveInput = FVector2D::ZeroVector;
+	bool bUseSprint = bSprintHeld;
+
+	const bool bKeyboardActive =
+		bMoveForward || bMoveBackward || bMoveLeft || bMoveRight;
+
+	if (bKeyboardActive)
+	{
+		MoveInput.X =
+			(bMoveRight ? 1.f : 0.f) - (bMoveLeft ? 1.f : 0.f);
+
+		MoveInput.Y =
+			(bMoveForward ? 1.f : 0.f) - (bMoveBackward ? 1.f : 0.f);
+	}
+	else
+	{
+		const float StickMagnitude =
+			FMath::Clamp(StickInput.Size(), 0.f, 1.f);
+
+		if (StickMagnitude > StickDeadZone)
+		{
+			MoveInput = StickInput;
+
+			// 等于 0.5 仍是走路，只有大于 0.5 才跑
+			bUseSprint = StickMagnitude > 0.5f;
+		}
+	}
+
+	GetCharacterMovement()->MaxWalkSpeed =
+		bUseSprint ? SprintSpeed : WalkSpeed;
+
+	if (!MoveInput.IsNearlyZero())
+	{
+		// 只保留方向，消除摇杆幅度对移动速度的连续缩放
+		MoveInput.Normalize();
+		DoMove(MoveInput.X, MoveInput.Y);
 	}
 }
 
@@ -768,6 +847,10 @@ void AThe_AwakeningCharacter::ClearMovementInput()
 	bMoveBackward = false;
 	bMoveLeft = false;
 	bMoveRight = false;
+
+	StickInput = FVector2D::ZeroVector;
+	bSprintHeld = false;
+	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 }
 
 void AThe_AwakeningCharacter::OnPromptRelatedSettingsChanged()
