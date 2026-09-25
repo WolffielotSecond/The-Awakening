@@ -13,6 +13,17 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "GameFramework/PlayerController.h"
+#include "The_AwakeningPlayerController.h"
+#include "Scan/TAScannableComponent.h"
+#include "Scan/TAScanInfoWidget.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Components/PrimitiveComponent.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "Core/TAInputIconSubsystem.h"
 
 // Sets default values for this component's properties
 UTAScanningComponent::UTAScanningComponent()
@@ -22,12 +33,12 @@ UTAScanningComponent::UTAScanningComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 
-	//’“Material Parameter Collection
+	//ÊâæMaterial Parameter Collection
 	static ConstructorHelpers::FObjectFinder<UMaterialParameterCollection> MPCRef(
 		TEXT("/Game/Materials/Collections/MPC_Scan.MPC_Scan")
 	);
 
-	//’“µΩ¡Àﬂ˜
+	//ÊâæÂà∞‰∫ÜÂñµ
 	if (MPCRef.Succeeded())
 	{
 		ScanParameterCollection = MPCRef.Object;
@@ -96,6 +107,19 @@ void UTAScanningComponent::BeginPlay()
 }
 
 
+void UTAScanningComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsScanning())
+	{
+		StopScan(ETAScanEndReason::ComponentDestroyed, false);
+	}
+	ClearHighlightedTargets();
+	SetHoveredTarget(nullptr);
+	DestroyHighlightPPActor();
+	DestroyScanPPActor();
+	Super::EndPlay(EndPlayReason);
+}
+
 // Called every frame
 void UTAScanningComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
@@ -103,6 +127,18 @@ void UTAScanningComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	UpdateHighlight(DeltaTime);
 	UpdateScanTime(DeltaTime);
+	UpdateScanDuration(DeltaTime);
+	if (IsScanning())
+	{
+		TargetRefreshAccumulator += DeltaTime;
+		if (TargetRefreshAccumulator >= FMath::Max(TargetRefreshInterval, 0.02f))
+		{
+			TargetRefreshAccumulator = 0.0f;
+			RefreshScanTargets();
+		}
+		UpdateHoveredTarget();
+		UpdateScanInfoWidgetPosition();
+	}
 	/*
 	//debug print time
 	if (GEngine)
@@ -158,7 +194,7 @@ void UTAScanningComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	);
 	const FVector SnappedLocation = PlayerLocation.GridSnap(GridCellSize);
 
-	// ∏¸–¬ Niagara Œª÷√
+	// Êõ¥Êñ∞ Niagara ‰ΩçÁΩÆ
 	if (IsValid(ScanActor))
 	{
 		UNiagaraComponent* ScanNiagara = ScanActor->GetNiagaraComponent();
@@ -186,7 +222,7 @@ bool UTAScanningComponent::UpdateScanState(ETAScanState NewState, bool bForce)
 	{
 		return false;
 	}
-	//¿Îø™æ…◊¥Ã¨
+	//Á¶ªÂºÄÊóßÁä∂ÊÄÅ
 	switch (ScanState)
 	{
 		case ETAScanState::FadedIn:
@@ -232,10 +268,10 @@ bool UTAScanningComponent::UpdateScanState(ETAScanState NewState, bool bForce)
 		default:
 			break;
 	}
-	//∏¸–¬◊¥Ã¨
+	//Êõ¥Êñ∞Áä∂ÊÄÅ
 	ScanState = NewState;
 
-	//Ω¯»Î–¬◊¥Ã¨
+	//ËøõÂÖ•Êñ∞Áä∂ÊÄÅ
 	switch (ScanState)
 	{
 		case ETAScanState::FadedIn:
@@ -363,7 +399,7 @@ ATAScanningActor* UTAScanningComponent::GetScanPPActor()
 		return nullptr;
 	}
 
-	// »Áπ˚ªπ√ª”– MID£¨æÕ∏˘æ› PostProcessMaterial ¥¥Ω®
+	// Â¶ÇÊûúËøòÊ≤°Êúâ MIDÔºåÂ∞±Ê†πÊçÆ PostProcessMaterial ÂàõÂª∫
 	if (!IsValid(PostProcessMID))
 	{
 		if (!IsValid(PostProcessMaterial))
@@ -382,7 +418,7 @@ ATAScanningActor* UTAScanningComponent::GetScanPPActor()
 		return ScanActor;
 	}
 
-	// ªÒ»° Scan Actor ¿Ôµƒ Post Process Component
+	// Ëé∑Âèñ Scan Actor ÈáåÁöÑ Post Process Component
 	UPostProcessComponent* PostProcessComponent =
 		ScanActor->GetPostProcessComponent();
 
@@ -391,7 +427,7 @@ ATAScanningActor* UTAScanningComponent::GetScanPPActor()
 		return ScanActor;
 	}
 
-	// ∂‘”¶¿∂Õº£∫
+	// ÂØπÂ∫îËìùÂõæÔºö
 	// Make Weighted Blendable
 	// Weight = 1
 	// Object = PPMID
@@ -399,7 +435,7 @@ ATAScanningActor* UTAScanningComponent::GetScanPPActor()
 	WeightedBlendable.Weight = 1.0f;
 	WeightedBlendable.Object = PostProcessMID;
 
-	// ∂‘”¶ Set Members in Post Process Settings
+	// ÂØπÂ∫î Set Members in Post Process Settings
 	PostProcessComponent->Settings.WeightedBlendables.Array.Empty();
 	PostProcessComponent->Settings.WeightedBlendables.Array.Add(WeightedBlendable);
 
@@ -446,8 +482,8 @@ void UTAScanningComponent::UpdateScanPPBlendWeight()
 void UTAScanningComponent::UpdateHighlight(float DeltaTime)
 {
 	// --------------------------------------------------
-	// Highlight Actor “—æ≠¥Ê‘⁄£∫
-	// ¥¶¿Ì FadeIn / FadeOut
+	// Highlight Actor Â∑≤ÁªèÂ≠òÂú®Ôºö
+	// Â§ÑÁêÜ FadeIn / FadeOut
 	// --------------------------------------------------
 	if (IsValid(HighlightPPActor))
 	{
@@ -521,8 +557,8 @@ void UTAScanningComponent::UpdateHighlight(float DeltaTime)
 	}
 
 	// --------------------------------------------------
-	// Highlight Actor ≤ª¥Ê‘⁄£∫
-	// ¥¶¿Ì ShowDelay
+	// Highlight Actor ‰∏çÂ≠òÂú®Ôºö
+	// Â§ÑÁêÜ ShowDelay
 	// --------------------------------------------------
 
 	const bool bScanning =
@@ -690,15 +726,15 @@ void UTAScanningComponent::StartHighlightHideTimer()
 
 	bHighlightFadingOut = false;
 
-	// HideDelay ±» FadeTime ªπ∂Ã£∫
-	// ÷±Ω”ø™ º FadeOut
+	// HideDelay ÊØî FadeTime ËøòÁü≠Ôºö
+	// Áõ¥Êé•ÂºÄÂßã FadeOut
 	if (HideDelay <= HighlightFadeTime)
 	{
 		BeginHighlightFadeOut();
 		return;
 	}
 
-	// HideDelay µƒ◊Ó∫Û HighlightFadeTime √Îø™ º FadeOut
+	// HideDelay ÁöÑÊúÄÂêé HighlightFadeTime ÁßíÂºÄÂßã FadeOut
 	const float TimeBeforeFadeOut =
 		HideDelay - HighlightFadeTime;
 
@@ -730,28 +766,52 @@ void UTAScanningComponent::CancelHighlightHideTimer()
 
 bool UTAScanningComponent::StartScan()
 {
-	
+	bScanInputHeld = true;
+	if (bWaitingForInputRelease || !PlayerController || !PlayerController->GetPawn())
+	{
+		return false;
+	}
+	if (const AThe_AwakeningPlayerController* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController);
+		TAController && TAController->IsUIInputModeActive())
+	{
+		return false;
+	}
+
 	switch (ScanState)
 	{
 		case ETAScanState::FadeOut:
 		case ETAScanState::FadedOut:
 		{
-			// »Áπ˚ Highlight ’˝‘⁄µ»¥˝ Hide£¨
-			// ÷ÿ–¬…®√ËæÕ»°œ˚ HideDelay
+			// Â¶ÇÊûú Highlight Ê≠£Âú®Á≠âÂæÖ HideÔºå
+			// ÈáçÊñ∞Êâ´ÊèèÂ∞±ÂèñÊ∂à HideDelay
 			if (IsValid(HighlightPPActor))
 			{
 				CancelHighlightHideTimer();
 			}
 
-			if (PlayerController)
+			if (AThe_AwakeningPlayerController* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController))
 			{
-				PlayerController->bShowMouseCursor = true;
+				TAController->BeginScanCursorMode();
+			}
+			else
+			{
+				PlayerController->SetShowMouseCursor(true);
 			}
 
-			return UpdateScanState(
+			ScanRemainingTime = FMath::Max(MaxScanDuration, 0.1f);
+			TargetRefreshAccumulator = TargetRefreshInterval;
+			const bool bStarted = UpdateScanState(
 				ETAScanState::FadeIn,
 				false
 			);
+			if (bStarted)
+			{
+				OnScanStarted.Broadcast();
+				OnScanTimeChanged.Broadcast(ScanRemainingTime, GetScanRemainingRatio());
+				OnScanAudioIntensityChanged.Broadcast(GetScanAudioIntensity());
+				BP_OnScanAudioStarted();
+			}
+			return bStarted;
 		}
 
 		case ETAScanState::FadeIn:
@@ -765,37 +825,314 @@ bool UTAScanningComponent::StartScan()
 
 bool UTAScanningComponent::EndScan()
 {
-	switch (ScanState)
+	const bool bWasScanning = IsScanning();
+	NotifyScanInputReleased(false);
+	return bWasScanning;
+}
+
+void UTAScanningComponent::NotifyScanInputReleased(bool bCanceled)
+{
+	bScanInputHeld = false;
+	bWaitingForInputRelease = false;
+	if (IsScanning())
 	{
-		case ETAScanState::FadeIn:
-		case ETAScanState::FadedIn:
-		{
-			// Highlight “—æ≠…˙≥…£∫
-			// ø™ º HideDelay
-			if (IsValid(HighlightPPActor))
-			{
-				StartHighlightHideTimer();
-			}
+		StopScan(bCanceled ? ETAScanEndReason::Canceled : ETAScanEndReason::Released, false);
+	}
+}
 
-			if (PlayerController)
-			{
-				PlayerController->bShowMouseCursor = false;
-				PlayerController->SetInputMode(FInputModeGameOnly());
-			}
+void UTAScanningComponent::CancelScan(ETAScanEndReason Reason, bool bRequireInputRelease)
+{
+	if (IsScanning())
+	{
+		StopScan(Reason, bRequireInputRelease);
+	}
+}
 
-			return UpdateScanState(
-				ETAScanState::FadeOut,
-				false
-			);
-		}
+bool UTAScanningComponent::IsScanning() const
+{
+	return ScanState == ETAScanState::FadeIn || ScanState == ETAScanState::FadedIn;
+}
 
-		case ETAScanState::FadeOut:
-		case ETAScanState::FadedOut:
-		case ETAScanState::Invalid:
-			return false;
+float UTAScanningComponent::GetScanRemainingRatio() const
+{
+	return MaxScanDuration > KINDA_SMALL_NUMBER
+		? FMath::Clamp(ScanRemainingTime / MaxScanDuration, 0.0f, 1.0f)
+		: 0.0f;
+}
+
+float UTAScanningComponent::GetScanAudioIntensity() const
+{
+	const float ElapsedRatio = 1.0f - GetScanRemainingRatio();
+	return AudioIntensityCurve ? AudioIntensityCurve->GetFloatValue(ElapsedRatio) : ElapsedRatio;
+}
+
+void UTAScanningComponent::StopScan(ETAScanEndReason Reason, bool bRequireInputRelease)
+{
+	if (!IsScanning())
+	{
+		return;
 	}
 
-	return false;
+	bWaitingForInputRelease = bRequireInputRelease && bScanInputHeld;
+	if (IsValid(HighlightPPActor))
+	{
+		StartHighlightHideTimer();
+	}
+
+	if (AThe_AwakeningPlayerController* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController))
+	{
+		TAController->EndScanCursorMode();
+	}
+	else if (PlayerController)
+	{
+		PlayerController->SetShowMouseCursor(false);
+	}
+
+	ClearHighlightedTargets();
+	SetHoveredTarget(nullptr);
+	if (ScanInfoWidget)
+	{
+		ScanInfoWidget->RemoveFromParent();
+		ScanInfoWidget = nullptr;
+	}
+
+	UpdateScanState(ETAScanState::FadeOut, false);
+	OnScanEnded.Broadcast(Reason);
+	BP_OnScanAudioEnded(Reason);
+}
+
+void UTAScanningComponent::UpdateScanDuration(float DeltaTime)
+{
+	if (!IsScanning())
+	{
+		return;
+	}
+	if (!PlayerController || !PlayerController->GetPawn())
+	{
+		StopScan(ETAScanEndReason::OwnerInvalid, true);
+		return;
+	}
+
+	ScanRemainingTime = FMath::Max(0.0f, ScanRemainingTime - DeltaTime);
+	OnScanTimeChanged.Broadcast(ScanRemainingTime, GetScanRemainingRatio());
+	const float AudioIntensity = GetScanAudioIntensity();
+	OnScanAudioIntensityChanged.Broadcast(AudioIntensity);
+	BP_OnScanAudioUpdated(AudioIntensity);
+	if (ScanRemainingTime <= 0.0f)
+	{
+		StopScan(ETAScanEndReason::TimedOut, true);
+	}
+}
+
+void UTAScanningComponent::RefreshScanTargets()
+{
+	if (!GetWorld() || !PlayerController || !PlayerController->GetPawn())
+	{
+		return;
+	}
+
+	const FVector Origin = PlayerController->GetPawn()->GetActorLocation();
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(TAScanTargets), false, PlayerController->GetPawn());
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+	GetWorld()->OverlapMultiByObjectType(
+		Overlaps,
+		Origin,
+		FQuat::Identity,
+		ObjectParams,
+		FCollisionShape::MakeSphere(FMath::Max(Range, 1.0f)),
+		QueryParams);
+
+	TSet<TWeakObjectPtr<UTAScannableComponent>> NewTargets;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		UTAScannableComponent* Target = Actor ? Actor->FindComponentByClass<UTAScannableComponent>() : nullptr;
+		if (!IsValid(Target) || !Target->CanBeScanned())
+		{
+			continue;
+		}
+
+		const float Distance = FVector::Distance(Origin, Actor->GetActorLocation());
+		const bool bVisibleForHighlight = Target->bAllowHighlightThroughWalls || HasLineOfSightToTarget(Target);
+		if (Distance <= Target->HighlightDistance && bVisibleForHighlight)
+		{
+			NewTargets.Add(Target);
+		}
+	}
+
+	for (const TWeakObjectPtr<UTAScannableComponent>& Existing : HighlightedTargets)
+	{
+		if (!NewTargets.Contains(Existing))
+		{
+			if (UTAScannableComponent* Target = Existing.Get())
+			{
+				Target->SetScanHighlightEnabled(false);
+			}
+		}
+	}
+	for (const TWeakObjectPtr<UTAScannableComponent>& Added : NewTargets)
+	{
+		if (!HighlightedTargets.Contains(Added))
+		{
+			if (UTAScannableComponent* Target = Added.Get())
+			{
+				Target->SetScanHighlightEnabled(true);
+			}
+		}
+	}
+	HighlightedTargets = MoveTemp(NewTargets);
+}
+
+bool UTAScanningComponent::HasLineOfSightToTarget(const UTAScannableComponent* Target) const
+{
+	if (!Target || !Target->GetOwner() || !GetWorld() || !PlayerController || !PlayerController->PlayerCameraManager)
+	{
+		return false;
+	}
+
+	const FVector Start = PlayerController->PlayerCameraManager->GetCameraLocation();
+	const FVector End = Target->GetOwner()->GetActorLocation();
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(TAScanVisibility), true, PlayerController->GetPawn());
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, VisibilityTraceChannel, Params);
+	return !bHit || Hit.GetActor() == Target->GetOwner();
+}
+
+void UTAScanningComponent::UpdateHoveredTarget()
+{
+	if (!PlayerController || !PlayerController->GetPawn())
+	{
+		SetHoveredTarget(nullptr);
+		return;
+	}
+
+	float CursorX = 0.0f;
+	float CursorY = 0.0f;
+	const UTAInputIconSubsystem* InputIcons = GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>() : nullptr;
+	const bool bUseScreenCenter = InputIcons && InputIcons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
+	if (bUseScreenCenter || !PlayerController->GetMousePosition(CursorX, CursorY))
+	{
+		int32 SizeX = 0;
+		int32 SizeY = 0;
+		PlayerController->GetViewportSize(SizeX, SizeY);
+		CursorX = SizeX * 0.5f;
+		CursorY = SizeY * 0.5f;
+	}
+
+	UTAScannableComponent* BestTarget = nullptr;
+	float BestScreenDistanceSquared = FMath::Square(HoverPixelRadius);
+	const FVector PawnLocation = PlayerController->GetPawn()->GetActorLocation();
+	for (const TWeakObjectPtr<UTAScannableComponent>& CandidatePtr : HighlightedTargets)
+	{
+		UTAScannableComponent* Candidate = CandidatePtr.Get();
+		AActor* Actor = Candidate ? Candidate->GetOwner() : nullptr;
+		if (!Actor || FVector::Distance(PawnLocation, Actor->GetActorLocation()) > Candidate->InformationDistance)
+		{
+			continue;
+		}
+		if (!Candidate->bAllowInformationThroughWalls && !HasLineOfSightToTarget(Candidate))
+		{
+			continue;
+		}
+
+		FVector2D ScreenPosition;
+		if (!PlayerController->ProjectWorldLocationToScreen(Actor->GetActorLocation(), ScreenPosition, true))
+		{
+			continue;
+		}
+		const float DistanceSquared = FVector2D::DistSquared(ScreenPosition, FVector2D(CursorX, CursorY));
+		if (DistanceSquared <= BestScreenDistanceSquared)
+		{
+			BestScreenDistanceSquared = DistanceSquared;
+			BestTarget = Candidate;
+		}
+	}
+	SetHoveredTarget(BestTarget);
+}
+
+void UTAScanningComponent::SetHoveredTarget(UTAScannableComponent* NewTarget)
+{
+	if (NewTarget && HoveredTarget.Get() == NewTarget)
+	{
+		return;
+	}
+	if (!NewTarget && !HoveredTarget.IsValid() &&
+		(!ScanInfoWidget || ScanInfoWidget->GetVisibility() == ESlateVisibility::Collapsed))
+	{
+		return;
+	}
+
+	HoveredTarget = NewTarget;
+	OnHoveredTargetChanged.Broadcast(NewTarget);
+	if (!NewTarget)
+	{
+		if (ScanInfoWidget)
+		{
+			ScanInfoWidget->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
+	if (!ScanInfoWidget && ScanInfoWidgetClass && PlayerController)
+	{
+		ScanInfoWidget = CreateWidget<UTAScanInfoWidget>(PlayerController, ScanInfoWidgetClass);
+		if (ScanInfoWidget)
+		{
+			ScanInfoWidget->AddToPlayerScreen(100);
+			ScanInfoWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+		}
+	}
+	if (ScanInfoWidget)
+	{
+		ScanInfoWidget->SetTargetInfo(NewTarget->GetScanInfo());
+	}
+}
+
+void UTAScanningComponent::UpdateScanInfoWidgetPosition()
+{
+	if (!ScanInfoWidget || !HoveredTarget.IsValid() || !PlayerController)
+	{
+		return;
+	}
+
+	float CursorX = 0.0f;
+	float CursorY = 0.0f;
+	int32 ViewportX = 0;
+	int32 ViewportY = 0;
+	PlayerController->GetViewportSize(ViewportX, ViewportY);
+	const UTAInputIconSubsystem* InputIcons = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>() : nullptr;
+	const bool bUseScreenCenter = InputIcons && InputIcons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
+	if (bUseScreenCenter || !PlayerController->GetMousePosition(CursorX, CursorY))
+	{
+		CursorX = ViewportX * 0.5f;
+		CursorY = ViewportY * 0.5f;
+	}
+	const float ViewportScale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(PlayerController), KINDA_SMALL_NUMBER);
+	ScanInfoWidget->ForceLayoutPrepass();
+	const FVector2D DesiredSize = ScanInfoWidget->GetDesiredSize();
+	const FVector2D LogicalViewport(ViewportX / ViewportScale, ViewportY / ViewportScale);
+	FVector2D Position(CursorX / ViewportScale + ScanInfoCursorOffset.X, CursorY / ViewportScale + ScanInfoCursorOffset.Y);
+	Position.X = FMath::Clamp(Position.X, 0.0f, FMath::Max(0.0f, LogicalViewport.X - DesiredSize.X));
+	Position.Y = FMath::Clamp(Position.Y, 0.0f, FMath::Max(0.0f, LogicalViewport.Y - DesiredSize.Y));
+	ScanInfoWidget->SetPositionInViewport(Position, false);
+}
+
+void UTAScanningComponent::ClearHighlightedTargets()
+{
+	for (const TWeakObjectPtr<UTAScannableComponent>& TargetPtr : HighlightedTargets)
+	{
+		if (UTAScannableComponent* Target = TargetPtr.Get())
+		{
+			Target->SetScanHighlightEnabled(false);
+		}
+	}
+	HighlightedTargets.Reset();
 }
 
 void UTAScanningComponent::UpgradeHighlight() 

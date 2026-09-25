@@ -236,6 +236,13 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 				this,
 				&AThe_AwakeningCharacter::OnScanEnded
 			);
+
+			EnhancedInputComponent->BindAction(
+				ScanAction,
+				ETriggerEvent::Canceled,
+				this,
+				&AThe_AwakeningCharacter::OnScanCanceled
+			);
 		}
 	}
 }
@@ -282,6 +289,16 @@ void AThe_AwakeningCharacter::OnScanEnded(const FInputActionValue& Value)
 	}
 
 	ScanningComponent->EndScan();
+}
+
+void AThe_AwakeningCharacter::OnScanCanceled(const FInputActionValue& Value)
+{
+	AController* CharacterController = GetController();
+	if (UTAScanningComponent* ScanningComponent = CharacterController
+		? CharacterController->FindComponentByClass<UTAScanningComponent>() : nullptr)
+	{
+		ScanningComponent->NotifyScanInputReleased(true);
+	}
 }
 
 void AThe_AwakeningCharacter::Move(const FInputActionValue& Value)

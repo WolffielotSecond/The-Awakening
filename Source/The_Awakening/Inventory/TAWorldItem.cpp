@@ -11,6 +11,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "UI/TAPromptWidgetUtils.h"
+#include "Scan/TAScannableComponent.h"
 
 ATAWorldItem::ATAWorldItem()
 {
@@ -36,6 +37,10 @@ ATAWorldItem::ATAWorldItem()
 	PromptWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PromptWidget->SetDrawAtDesiredSize(true);
 	PromptWidget->SetVisibility(false);
+
+	ScannableComponent = CreateDefaultSubobject<UTAScannableComponent>(TEXT("ScannableComponent"));
+	ScannableComponent->ScanInfo.TargetType = ETAScanTargetType::Item;
+	ScannableComponent->CustomDepthStencilValue = 2;
 }
 
 void ATAWorldItem::BeginPlay()
@@ -47,12 +52,28 @@ void ATAWorldItem::BeginPlay()
 		MeshComponent->SetRenderCustomDepth(true);
 		MeshComponent->SetCustomDepthStencilValue(2);
 	}
+	if (ScannableComponent && ItemDef)
+	{
+		FTAScanTargetInfo Info = ScannableComponent->GetScanInfo();
+		Info.Name = ItemDef->DisplayName;
+		Info.Description = ItemDef->Description;
+		Info.TargetType = ETAScanTargetType::Item;
+		ScannableComponent->SetScanInfo(Info);
+	}
 }
 
 void ATAWorldItem::SetupItem(UTAItemDefinition* InDef, int32 InCount)
 {
 	ItemDef = InDef;
 	Count = FMath::Max(1, InCount);
+	if (ScannableComponent && ItemDef)
+	{
+		FTAScanTargetInfo Info = ScannableComponent->GetScanInfo();
+		Info.Name = ItemDef->DisplayName;
+		Info.Description = ItemDef->Description;
+		Info.TargetType = ETAScanTargetType::Item;
+		ScannableComponent->SetScanInfo(Info);
+	}
 }
 
 bool ATAWorldItem::IsCurrencyPickup() const

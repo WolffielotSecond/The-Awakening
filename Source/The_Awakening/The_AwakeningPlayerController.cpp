@@ -95,6 +95,8 @@ void AThe_AwakeningPlayerController::BeginPlay()
 		if (FSlateApplication::IsInitialized())
 		{
 			FSlateApplication::Get().RegisterInputPreProcessor(InputDeviceDetector);
+			ApplicationActivationHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(
+				this, &AThe_AwakeningPlayerController::NotifyApplicationActivationChanged);
 		}
 	}
 
@@ -118,6 +120,11 @@ void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayR
 	{
 		FSlateApplication::Get().UnregisterInputPreProcessor(InputDeviceDetector);
 		InputDeviceDetector.Reset();
+	}
+	if (ApplicationActivationHandle.IsValid() && FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(ApplicationActivationHandle);
+		ApplicationActivationHandle.Reset();
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -217,6 +224,11 @@ void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
 		return;
 	}
 
+	if (ScanningComponent && ScanningComponent->IsScanning())
+	{
+		ScanningComponent->CancelScan(ETAScanEndReason::UIInterrupted, true);
+	}
+
 	++ActiveUIModeCount;
 	if (ActiveUIModeCount > 1)
 	{
@@ -229,7 +241,9 @@ void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
 	{
 		ControlledCharacter->ClearMovementInput();
 	}
-	bPreviousShowMouseCursor = bShowMouseCursor;
+	// Preserve the state from before scanning. Otherwise opening inventory during
+	// a scan would remember the scan cursor and restore it after both modes end.
+	bPreviousShowMouseCursor = bScanCursorModeActive ? bMouseCursorBeforeScan : bShowMouseCursor;
 	SetShowMouseCursor(true);
 	FInputModeGameAndUI InputMode;
 	if (FocusWidget)
@@ -257,8 +271,54 @@ void AThe_AwakeningPlayerController::EndUIInputMode()
 
 	bUIInputModeActive = false;
 	VirtualCursorAxis = FVector2D::ZeroVector;
-	SetShowMouseCursor(bPreviousShowMouseCursor);
+	SetShowMouseCursor(bScanCursorModeActive ? true : bPreviousShowMouseCursor);
 	SetInputMode(FInputModeGameOnly());
+}
+
+void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIsActive)
+{
+	if (!ScanningComponent)
+	{
+		return;
+	}
+	if (!bIsActive)
+	{
+		ScanningComponent->CancelScan(ETAScanEndReason::Canceled, true);
+	}
+	else
+	{
+		// The release may have occurred while the application was unfocused.
+		ScanningComponent->NotifyScanInputReleased(true);
+	}
+}
+
+void AThe_AwakeningPlayerController::BeginScanCursorMode()
+{
+	if (!IsLocalPlayerController() || bScanCursorModeActive)
+	{
+		return;
+	}
+
+	bScanCursorModeActive = true;
+	bMouseCursorBeforeScan = bUIInputModeActive ? bPreviousShowMouseCursor : bShowMouseCursor;
+	SetShowMouseCursor(true);
+}
+
+void AThe_AwakeningPlayerController::EndScanCursorMode()
+{
+	if (!IsLocalPlayerController() || !bScanCursorModeActive)
+	{
+		return;
+	}
+
+	bScanCursorModeActive = false;
+	if (bUIInputModeActive)
+	{
+		SetShowMouseCursor(true);
+		return;
+	}
+
+	SetShowMouseCursor(bMouseCursorBeforeScan);
 }
 
 void AThe_AwakeningPlayerController::SetUIFocusWidget(UUserWidget* FocusWidget)

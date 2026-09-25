@@ -55,6 +55,12 @@ public:
 	bool IsUIInputModeActive() const { return bUIInputModeActive; }
 	void SetVirtualCursorAxis(const FKey& AxisKey, float Value);
 	void TickVirtualCursor(float DeltaTime);
+	void NotifyApplicationActivationChanged(bool bIsActive);
+
+	/** Scan only requests cursor visibility; it does not enter menu input mode. */
+	void BeginScanCursorMode();
+	void EndScanCursorMode();
+	bool IsScanCursorModeActive() const { return bScanCursorModeActive; }
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
@@ -69,10 +75,13 @@ protected:
 	TObjectPtr<UUserWidget> MobileControlsWidget;
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
+	FDelegateHandle ApplicationActivationHandle;
 	int32 ActiveUIModeCount = 0;
 	bool bUIInputModeActive = false;
 	bool bDialogueModeActive = false;
 	bool bPreviousShowMouseCursor = false;
+	bool bMouseCursorBeforeScan = false;
+	bool bScanCursorModeActive = false;
 	FVector2D VirtualCursorAxis = FVector2D::ZeroVector;
 
 	virtual void BeginPlay() override;

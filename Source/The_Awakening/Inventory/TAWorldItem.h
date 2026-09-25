@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class UWidgetComponent;
 class UTexture2D;
 class UTAInventoryComponent;
+class UTAScannableComponent;
 
 UCLASS()
 class THE_AWAKENING_API ATAWorldItem : public AActor, public ITAInteractable
@@ -62,6 +63,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> PromptWidget;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTAScannableComponent> ScannableComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UTAItemDefinition> ItemDef;

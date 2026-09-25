@@ -243,6 +243,7 @@ protected:
 
 	void OnScanStarted(const FInputActionValue& Value);
 	void OnScanEnded(const FInputActionValue& Value);
+	void OnScanCanceled(const FInputActionValue& Value);
 
 	UFUNCTION()
 	void OnPromptRelatedSettingsChanged();
