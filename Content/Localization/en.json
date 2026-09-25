@@ -16,6 +16,7 @@
 	"ItemType_Weapon": "Weapon",
 	"Parkour_Drop": "Drop",
 	"Parkour_Jump": "Vault",
+	"player_name": "Player Name",
 	"ST_Demo_001": "Hello, welcome to the town.",
 	"ST_Demo_002": "Nice to meet you!",
 	"ST_Demo_003": "Money talks. Here, take this.",
