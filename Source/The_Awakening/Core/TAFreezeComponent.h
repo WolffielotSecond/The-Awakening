@@ -17,6 +17,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Freeze")
 	bool IsFrozen() const { return bFrozen; }
+	UFUNCTION(BlueprintPure, Category="Freeze")
+	float GetFreezeStrength() const { return FreezeStrength; }
 
 	/** For external interactions, which still execute even when ticks are disabled. */
 	UFUNCTION(BlueprintPure, Category="Freeze")
@@ -39,6 +41,9 @@ protected:
 
 private:
 	friend class UTAFreezeSubsystem;
+	void SetFreezeStrength(float Strength);
+	float FreezeStrength = 0.f;
+	float SavedTimeDilation = 1.f;
 	void SetFrozen(bool bInFrozen);
 	bool bFrozen = false;
 	bool bSavedActorTickEnabled = false;

@@ -133,6 +133,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Scan|Settings|Material")
 	TObjectPtr<UCurveFloat> BlendCurve;
 
+	/** X: scan progress (0-1), Y: freeze strength (0 normal, 1 stopped). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Scan|Settings|Freeze")
+	TObjectPtr<UCurveFloat> TimeFreezeBlendCurve;
+	void UpdateTimeFreezeBlend();
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Scan|Settings|Material")
 	TObjectPtr<UMaterialInterface> PostProcessMaterial;
 

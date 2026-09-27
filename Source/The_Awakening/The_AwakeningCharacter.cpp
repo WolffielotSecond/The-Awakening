@@ -3,6 +3,7 @@
 #include "The_AwakeningCharacter.h"
 #include "Core/TAPlayerState.h"
 #include "Core/TAFreezeComponent.h"
+#include "Core/TAFreezeExemptSpringArm.h"
 #include "AbilitySystemComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
@@ -70,7 +71,7 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter()
 	//GetCharacterMovement()->bCanWalkOffLedges = false;
 
 	// 相机
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom = CreateDefaultSubobject<UTAFreezeExemptSpringArm>(TEXT("CameraBoom"));
 	CameraBoom->ComponentTags.AddUnique(TEXT("FreezeExempt"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = CameraDistance;

@@ -27,7 +27,7 @@ void UTAFreezeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 	// Also restore ticks when this component alone is removed from a living actor.
-	SetFrozen(false);
+	SetFreezeStrength(0.f);
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -35,6 +35,19 @@ bool UTAFreezeComponent::IsActorFrozen(const AActor* Actor)
 {
 	const UTAFreezeComponent* Component = Actor ? Actor->FindComponentByClass<UTAFreezeComponent>() : nullptr;
 	return Component && Component->IsFrozen();
+}
+
+void UTAFreezeComponent::SetFreezeStrength(float Strength)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner) return;
+	Strength = FMath::Clamp(Strength, 0.f, 1.f);
+	if (FreezeStrength == 0.f && Strength > 0.f) SavedTimeDilation = Owner->CustomTimeDilation;
+	if (FreezeStrength > 0.f || Strength > 0.f)
+		Owner->CustomTimeDilation = SavedTimeDilation * (1.f - Strength);
+	FreezeStrength = Strength;
+	// Only suspend ticks at the endpoint; the transition uses actor/component delta scaling.
+	SetFrozen(Strength >= 1.f);
 }
 
 void UTAFreezeComponent::SetFrozen(bool bInFrozen)

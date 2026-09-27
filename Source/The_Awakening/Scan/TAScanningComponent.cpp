@@ -55,6 +55,10 @@ UTAScanningComponent::UTAScanningComponent()
 		BlendCurve = BlendCurveRef.Object;
 	}
 
+	static ConstructorHelpers::FObjectFinder<UCurveFloat> FreezeCurveRef(
+		TEXT("/Game/Materials/Scan/Curves/CRV_TimeFreezeBlend.CRV_TimeFreezeBlend"));
+	if (FreezeCurveRef.Succeeded()) TimeFreezeBlendCurve = FreezeCurveRef.Object;
+
 	// Post Process Material
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PostProcessMaterialRef(
 		TEXT("/Game/Materials/Scan/MI_Scan_PostProcess.MI_Scan_PostProcess")
@@ -132,6 +136,7 @@ void UTAScanningComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	UpdateHighlight(DeltaTime);
 	UpdateScanTime(DeltaTime);
+	UpdateTimeFreezeBlend();
 	UpdateScanDuration(DeltaTime);
 	if (IsScanning())
 	{
@@ -327,6 +332,19 @@ bool UTAScanningComponent::UpdateScanState(ETAScanState NewState, bool bForce)
 
 	return true;
 
+}
+
+void UTAScanningComponent::UpdateTimeFreezeBlend()
+{
+	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+	{
+		// Use the same progress in both directions so quick release/repress never jumps.
+		// Pin endpoints so a hand-edited curve cannot leave residual slowdown or prevent full freeze.
+		const float Progress = FMath::Clamp(ScanNormalizedTime, 0.f, 1.f);
+		const float Strength = Progress <= 0.f ? 0.f : (Progress >= 1.f ? 1.f :
+			(TimeFreezeBlendCurve ? TimeFreezeBlendCurve->GetFloatValue(Progress) : Progress));
+		Freeze->RequestFreeze(this, Strength);
+	}
 }
 
 bool UTAScanningComponent::UpdateScanTime(float DeltaTime)
@@ -828,10 +846,7 @@ bool UTAScanningComponent::StartScan()
 			);
 			if (bStarted)
 			{
-				if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
-				{
-					Freeze->RequestFreeze(this);
-				}
+				UpdateTimeFreezeBlend();
 				OnScanStarted.Broadcast();
 				OnScanTimeChanged.Broadcast(ScanRemainingTime, GetScanRemainingRatio());
 				OnScanAudioIntensityChanged.Broadcast(GetScanAudioIntensity());
@@ -923,10 +938,8 @@ void UTAScanningComponent::StopScan(ETAScanEndReason Reason, bool bRequireInputR
 	}
 
 	UpdateScanState(ETAScanState::FadeOut, false);
-	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
-	{
-		Freeze->ReleaseFreeze(this);
-	}
+	// Retain this request through fade-out; release naturally when progress reaches zero.
+	UpdateTimeFreezeBlend();
 	OnScanEnded.Broadcast(Reason);
 	BP_OnScanAudioEnded(Reason);
 }

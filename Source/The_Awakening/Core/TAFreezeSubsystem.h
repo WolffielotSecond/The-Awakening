@@ -14,12 +14,13 @@ class THE_AWAKENING_API UTAFreezeSubsystem : public UWorldSubsystem
 public:
 	void RegisterParticipant(UTAFreezeComponent* Component);
 	void UnregisterParticipant(UTAFreezeComponent* Component);
-	void RequestFreeze(UObject* Source);
+	void RequestFreeze(UObject* Source, float Strength = 1.f);
 	void ReleaseFreeze(UObject* Source);
-	bool IsFrozen() const { return !Sources.IsEmpty(); }
+	bool IsFrozen() const { return GetFreezeStrength() >= 1.f; }
+	float GetFreezeStrength() const;
 
 private:
 	void ApplyState();
 	TSet<TWeakObjectPtr<UTAFreezeComponent>> Participants;
-	TSet<TWeakObjectPtr<UObject>> Sources;
+	TMap<TWeakObjectPtr<UObject>, float> Sources;
 };
