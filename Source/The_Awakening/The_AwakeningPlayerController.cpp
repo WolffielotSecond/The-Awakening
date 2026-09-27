@@ -16,6 +16,8 @@
 #include "The_AwakeningCharacter.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Application/NavigationConfig.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
@@ -99,7 +101,20 @@ void AThe_AwakeningPlayerController::BeginPlay()
 				this, &AThe_AwakeningPlayerController::NotifyApplicationActivationChanged);
 		}
 	}
+	if (IsLocalPlayerController() && FSlateApplication::IsInitialized())
+	{
+		TSharedRef<FNavigationConfig> NavigationConfig =
+			FSlateApplication::Get().GetNavigationConfig();
 
+		// Tab / Shift+Tab
+		NavigationConfig->bTabNavigation = false;
+
+		// 键盘方向键 / D-Pad
+		NavigationConfig->bKeyNavigation = false;
+
+		// 手柄摇杆
+		NavigationConfig->bAnalogNavigation = false;
+	}
 	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController())
 	{
 		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);
@@ -319,6 +334,7 @@ void AThe_AwakeningPlayerController::EndScanCursorMode()
 	}
 
 	SetShowMouseCursor(bMouseCursorBeforeScan);
+	SetInputMode(FInputModeGameOnly());
 }
 
 void AThe_AwakeningPlayerController::SetUIFocusWidget(UUserWidget* FocusWidget)

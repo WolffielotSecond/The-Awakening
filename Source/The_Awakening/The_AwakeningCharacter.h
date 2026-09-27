@@ -15,6 +15,7 @@ class UAbilitySystemComponent;
 class UTAParkourComponent;
 class UTAInventoryComponent;
 class UTAPromptComponent;
+class UTAFreezeComponent;
 class UTAInventoryPanelWidget;
 class UTADialogueWidget;
 class UTADialoguePortraitLayerWidget;
@@ -106,6 +107,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAPromptComponent> PromptComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTAFreezeComponent> FreezeComponent;
 
 	/** 相机跟随距离 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")

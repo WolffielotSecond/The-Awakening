@@ -2,6 +2,7 @@
 
 #include "The_AwakeningCharacter.h"
 #include "Core/TAPlayerState.h"
+#include "Core/TAFreezeComponent.h"
 #include "AbilitySystemComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
@@ -68,6 +69,7 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter()
 
 	// 相机
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->ComponentTags.AddUnique(TEXT("FreezeExempt"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = CameraDistance;
 	CameraBoom->bUsePawnControlRotation = false;
@@ -80,12 +82,14 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter()
 	CameraBoom->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FollowCamera->ComponentTags.AddUnique(TEXT("FreezeExempt"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
 	ParkourComponent = CreateDefaultSubobject<UTAParkourComponent>(TEXT("ParkourComponent"));
 	InventoryComponent = CreateDefaultSubobject<UTAInventoryComponent>(TEXT("InventoryComponent"));
 	PromptComponent = CreateDefaultSubobject<UTAPromptComponent>(TEXT("PromptComponent"));
+	FreezeComponent = CreateDefaultSubobject<UTAFreezeComponent>(TEXT("FreezeComponent"));
 }
 
 void AThe_AwakeningCharacter::BeginPlay()
@@ -435,7 +439,7 @@ void AThe_AwakeningCharacter::Look(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 {
-	if (IsUIInputActive())
+	if (IsUIInputActive() || UTAFreezeComponent::IsActorFrozen(this))
 	{
 		return;
 	}
@@ -611,7 +615,7 @@ void AThe_AwakeningCharacter::InitAbilityActorInfo()
 
 void AThe_AwakeningCharacter::TryInteract()
 {
-	if (IsUIInputActive())
+	if (IsUIInputActive() || UTAFreezeComponent::IsActorFrozen(this))
 	{
 		return;
 	}
@@ -791,7 +795,7 @@ bool AThe_AwakeningCharacter::IsSafeToMoveToward(const FVector& WorldDirection) 
 
 void AThe_AwakeningCharacter::OnParkourJump(const FInputActionValue& Value)
 {
-	if (!IsUIInputActive() && ParkourComponent)
+	if (!IsUIInputActive() && !UTAFreezeComponent::IsActorFrozen(this) && ParkourComponent)
 	{
 		ParkourComponent->TryParkourJump();
 	}
@@ -799,7 +803,7 @@ void AThe_AwakeningCharacter::OnParkourJump(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::OnParkourDrop(const FInputActionValue& Value)
 {
-	if (!IsUIInputActive() && ParkourComponent)
+	if (!IsUIInputActive() && !UTAFreezeComponent::IsActorFrozen(this) && ParkourComponent)
 	{
 		ParkourComponent->TryParkourDrop();
 	}
@@ -819,6 +823,13 @@ void AThe_AwakeningCharacter::ToggleInventory()
 		InventoryPanelInstance = nullptr;
 
 		PC->EndUIInputMode();
+		return;
+	}
+
+	// Block opening only; closing an existing inventory must remain possible.
+	if (const UTAScanningComponent* Scan = PC->FindComponentByClass<UTAScanningComponent>();
+		Scan && Scan->IsScanning())
+	{
 		return;
 	}
 

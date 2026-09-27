@@ -44,6 +44,14 @@ public:
 	bool StartScan();
 	bool EndScan();
 
+	/** Ability permission, independent of whether a scan is currently active. */
+	UFUNCTION(BlueprintPure, Category = "Scan|Permission")
+	bool IsScanEnabled() const { return bScanEnabled; }
+
+	/** Disabling cancels the current scan. Enabling never starts a scan automatically. */
+	UFUNCTION(BlueprintCallable, Category = "Scan|Permission")
+	void SetScanEnabled(bool bEnabled);
+
 	UFUNCTION(BlueprintCallable, Category = "Scan")
 	void CancelScan(ETAScanEndReason Reason = ETAScanEndReason::Canceled, bool bRequireInputRelease = true);
 
@@ -162,6 +170,10 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
 private:
+	/** Configure initial permission here; use SetScanEnabled for runtime changes. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Scan|Permission", meta = (AllowPrivateAccess = "true"))
+	bool bScanEnabled = true;
+
 	bool UpdateScanState(ETAScanState NewState, bool bForce);
 
 	bool UpdateScanTime(float DeltaTime);

@@ -24,6 +24,7 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Core/TAInputIconSubsystem.h"
+#include "Core/TAFreezeSubsystem.h"
 
 // Sets default values for this component's properties
 UTAScanningComponent::UTAScanningComponent()
@@ -109,6 +110,10 @@ void UTAScanningComponent::BeginPlay()
 
 void UTAScanningComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+	{
+		Freeze->ReleaseFreeze(this);
+	}
 	if (IsScanning())
 	{
 		StopScan(ETAScanEndReason::ComponentDestroyed, false);
@@ -764,9 +769,26 @@ void UTAScanningComponent::CancelHighlightHideTimer()
 	}
 }
 
+void UTAScanningComponent::SetScanEnabled(bool bEnabled)
+{
+	bScanEnabled = bEnabled;
+	if (!bScanEnabled)
+	{
+		// Preserve the release requirement even if no scan is active (e.g. during fade-out).
+		bWaitingForInputRelease |= bScanInputHeld;
+		CancelScan(ETAScanEndReason::Canceled, true);
+	}
+}
+
 bool UTAScanningComponent::StartScan()
 {
 	bScanInputHeld = true;
+	if (!bScanEnabled)
+	{
+		// Unlocking the ability while the key is held must not restart scanning.
+		bWaitingForInputRelease = true;
+		return false;
+	}
 	if (bWaitingForInputRelease || !PlayerController || !PlayerController->GetPawn())
 	{
 		return false;
@@ -806,6 +828,10 @@ bool UTAScanningComponent::StartScan()
 			);
 			if (bStarted)
 			{
+				if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+				{
+					Freeze->RequestFreeze(this);
+				}
 				OnScanStarted.Broadcast();
 				OnScanTimeChanged.Broadcast(ScanRemainingTime, GetScanRemainingRatio());
 				OnScanAudioIntensityChanged.Broadcast(GetScanAudioIntensity());
@@ -897,6 +923,10 @@ void UTAScanningComponent::StopScan(ETAScanEndReason Reason, bool bRequireInputR
 	}
 
 	UpdateScanState(ETAScanState::FadeOut, false);
+	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+	{
+		Freeze->ReleaseFreeze(this);
+	}
 	OnScanEnded.Broadcast(Reason);
 	BP_OnScanAudioEnded(Reason);
 }
@@ -913,7 +943,7 @@ void UTAScanningComponent::UpdateScanDuration(float DeltaTime)
 		return;
 	}
 
-	ScanRemainingTime = FMath::Max(0.0f, ScanRemainingTime - DeltaTime);
+	// ScanRemainingTime = FMath::Max(0.0f, ScanRemainingTime - DeltaTime);
 	OnScanTimeChanged.Broadcast(ScanRemainingTime, GetScanRemainingRatio());
 	const float AudioIntensity = GetScanAudioIntensity();
 	OnScanAudioIntensityChanged.Broadcast(AudioIntensity);
