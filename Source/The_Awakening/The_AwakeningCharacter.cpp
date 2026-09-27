@@ -850,6 +850,11 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	}
 
 	// Block opening only; closing an existing inventory must remain possible.
+	// Minigame / other modal UI owns input; do not stack an inventory over it.
+	if (PC->IsUIInputModeActive() || UTAFreezeComponent::IsActorFrozen(this))
+	{
+		return;
+	}
 	if (const UTAScanningComponent* Scan = PC->FindComponentByClass<UTAScanningComponent>();
 		Scan && Scan->IsScanning())
 	{

@@ -4,6 +4,8 @@
 #include "Puzzle/TAPuzzleRewardReceiver.h"
 #include "Puzzle/TAPuzzleRewards.h"
 #include "The_AwakeningPlayerController.h"
+#include "Core/TAFreezeSubsystem.h"
+#include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -29,9 +31,23 @@ FTAPuzzleAppearance::FTAPuzzleAppearance()
 UTAPathPuzzleWidget* UTAPathPuzzleWidget::OpenPuzzle(APlayerController* Player,
 	TSubclassOf<UTAPathPuzzleWidget> WidgetClass, UObject* Receiver, int32 Seed)
 {
+	return OpenPuzzleInternal(Player, WidgetClass, nullptr, Receiver, Seed);
+}
+
+UTAPathPuzzleWidget* UTAPathPuzzleWidget::OpenPuzzleWithSettings(APlayerController* Player,
+	TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings& Settings, UObject* Receiver, int32 Seed)
+{
+	return OpenPuzzleInternal(Player, WidgetClass, &Settings, Receiver, Seed);
+}
+
+UTAPathPuzzleWidget* UTAPathPuzzleWidget::OpenPuzzleInternal(APlayerController* Player,
+	TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings* Settings, UObject* Receiver, int32 Seed)
+{
 	if (!Player || !Player->IsLocalController()) return nullptr;
 	UTAPathPuzzleWidget* Widget = CreateWidget<UTAPathPuzzleWidget>(Player, WidgetClass ? WidgetClass.Get() : StaticClass());
 	if (!Widget) return nullptr;
+	// Apply before generation / session initialization; changing these after StartPuzzle is too late.
+	if (Settings) Widget->PuzzleSettings = *Settings;
 	Widget->bAutoStart = false; Widget->RewardReceiver = Receiver; Widget->PuzzleSeed = Seed;
 	if (!Widget->StartPuzzle()) return nullptr;
 	Widget->AddToViewport(80);
@@ -50,6 +66,13 @@ void UTAPathPuzzleWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	if (bAutoStart && !Session) StartPuzzle();
+	// Freeze registered gameplay actors, not world time or the UMG countdown.
+	// Keep the freeze through settlement until this screen is removed.
+	if (Session)
+	{
+		if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+			Freeze->RequestFreeze(this);
+	}
 	if (Session && !Session->IsTerminal() && !bOwnsInputMode)
 	{
 		if (AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
@@ -69,6 +92,12 @@ void UTAPathPuzzleWidget::ReleaseInput()
 
 void UTAPathPuzzleWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SettlementCloseTimer);
+		if (UTAFreezeSubsystem* Freeze = World->GetSubsystem<UTAFreezeSubsystem>())
+			Freeze->ReleaseFreeze(this);
+	}
 	const bool bAborting = Session && !Session->IsTerminal();
 	if (Session)
 	{
@@ -132,17 +161,36 @@ void UTAPathPuzzleWidget::HandleSettled(const FTAPuzzleResult& InResult)
 			: TAPuzzleRewards::ApplyDefault(GetOwningPlayer(), Effect));
 	}
 	RefreshBoard();
+	// 临时结算流程：成功/失败都保留画面 1 秒，再关闭小游戏并返回主游戏。
+	// 后续接正式结算界面/剧情时，删除或替换此定时器；保留 ClosePuzzle 作为统一退出入口。
+	// 扫描式时停不暂停世界计时器；若事件提前关闭界面，NativeDestruct 会取消此定时器。
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(SettlementCloseTimer, this,
+			&UTAPathPuzzleWidget::ClosePuzzle, 1.f, false);
+	}
 	for (int32 I = 0; I < Applied.Num(); ++I) OnRewardApplied.Broadcast(Result.MainGameEffects[I], Applied[I]);
 	if (Result.bSucceeded) OnSucceeded.Broadcast(Result);
 	else OnFailed.Broadcast(Result);
-	// The owner decides whether to close or show its own result presentation. No next/replay menu.
 }
 
 void UTAPathPuzzleWidget::BuildFallback()
 {
 	if (WidgetTree->RootWidget) return;
+	// Background fills the viewport independently of the aspect-preserving puzzle content.
+	UCanvasPanel* Screen = WidgetTree->ConstructWidget<UCanvasPanel>();
+	WidgetTree->RootWidget = Screen;
+	auto FillScreen = [Screen](UWidget* Child)
+	{
+		UCanvasPanelSlot* ScreenSlot = Screen->AddChildToCanvas(Child);
+		ScreenSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		ScreenSlot->SetOffsets(FMargin(0.f));
+	};
+	UImage* Background = WidgetTree->ConstructWidget<UImage>();
+	Background->SetBrush(FSlateColorBrush(FLinearColor(.025f, .035f, .055f, 1.f)));
+	FillScreen(Background);
 	UScaleBox* Scale = WidgetTree->ConstructWidget<UScaleBox>();
-	WidgetTree->RootWidget = Scale;
+	FillScreen(Scale);
 	Scale->SetStretch(EStretch::ScaleToFit);
 	USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
 	Size->SetWidthOverride(Appearance.BoardSize.X + 300); Size->SetHeightOverride(Appearance.BoardSize.Y + 90);
@@ -152,9 +200,6 @@ void UTAPathPuzzleWidget::BuildFallback()
 	{
 		UCanvasPanelSlot* CanvasSlot = Canvas->AddChildToCanvas(Child); CanvasSlot->SetPosition(Position); CanvasSlot->SetSize(Extent);
 	};
-	UImage* Background = WidgetTree->ConstructWidget<UImage>();
-	Background->SetBrush(FSlateColorBrush(FLinearColor(.025f, .035f, .055f, .98f)));
-	Place(Root, Background, FVector2D::ZeroVector, Appearance.BoardSize + FVector2D(300, 90));
 	PuzzleCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("PuzzleCanvas"));
 	Place(Root, PuzzleCanvas, FVector2D(15, 55), Appearance.BoardSize);
 	Progress_Time = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("Progress_Time"));
@@ -170,7 +215,6 @@ void UTAPathPuzzleWidget::BuildFallback()
 	AddText(Text_Stats, TEXT("Text_Stats"), FVector2D(X, 55), FVector2D(250, 140));
 	AddText(Text_Path, TEXT("Text_Path"), FVector2D(X, 205), FVector2D(250, 85));
 	AddText(Text_Effects, TEXT("Text_Effects"), FVector2D(X, 300), FVector2D(250, 115));
-	AddText(Text_Status, TEXT("Text_Status"), FVector2D(20, Appearance.BoardSize.Y + 57), FVector2D(Appearance.BoardSize.X, 30));
 	auto AddButton = [&](TObjectPtr<UButton>& Button, TObjectPtr<UTextBlock>& Text, FName Name, float Y)
 	{
 		Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
@@ -238,12 +282,12 @@ void UTAPathPuzzleWidget::RefreshBoard()
 
 void UTAPathPuzzleWidget::RefreshChrome()
 {
-	if (!Session) { if (Text_Status) Text_Status->SetText(SetupError); return; }
+	if (Text_Status) Text_Status->SetVisibility(ESlateVisibility::Collapsed);
+	if (!Session) return;
 	const auto& P = Session->Progress;
 	if (Progress_Time) { Progress_Time->SetPercent(Session->TimeRemaining / Session->Definition.TimeLimit); Progress_Time->SetFillColorAndOpacity(Appearance.TimerColor); }
 	if (Text_Time) Text_Time->SetText(FText::FromString(FString::Printf(TEXT("%ds"), FMath::CeilToInt(Session->TimeRemaining))));
-	if (Text_Stats) Text_Stats->SetText(FText::FromString(FString::Printf(TEXT("Energy: %d / %d\nUnits: %d / %d\nSeed: %d\nDifficulty: %s"), P.EnergyUsed, P.MaxEnergy, P.UnitsUsed, P.MaxUnits, Session->Definition.Seed, *StaticEnum<ETAPuzzleDifficulty>()->GetDisplayNameTextByValue(static_cast<int64>(Session->Settings.Difficulty)).ToString())));
-	if (Text_Status) Text_Status->SetText(Session->LastMessage);
+	if (Text_Stats) Text_Stats->SetText(FText::FromString(FString::Printf(TEXT("Energy: %d / %d\nUnits: %d / %d"), P.EnergyUsed, P.MaxEnergy, P.UnitsUsed, P.MaxUnits)));
 	if (Text_Path)
 	{
 		FString Path;

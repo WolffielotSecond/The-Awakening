@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Styling/SlateBrush.h"
+#include "TimerManager.h"
 #include "Puzzle/TAPathPuzzleSession.h"
 #include "TAPathPuzzleWidget.generated.h"
 
@@ -44,8 +45,18 @@ public:
 	static UTAPathPuzzleWidget* OpenPuzzle(APlayerController* Player, TSubclassOf<UTAPathPuzzleWidget> WidgetClass,
 		UObject* RewardReceiver = nullptr, int32 Seed = -1);
 
+	/** Generates and opens a puzzle using explicit per-entry settings instead of WBP gameplay defaults.
+	 * Split the Settings pin in Blueprint to configure difficulty, effects and usage allowances.
+	 * Visual defaults still come from WidgetClass. Returns nullptr if creation fails.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Puzzle", meta=(DefaultToSelf="Player", AdvancedDisplay="RewardReceiver,Seed"))
+	static UTAPathPuzzleWidget* OpenPuzzleWithSettings(APlayerController* Player,
+		TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings& Settings,
+		UObject* RewardReceiver = nullptr, int32 Seed = -1);
+
 	/** One session per widget instance. Create a new widget when re-entering the minigame. */
 	UFUNCTION(BlueprintCallable, Category="Puzzle") bool StartPuzzle();
+	/** Close the minigame, release its freeze request and restore gameplay input. */
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void ClosePuzzle();
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void Undo();
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void Retry();
@@ -87,6 +98,10 @@ protected:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_Retry;
 
 private:
+	FTimerHandle SettlementCloseTimer;
+	static UTAPathPuzzleWidget* OpenPuzzleInternal(APlayerController* Player,
+		TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings* Settings,
+		UObject* RewardReceiver, int32 Seed);
 	void BuildFallback();
 	void RefreshChrome();
 	void ReleaseInput();
