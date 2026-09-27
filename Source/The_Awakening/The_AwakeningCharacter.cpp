@@ -30,6 +30,8 @@
 #include "Core/TAInputIconSubsystem.h"
 #include "UI/Inventory/TAInventoryPanelWidget.h"
 #include "The_AwakeningPlayerController.h"
+#include "Puzzle/TAPathPuzzleWidget.h"
+#include "InputCoreTypes.h"
 
 AThe_AwakeningCharacter::AThe_AwakeningCharacter()
 {
@@ -136,8 +138,29 @@ void AThe_AwakeningCharacter::Tick(float DeltaTime)
 	UpdateSpriteFacing();
 }
 
+void AThe_AwakeningCharacter::DebugOpenPathPuzzle()
+{
+#if !UE_BUILD_SHIPPING
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || !PC->IsLocalController() || IsUIInputActive()) return;
+
+	// 临时测试入口，正式交互时可以直接调用 OpenPuzzle 并传入对应 WBP。
+	UClass* PuzzleClass = LoadClass<UTAPathPuzzleWidget>(nullptr,
+		TEXT("/Game/UI/Minigame/WBP_TestPuzzle.WBP_TestPuzzle_C"));
+	if (!PuzzleClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Puzzle] Cannot load WBP_TestPuzzle for debug key G."));
+		return;
+	}
+	UTAPathPuzzleWidget::OpenPuzzle(PC, PuzzleClass);
+#endif
+}
+
 void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
+#if !UE_BUILD_SHIPPING
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AThe_AwakeningCharacter::DebugOpenPathPuzzle);
+#endif
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
 

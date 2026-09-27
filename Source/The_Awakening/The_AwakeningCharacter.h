@@ -195,6 +195,9 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ToggleInventory();
 
+	/** 临时调试入口：G 打开路径小游戏的测试 WBP。 */
+	void DebugOpenPathPuzzle();
+
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	bool IsInventoryOpen() const { return InventoryPanelInstance != nullptr; }
 	

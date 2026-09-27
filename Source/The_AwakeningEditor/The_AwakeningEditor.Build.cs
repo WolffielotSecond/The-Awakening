@@ -23,6 +23,6 @@ public class The_AwakeningEditor : ModuleRules
 			"The_Awakening"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "ToolMenus", "ApplicationCore", "Json", "DesktopPlatform" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ToolMenus", "ApplicationCore", "Json", "DesktopPlatform", "GameplayAbilities" });
 	}
 }
