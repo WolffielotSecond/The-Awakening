@@ -22,6 +22,7 @@
 #include "Engine/OverlapResult.h"
 #include "CollisionQueryParams.h"
 #include "Movement/TAParkourComponent.h"
+#include "Movement/TAMovementComponent.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Scan/TAScanningComponent.h"
 #include "Blueprint/UserWidget.h"
@@ -34,7 +35,8 @@
 #include "Puzzle/TAPathPuzzleWidget.h"
 #include "InputCoreTypes.h"
 
-AThe_AwakeningCharacter::AThe_AwakeningCharacter()
+AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UTAMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -135,7 +137,9 @@ void AThe_AwakeningCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	UpdateInteractTarget();
+	UpdateHeldGameplayInput();
 	UpdateMovementInput();
+	if (ParkourComponent) ParkourComponent->UpdateHeldRequests(bParkourJumpHeld, bParkourDropHeld);
 	UpdateSpriteFacing();
 }
 
@@ -228,16 +232,7 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::TryInteract);
 		}
 
-		if (ParkourJumpAction)
-		{
-			EnhancedInputComponent->BindAction(
-				ParkourJumpAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::OnParkourJump);
-		}
-		if (ParkourDropAction)
-		{
-			EnhancedInputComponent->BindAction(
-				ParkourDropAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::OnParkourDrop);
-		}
+		// Parkour uses held action values in UpdateHeldGameplayInput, not a one-shot Started event.
 
 		if (ToggleInventoryAction)
 		{
@@ -402,6 +397,21 @@ void AThe_AwakeningCharacter::OnMoveRightReleased(const FInputActionValue& Value
 	bMoveRight = false;
 }
 
+void AThe_AwakeningCharacter::UpdateHeldGameplayInput()
+{
+	AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (!PC || !PC->IsLocalController()) return;
+	bMoveForward = PC->ReadHeldAction(MoveForwardAction).IsNonZero();
+	bMoveBackward = PC->ReadHeldAction(MoveBackwardAction).IsNonZero();
+	bMoveLeft = PC->ReadHeldAction(MoveLeftAction).IsNonZero();
+	bMoveRight = PC->ReadHeldAction(MoveRightAction).IsNonZero();
+	bSprintHeld = PC->ReadHeldAction(SprintAction).IsNonZero();
+	const FInputActionValue MoveValue = PC->ReadHeldAction(MoveAction);
+	StickInput = FVector2D(MoveValue[0], MoveValue[1]);
+	bParkourJumpHeld = PC->ReadHeldAction(ParkourJumpAction).IsNonZero();
+	bParkourDropHeld = PC->ReadHeldAction(ParkourDropAction).IsNonZero();
+}
+
 void AThe_AwakeningCharacter::UpdateMovementInput()
 {
 	if (IsUIInputActive())
@@ -440,7 +450,8 @@ void AThe_AwakeningCharacter::UpdateMovementInput()
 			MoveInput = StickInput;
 
 			// 等于 0.5 仍是走路，只有大于 0.5 才跑
-			bUseSprint = StickMagnitude > 0.5f;
+			// Stick magnitude only determines whether input is outside the dead zone.
+			// SprintAction alone selects WalkSpeed versus SprintSpeed.
 		}
 	}
 
@@ -512,7 +523,11 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 		DesiredDirection.Z = 0.f;
 		DesiredDirection.Normalize();
 
-		const FRotator DesiredRotation = DesiredDirection.Rotation();
+		const auto* Movement = Cast<UTAMovementComponent>(GetCharacterMovement());
+		const FVector FacingDirection = Movement && Movement->IsParkourLanding() &&
+			Movement->Velocity.SizeSquared2D() > FMath::Square(5.f)
+			? Movement->Velocity.GetSafeNormal2D() : DesiredDirection;
+		const FRotator DesiredRotation = FacingDirection.Rotation();
 
 		SetActorRotation(
 			FRotator(0.f, DesiredRotation.Yaw, 0.f)
@@ -815,22 +830,6 @@ bool AThe_AwakeningCharacter::IsSafeToMoveToward(const FVector& WorldDirection) 
 	}
 
 	return false;
-}
-
-void AThe_AwakeningCharacter::OnParkourJump(const FInputActionValue& Value)
-{
-	if (!IsUIInputActive() && !UTAFreezeComponent::IsActorFrozen(this) && ParkourComponent)
-	{
-		ParkourComponent->TryParkourJump();
-	}
-}
-
-void AThe_AwakeningCharacter::OnParkourDrop(const FInputActionValue& Value)
-{
-	if (!IsUIInputActive() && !UTAFreezeComponent::IsActorFrozen(this) && ParkourComponent)
-	{
-		ParkourComponent->TryParkourDrop();
-	}
 }
 
 void AThe_AwakeningCharacter::ToggleInventory()

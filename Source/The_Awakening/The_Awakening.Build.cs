@@ -31,7 +31,7 @@ public class The_Awakening : ModuleRules
 			"AssetRegistry"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore" });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"The_Awakening",

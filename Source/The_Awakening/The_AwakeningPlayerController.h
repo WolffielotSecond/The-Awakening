@@ -11,6 +11,9 @@ class UInputMappingContext;
 class UUserWidget;
 class UWidget;
 class UTAScanningComponent;
+class UInputAction;
+class UInputModifier;
+struct FInputActionValue;
 struct FInputKeyEventArgs;
 /**
  * 输入设备检测器
@@ -29,6 +32,7 @@ public:
 	virtual bool HandleKeyUpEvent(FSlateApplication& SoftApp, const FKeyEvent& InKeyEvent) override;
 	virtual bool HandleAnalogInputEvent(FSlateApplication& SoftApp, const FAnalogInputEvent& InAnalogInputEvent) override;
 	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
+	virtual bool HandleMouseButtonUpEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 	virtual bool HandleMouseMoveEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 
 private:
@@ -43,6 +47,9 @@ class AThe_AwakeningPlayerController : public APlayerController
 public:
 	AThe_AwakeningPlayerController();
 	void NotifyRawInputKey(const FKey& Key);
+	/** Observe held inputs before UI consumes them, separately from gameplay permission. */
+	void RecordHeldInput(FKey Key, float Value, int32 UserIndex);
+	FInputActionValue ReadHeldAction(const UInputAction* Action);
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	/** 进入/退出对话输入模式（移除/恢复默认移动等映射，供剧情系统调用） */
@@ -76,6 +83,11 @@ protected:
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
 	FDelegateHandle ApplicationActivationHandle;
+	FDelegateHandle DeviceConnectionHandle;
+	TMap<FKey, FVector> HeldKeyValues;
+	bool bApplicationInputActive = true;
+	UPROPERTY(Transient)
+	TMap<TObjectPtr<UInputModifier>, TObjectPtr<UInputModifier>> HeldInputModifiers;
 	int32 ActiveUIModeCount = 0;
 	bool bUIInputModeActive = false;
 	bool bDialogueModeActive = false;

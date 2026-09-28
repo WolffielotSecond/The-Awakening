@@ -30,6 +30,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
 	bool IsParkouring() const { return bIsParkouring; }
 
+	/** Shared by execution and landing previews. Includes overlap and held-marker rearm rules. */
+	UFUNCTION(BlueprintPure, Category = "Parkour")
+	bool CanParkourToMarker(ATAParkourMarker* Marker) const;
+
+	/** 设计开关：默认允许静止时背向起跳并自动转向；不想保留此行为时关闭即可。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Facing")
+	bool bAllowStationaryBackFacing = true;
+
+	/** Horizontal speed at/below this value is stationary (cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Facing", meta = (ClampMin = "0"))
+	float StationarySpeedThreshold = 5.f;
+
 	//用于在动画蓝图中（什么几把中文语法
 
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
@@ -40,6 +52,8 @@ public:
 
 	void RegisterMarker(ATAParkourMarker* Marker);
 	void UnregisterMarker(ATAParkourMarker* Marker);
+	/** Current held intent; call even while menus block execution so releases can rearm markers. */
+	void UpdateHeldRequests(bool bJumpHeld, bool bDropHeld);
 
 protected:
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -67,7 +81,14 @@ protected:
 	float ParkourDuration = 0.5f;
 	float ParkourArcHeight = 120.f;
 	FVector ParkourStart = FVector::ZeroVector;
+	FVector PreParkourVelocity = FVector::ZeroVector;
 	FVector ParkourEnd = FVector::ZeroVector;
+	FRotator ParkourFacingRotation = FRotator::ZeroRotator;
+	bool bParkourFacingRight = true;
+	bool bSavedOrientRotationToMovement = false;
+	bool bSavedUseControllerDesiredRotation = false;
+	bool bSavedUseControllerRotationYaw = false;
 
 	TWeakObjectPtr<ACharacter> OwnerCharacter;
+	TSet<TWeakObjectPtr<ATAParkourMarker>> ConsumedHeldMarkers;
 };

@@ -14,6 +14,7 @@ ATAParkourMarker::ATAParkourMarker()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.TickGroup = TG_PostPhysics;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -74,6 +75,7 @@ void ATAParkourMarker::BeginPlay()
 
 	TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &ATAParkourMarker::OnBeginOverlap);
 	TriggerBox->OnComponentEndOverlap.AddDynamic(this, &ATAParkourMarker::OnEndOverlap);
+	SetLandingPreviewVisible(false);
 }
 
 void ATAParkourMarker::BindLandingTargetFromChild()
@@ -231,6 +233,7 @@ void ATAParkourMarker::OnBeginOverlap(
 		CurrentOverlappingActor = OtherActor;
 		SetActorTickEnabled(true);
 		ParkourComp->RegisterMarker(this);
+		RefreshLandingPreview();
 	}
 }
 
@@ -252,6 +255,7 @@ void ATAParkourMarker::OnEndOverlap(
 		{
 			CurrentOverlappingActor.Reset();
 			SetActorTickEnabled(false);
+			SetLandingPreviewVisible(false);
 		}
 	}
 }
@@ -267,6 +271,7 @@ void ATAParkourMarker::SetPromptVisible(bool bVisible)
 void ATAParkourMarker::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	RefreshLandingPreview();
 
 	if (!CurrentOverlappingActor.IsValid() || !LandingTargetComponent)
 	{

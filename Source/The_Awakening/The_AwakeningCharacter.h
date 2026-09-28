@@ -210,7 +210,8 @@ protected:
 	void UpdateSpriteFacing();
 	
 public:
-	AThe_AwakeningCharacter();
+	AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	bool IsLandingMomentumSafe(const FVector& Direction) const { return IsSafeToMoveToward(Direction); }
 	void ClearMovementInput();
 	float GetMenuCursorSpeed() const { return MenuCursorSpeed; }
 
@@ -243,10 +244,10 @@ protected:
 	void OnMoveRightReleased(const FInputActionValue& Value);
 
 	void UpdateMovementInput();
+	void UpdateHeldGameplayInput();
+	bool bParkourJumpHeld = false;
+	bool bParkourDropHeld = false;
 	bool IsUIInputActive() const;
-
-	void OnParkourJump(const FInputActionValue& Value);
-	void OnParkourDrop(const FInputActionValue& Value);
 
 	void OnScanStarted(const FInputActionValue& Value);
 	void OnScanEnded(const FInputActionValue& Value);

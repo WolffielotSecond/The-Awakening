@@ -90,4 +90,6 @@ protected:
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
 	void BindLandingTargetFromChild();
+	void RefreshLandingPreview();
+	void SetLandingPreviewVisible(bool bVisible);
 };

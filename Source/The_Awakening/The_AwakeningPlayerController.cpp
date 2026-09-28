@@ -5,6 +5,11 @@
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
+#include "EnhancedPlayerInput.h"
+#include "Core/TAPlayerInput.h"
+#include "InputAction.h"
+#include "InputModifiers.h"
+#include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
 #include "Blueprint/UserWidget.h"
 #include "The_Awakening.h"
 #include "Widgets/Input/SVirtualJoystick.h"
@@ -22,6 +27,7 @@
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
 {
+	OverridePlayerInputClass = UTAPlayerInput::StaticClass();
 	ScanningComponent = CreateDefaultSubobject<UTAScanningComponent>(TEXT("ScanComponent"));
 }
 
@@ -30,12 +36,14 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 	if (Owner)
 	{
 		Owner->NotifyRawInputKey(InKeyEvent.GetKey());
+		Owner->RecordHeldInput(InKeyEvent.GetKey(), 1.f, InKeyEvent.GetUserIndex());
 	}
 	return false;
 }
 
-bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent&)
+bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& Event)
 {
+	if (Owner) Owner->RecordHeldInput(Event.GetKey(), 0.f, Event.GetUserIndex());
 	return false;
 }
 
@@ -48,6 +56,7 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 
 	const FKey Key = InAnalogInputEvent.GetKey();
 	Owner->NotifyRawInputKey(Key);
+	Owner->RecordHeldInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex());
 	if (!Owner->IsUIInputModeActive() || !Key.IsGamepadKey())
 	{
 		return false;
@@ -74,7 +83,14 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 	if (Owner)
 	{
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
+		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
 	}
+	return false;
+}
+
+bool FTAInputDeviceDetector::HandleMouseButtonUpEvent(FSlateApplication&, const FPointerEvent& Event)
+{
+	if (Owner) Owner->RecordHeldInput(Event.GetEffectingButton(), 0.f, Event.GetUserIndex());
 	return false;
 }
 
@@ -94,6 +110,17 @@ void AThe_AwakeningPlayerController::BeginPlay()
 	if (IsLocalPlayerController())
 	{
 		InputDeviceDetector = MakeShared<FTAInputDeviceDetector>(this);
+		DeviceConnectionHandle = IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().AddWeakLambda(this,
+			[this](EInputDeviceConnectionState State, FPlatformUserId User, FInputDeviceId)
+			{
+				if (State == EInputDeviceConnectionState::Disconnected && GetLocalPlayer() &&
+					User == GetLocalPlayer()->GetPlatformUserId())
+				{
+					for (auto It = HeldKeyValues.CreateIterator(); It; ++It)
+						if (It.Key().IsGamepadKey()) It.RemoveCurrent();
+					VirtualCursorAxis = FVector2D::ZeroVector;
+				}
+			});
 		if (FSlateApplication::IsInitialized())
 		{
 			FSlateApplication::Get().RegisterInputPreProcessor(InputDeviceDetector);
@@ -131,6 +158,7 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().Remove(DeviceConnectionHandle);
 	if (InputDeviceDetector.IsValid() && FSlateApplication::IsInitialized())
 	{
 		FSlateApplication::Get().UnregisterInputPreProcessor(InputDeviceDetector);
@@ -154,6 +182,66 @@ void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 			IconSys->NotifyInputKey(Key);
 		}
 	}
+}
+
+void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int32 UserIndex)
+{
+	if (!bApplicationInputActive || !GetLocalPlayer() || UserIndex != GetLocalPlayer()->GetControllerId()) return;
+	HeldKeyValues.FindOrAdd(Key) = FVector(Value, 0.f, 0.f);
+	// Slate sends separate X/Y events even when the mapping uses Gamepad_Left2D.
+	const EPairedAxis Axis = Key.GetPairedAxis();
+	if (Axis != EPairedAxis::Unpaired)
+	{
+		FVector& Pair = HeldKeyValues.FindOrAdd(Key.GetPairedAxisKey());
+		if (Axis == EPairedAxis::X) Pair.X = Value;
+		else if (Axis == EPairedAxis::Y) Pair.Y = Value;
+		else if (Axis == EPairedAxis::Z) Pair.Z = Value;
+	}
+}
+
+FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAction* Action)
+{
+	if (!Action) return FInputActionValue();
+	FInputActionValue Result(Action->ValueType, FVector::ZeroVector);
+	const UTAPlayerInput* Enhanced = Cast<UTAPlayerInput>(PlayerInput);
+	if (!Enhanced || !bApplicationInputActive) return Result;
+	// UI -> game focus may take a frame to settle. Suppress gameplay while unfocused,
+	// but preserve held keys so a keyboard does not need a second key-down to resume.
+	// Key-up events still update the cache; actual application deactivation clears it.
+	if (const UGameViewportClient* ViewportClient = GetWorld()->GetGameViewport();
+		ViewportClient && ViewportClient->Viewport && !bUIInputModeActive && !ViewportClient->Viewport->HasFocus())
+	{
+		return Result;
+	}
+	auto Modify = [&](const TArray<TObjectPtr<UInputModifier>>& Modifiers, FInputActionValue Value)
+	{
+		for (UInputModifier* Source : Modifiers)
+		{
+			if (!Source) continue;
+			// Separate instances: evaluating held intent must not advance Enhanced Input's smoothing state twice.
+			TObjectPtr<UInputModifier>& Modifier = HeldInputModifiers.FindOrAdd(Source);
+			if (!Modifier) Modifier = DuplicateObject<UInputModifier>(Source, this);
+			Value = Modifier->ModifyRaw(Enhanced, Value, GetWorld()->GetDeltaSeconds());
+			Value.ConvertToType(Action->ValueType);
+		}
+		return Value;
+	};
+	for (const FEnhancedActionKeyMapping& Mapping : Enhanced->GetHeldActionMappings())
+	{
+		if (Mapping.Action != Action) continue;
+		const FInputActionValue Value = Modify(Mapping.Modifiers,
+			FInputActionValue(Action->ValueType, HeldKeyValues.FindRef(Mapping.Key)));
+		if (Action->AccumulationBehavior == EInputActionAccumulationBehavior::Cumulative) Result += Value;
+		else
+		{
+			FVector Combined(Result[0], Result[1], Result[2]);
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+				if (FMath::Abs(Value[Axis]) > FMath::Abs(Combined[Axis])) Combined[Axis] = Value[Axis];
+			Result = FInputActionValue(Action->ValueType, Combined);
+		}
+	}
+	// These actions deliberately represent held intent, not Pressed/Hold trigger timing.
+	return Modify(Action->Modifiers, Result);
 }
 
 void AThe_AwakeningPlayerController::SetDialogueModeActive(bool bActive, UUserWidget* FocusWidget)
@@ -292,6 +380,14 @@ void AThe_AwakeningPlayerController::EndUIInputMode()
 
 void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIsActive)
 {
+	bApplicationInputActive = bIsActive;
+	if (!bIsActive)
+	{
+		HeldKeyValues.Reset();
+		HeldInputModifiers.Reset();
+		VirtualCursorAxis = FVector2D::ZeroVector;
+		if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
+	}
 	if (!ScanningComponent)
 	{
 		return;

@@ -22,6 +22,7 @@ void UTAPromptComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	OwnerPawn = Cast<APawn>(GetOwner());
+	if (GetOwner()) AddTickPrerequisiteActor(GetOwner());
 }
 
 void UTAPromptComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -155,7 +156,7 @@ void UTAPromptComponent::CollectParkourCandidates(TArray<FTAPromptCandidate>& Ou
 	// 需要 ParkourComponent 提供 OverlappingMarkers 访问，见下方「配套修改」
 	for (ATAParkourMarker* Marker : Parkour->GetOverlappingMarkers())
 	{
-		if (!Marker)
+		if (!Parkour->CanParkourToMarker(Marker))
 		{
 			continue;
 		}
