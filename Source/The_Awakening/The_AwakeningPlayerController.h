@@ -61,6 +61,7 @@ public:
 	void SetUIFocusWidget(UUserWidget* FocusWidget);
 	bool IsUIInputModeActive() const { return bUIInputModeActive; }
 	void SetVirtualCursorAxis(const FKey& AxisKey, float Value);
+	bool ConsumeInventoryTogglePress(const UInputAction* Action);
 	void TickVirtualCursor(float DeltaTime);
 	void NotifyApplicationActivationChanged(bool bIsActive);
 
@@ -68,6 +69,8 @@ public:
 	void BeginScanCursorMode();
 	void EndScanCursorMode();
 	bool IsScanCursorModeActive() const { return bScanCursorModeActive; }
+	bool IsScanStickCursorActive() const { return bScanCursorModeActive && !bUIInputModeActive && (!VirtualCursorAxis.IsNearlyZero() || !ScanRightCursorAxis.IsNearlyZero()); }
+	bool GetScanCursorPosition(float& X, float& Y) const;
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
@@ -85,6 +88,7 @@ protected:
 	FDelegateHandle ApplicationActivationHandle;
 	FDelegateHandle DeviceConnectionHandle;
 	TMap<FKey, FVector> HeldKeyValues;
+	TSet<FKey> ConsumedInventoryKeys;
 	bool bApplicationInputActive = true;
 	UPROPERTY(Transient)
 	TMap<TObjectPtr<UInputModifier>, TObjectPtr<UInputModifier>> HeldInputModifiers;
@@ -95,6 +99,7 @@ protected:
 	bool bMouseCursorBeforeScan = false;
 	bool bScanCursorModeActive = false;
 	FVector2D VirtualCursorAxis = FVector2D::ZeroVector;
+	FVector2D ScanRightCursorAxis = FVector2D::ZeroVector;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

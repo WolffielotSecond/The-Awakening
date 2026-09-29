@@ -11,10 +11,34 @@
 #include "Components/NamedSlot.h"
 #include "GameFramework/PlayerController.h"
 #include "Core/TALocalizeSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
+#include "InputCoreTypes.h"
+
+FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// Prevent OS/gamepad key repeat from reaching Blueprint close handlers after opening the panel.
+	if (InKeyEvent.IsRepeat() && (InKeyEvent.GetKey() == EKeys::Tab || InKeyEvent.GetKey() == EKeys::Gamepad_Special_Left))
+		return FReply::Handled();
+	if (InKeyEvent.GetKey() != EKeys::Gamepad_FaceButton_Bottom)
+		return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+	if (!InKeyEvent.IsRepeat() && FSlateApplication::IsInitialized())
+	{
+		const FVector2D CursorPosition = FSlateApplication::Get().GetCursorPos();
+		auto IsUnderCursor = [&CursorPosition](UButton* Button)
+		{
+			return Button && Button->IsVisible() && Button->GetIsEnabled() && Button->GetCachedGeometry().IsUnderLocation(CursorPosition);
+		};
+		if (IsUnderCursor(Button_Inventory)) OnClickInventoryTab();
+		else if (IsUnderCursor(Button_Skills)) OnClickSkillsTab();
+	}
+	// Do not let an unrelated focused tab consume the same confirmation.
+	return FReply::Handled();
+}
 
 void UTAInventoryPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	SetIsFocusable(true);
 
 	if (!SlotWidgetClass)
 	{

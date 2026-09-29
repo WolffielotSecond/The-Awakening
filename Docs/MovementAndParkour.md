@@ -2,6 +2,8 @@
 
 ## 操作规则
 
+- 背包开关键（Tab／Special Left）每次按住只切换一次，松开后才能再次切换；UI 拦截这两个键的重复事件。背包内 Xbox A 根据虚拟光标位置选择“背包／技能”页签，不再确认无关的默认焦点页签。
+
 - WASD 或左摇杆保持输入时，背包／对话／小游戏关闭后，无需松开重按即可继续移动。菜单内松开按键或摇杆回中后，关闭菜单不会继续走。
 - 左摇杆超过 `StickDeadZone` 后方向归一化，幅度不影响速度。非疾跑使用 `WalkSpeed`（默认 500）；按住 Sprint 使用 `SprintSpeed`（默认 750）。取消了超过 0.5 自动疾跑。现有 Input Action 的 Dead Zone Modifier 也会先处理输入。
 - `IMC_Default` 中 IA_Sprint 对应键盘 Left Shift 和手柄左摇杆按键 L3／LS（Gamepad_LeftThumbstick），均为按住疾跑，松开恢复走路。

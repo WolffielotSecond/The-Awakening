@@ -53,6 +53,19 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 	Local->PlayerController = PC; PC->Player = Local;
 	PC->PlayerInput = NewObject<UTAPlayerInput>(PC);
 	PC->Possess(Pawn);
+	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 1.f, Local->GetControllerId());
+	PC->BeginScanCursorMode();
+	TestTrue(TEXT("Scan seeds already-held stick cursor without menu mode"), PC->IsScanStickCursorActive() && !PC->IsUIInputModeActive());
+	PC->SetVirtualCursorAxis(EKeys::Gamepad_LeftX, 0.f);
+	TestFalse(TEXT("Centered scan stick stops cursor and explicit camera input"), PC->IsScanStickCursorActive());
+	PC->SetVirtualCursorAxis(EKeys::Gamepad_RightY, 1.f);
+	TestTrue(TEXT("Right stick also drives scan cursor and camera"), PC->IsScanStickCursorActive());
+	PC->SetVirtualCursorAxis(EKeys::Gamepad_RightY, 0.f);
+	TestFalse(TEXT("Right stick center stops scan cursor"), PC->IsScanStickCursorActive());
+	PC->SetVirtualCursorAxis(EKeys::Gamepad_LeftY, 1.f);
+	PC->EndScanCursorMode();
+	TestFalse(TEXT("Scan exit clears stick cursor"), PC->IsScanStickCursorActive());
+	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, Local->GetControllerId());
 	// Input test has no level floor; bypass the unrelated ledge-safety traces.
 	Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
 	FHeldTestMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
@@ -62,6 +75,7 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 	const UInputAction* Forward = nullptr;
 	const UInputAction* Move = nullptr;
 	const UInputAction* Sprint = nullptr;
+	const UInputAction* InventoryAction = nullptr;
 	for (const auto& Mapping : Context->GetMappings())
 	{
 		if (!Mapping.Action) continue;
@@ -69,10 +83,28 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 		if (Mapping.Action->GetName() == TEXT("IA_MoveForward")) Forward = Mapping.Action;
 		if (Mapping.Action->GetName() == TEXT("IA_Move")) Move = Mapping.Action;
 		if (Mapping.Action->GetName() == TEXT("IA_Sprint")) Sprint = Mapping.Action;
+		if (Mapping.Key == EKeys::Tab) InventoryAction = Mapping.Action;
 	}
 	if (!TestNotNull(TEXT("Forward mapping"), Forward) || !TestNotNull(TEXT("Move mapping"), Move) || !TestNotNull(TEXT("Sprint mapping"), Sprint))
 	{
 		World->DestroyWorld(false); return false;
+	}
+	if (TestNotNull(TEXT("Inventory action mapping"), InventoryAction))
+	{
+		for (const FKey Key : {EKeys::Tab, EKeys::Gamepad_Special_Left})
+		{
+			PC->RecordHeldInput(Key, 1.f, User);
+			TestTrue(TEXT("First inventory press accepted"), PC->ConsumeInventoryTogglePress(InventoryAction));
+			PC->BeginUIInputMode();
+			PC->RecordHeldInput(Key, 1.f, User);
+			TestFalse(TEXT("Hold cannot close newly opened inventory"), PC->ConsumeInventoryTogglePress(InventoryAction));
+			PC->RecordHeldInput(Key, 0.f, User);
+			PC->RecordHeldInput(Key, 1.f, User);
+			TestTrue(TEXT("New press can close inventory"), PC->ConsumeInventoryTogglePress(InventoryAction));
+			PC->EndUIInputMode();
+			TestFalse(TEXT("Same closing press cannot reopen inventory"), PC->ConsumeInventoryTogglePress(InventoryAction));
+			PC->RecordHeldInput(Key, 0.f, User);
+		}
 	}
 	PC->RecordHeldInput(EKeys::W, 1.f, User);
 	PC->BeginUIInputMode();

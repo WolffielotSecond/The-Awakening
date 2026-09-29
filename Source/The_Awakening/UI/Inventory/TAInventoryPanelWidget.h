@@ -29,6 +29,7 @@ public:
 	void RefreshAll();
 
 protected:
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	void EnsureDynamicChildren();
 
 	UFUNCTION()

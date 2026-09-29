@@ -1055,10 +1055,8 @@ void UTAScanningComponent::UpdateHoveredTarget()
 
 	float CursorX = 0.0f;
 	float CursorY = 0.0f;
-	const UTAInputIconSubsystem* InputIcons = GetWorld()->GetGameInstance()
-		? GetWorld()->GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>() : nullptr;
-	const bool bUseScreenCenter = InputIcons && InputIcons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
-	if (bUseScreenCenter || !PlayerController->GetMousePosition(CursorX, CursorY))
+	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PlayerController);
+	if (!(CursorController ? CursorController->GetScanCursorPosition(CursorX, CursorY) : PlayerController->GetMousePosition(CursorX, CursorY)))
 	{
 		int32 SizeX = 0;
 		int32 SizeY = 0;
@@ -1148,10 +1146,8 @@ void UTAScanningComponent::UpdateScanInfoWidgetPosition()
 	int32 ViewportX = 0;
 	int32 ViewportY = 0;
 	PlayerController->GetViewportSize(ViewportX, ViewportY);
-	const UTAInputIconSubsystem* InputIcons = GetWorld() && GetWorld()->GetGameInstance()
-		? GetWorld()->GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>() : nullptr;
-	const bool bUseScreenCenter = InputIcons && InputIcons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
-	if (bUseScreenCenter || !PlayerController->GetMousePosition(CursorX, CursorY))
+	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PlayerController);
+	if (!(CursorController ? CursorController->GetScanCursorPosition(CursorX, CursorY) : PlayerController->GetMousePosition(CursorX, CursorY)))
 	{
 		CursorX = ViewportX * 0.5f;
 		CursorY = ViewportY * 0.5f;

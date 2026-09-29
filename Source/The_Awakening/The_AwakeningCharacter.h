@@ -227,6 +227,7 @@ protected:
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void MouseLook(const FInputActionValue& Value);
 
 	bool bMoveForward = false;
 	bool bMoveBackward = false;
