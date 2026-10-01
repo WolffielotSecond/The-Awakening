@@ -18,6 +18,7 @@
 #include "UObject/UnrealType.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Puzzle/TAPathPuzzleWidget.h"
 #include "Components/SplineComponent.h"
 
 namespace
@@ -322,5 +323,57 @@ bool FTAParkourMomentumTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Unsafe landing momentum stops at ledge"), GameMove->Velocity.IsNearlyZero());
 	World->DestroyWorld(false);
 	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAPuzzleScopeTest, "TheAwakening.Puzzle.Scope",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTAPuzzleScopeTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	UClass* ControllerClass = LoadClass<AThe_AwakeningPlayerController>(nullptr, TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
+	auto* PC = ControllerClass ? World->SpawnActor<AThe_AwakeningPlayerController>(ControllerClass) : nullptr;
+	if (!TestNotNull(TEXT("Scope controller"), PC)) { World->DestroyWorld(false); return false; }
+	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
+	UClass* WidgetClass = LoadClass<UTAPathPuzzleWidget>(nullptr, TEXT("/Game/UI/Minigame/WBP_TestPuzzle.WBP_TestPuzzle_C"));
+	if (!TestNotNull(TEXT("Scope WBP"), WidgetClass)) { World->DestroyWorld(false); return false; }
+	for (ETAPuzzleDifficulty Difficulty : {ETAPuzzleDifficulty::Easy, ETAPuzzleDifficulty::Medium, ETAPuzzleDifficulty::Hard})
+	{
+		auto* Widget = CreateWidget<UTAPathPuzzleWidget>(PC, WidgetClass);
+		Widget->PuzzleSeed = 12345; Widget->PuzzleSettings.Difficulty = Difficulty;
+		Widget->PuzzleSettings.bEnableMainGameEffects = false;
+		TestTrue(TEXT("Scope starts all difficulty levels"), Widget->StartPuzzle());
+		if (!Widget->Session) continue;
+		PC->BeginUIInputMode(); PC->SetPuzzleScopeWidget(Widget);
+		TestFalse(TEXT("Scope hides cursor"), PC->bShowMouseCursor);
+		const int32 User = Local->GetControllerId();
+		for (const auto Key : {EKeys::W, EKeys::S, EKeys::A, EKeys::D})
+		{
+			PC->RecordHeldInput(Key, 1.f, User);
+			const FVector2D Expected = Key == EKeys::W ? FVector2D(0,1) : Key == EKeys::S ? FVector2D(0,-1) : Key == EKeys::A ? FVector2D(1,0) : FVector2D(-1,0);
+			TestTrue(TEXT("WASD moves board in specified inverse direction"), PC->GetPuzzlePanInput().Equals(Expected));
+			PC->RecordHeldInput(Key, 0.f, User);
+		}
+		PC->RecordHeldInput(EKeys::Gamepad_LeftX, 1.f, User);
+		TestTrue(TEXT("LS right moves board left"), PC->GetPuzzlePanInput().Equals(FVector2D(-1,0)));
+		PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, User);
+		const FVector2D Start = Widget->GetBoardViewCenter();
+		TestTrue(TEXT("Repeat confirmation consumed"), PC->HandlePuzzleConfirm(EKeys::Gamepad_FaceButton_Bottom, true, User));
+		TestEqual(TEXT("Repeat does not select"), Widget->Session->Progress.Path.Num(), 0);
+		PC->HandlePuzzleConfirm(EKeys::LeftMouseButton, false, User);
+		TestEqual(TEXT("Reticle confirms initial start node"), Widget->Session->Progress.Path.Num(), 1);
+		TestTrue(TEXT("Selection rebuild keeps view center"), Widget->GetBoardViewCenter().Equals(Start));
+		const float Time = Widget->Session->TimeRemaining;
+		Widget->PanBoard(FVector2D(-1,0), .1f);
+		TestTrue(TEXT("Board left moves view right"), Widget->GetBoardViewCenter().X < Start.X);
+		const auto Panned = Widget->GetBoardViewCenter(); Widget->RefreshBoard();
+		TestTrue(TEXT("Refresh preserves panning"), Widget->GetBoardViewCenter().Equals(Panned));
+		TestEqual(TEXT("Panning does not alter timer"), Widget->Session->TimeRemaining, Time);
+		Widget->Session->AdvanceTime(.5f);
+		TestTrue(TEXT("Timer remains active"), Widget->Session->TimeRemaining < Time);
+		Widget->PanBoard(FVector2D(-1,-1), 1000.f);
+		TestTrue(TEXT("Board movement bounded"), Widget->GetBoardViewCenter().X <= Widget->Appearance.BoardSize.X && Widget->GetBoardViewCenter().Y <= Widget->Appearance.BoardSize.Y);
+		PC->SetPuzzleScopeWidget(nullptr); PC->EndUIInputMode();
+		TestTrue(TEXT("Scope input released"), PC->GetPuzzlePanInput().IsNearlyZero());
+	}
+	World->DestroyWorld(false); return true;
 }
 #endif

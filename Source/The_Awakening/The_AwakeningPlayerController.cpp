@@ -7,6 +7,7 @@
 #include "InputMappingContext.h"
 #include "EnhancedPlayerInput.h"
 #include "Core/TAPlayerInput.h"
+#include "Puzzle/TAPathPuzzleWidget.h"
 #include "InputAction.h"
 #include "InputModifiers.h"
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
@@ -38,6 +39,8 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 	{
 		Owner->NotifyRawInputKey(InKeyEvent.GetKey());
 		Owner->RecordHeldInput(InKeyEvent.GetKey(), 1.f, InKeyEvent.GetUserIndex());
+		if (Owner->HandlePuzzleConfirm(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex())) return true;
+		if (Owner->HandlePuzzleUndo(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex())) return true;
 	}
 	return false;
 }
@@ -92,6 +95,7 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 	{
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
+		if (Owner->HandlePuzzleConfirm(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex())) return true;
 	}
 	return false;
 }
@@ -543,6 +547,7 @@ void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, f
 
 void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 {
+	if (PuzzleScopeWidget.IsValid()) return;
 	const FVector2D CursorAxis = (VirtualCursorAxis + (bScanCursorModeActive && !bUIInputModeActive ? ScanRightCursorAxis : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
 	if ((!bUIInputModeActive && !bScanCursorModeActive) || !bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
 	{
@@ -610,4 +615,48 @@ bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		NotifyRawInputKey(Params.Key);
 	}
 	return Super::InputKey(Params);
+}
+
+void AThe_AwakeningPlayerController::SetPuzzleScopeWidget(UTAPathPuzzleWidget* Widget)
+{
+    PuzzleScopeWidget = Widget;
+    VirtualCursorAxis = ScanRightCursorAxis = FVector2D::ZeroVector;
+    if (Widget)
+    {
+        SetShowMouseCursor(false);
+        Widget->SetUserFocus(this);
+    }
+    else if (bUIInputModeActive) SetShowMouseCursor(true);
+}
+
+FVector2D AThe_AwakeningPlayerController::GetPuzzlePanInput() const
+{
+    if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid()) return FVector2D::ZeroVector;
+    auto Down = [this](FKey Key) { return HeldKeyValues.FindRef(Key).X != 0.f ? 1.f : 0.f; };
+	FVector2D Keyboard(Down(EKeys::A) - Down(EKeys::D), Down(EKeys::W) - Down(EKeys::S));
+	if (!PuzzleScopeWidget->bInversePanInput) Keyboard *= -1.f;
+    if (!Keyboard.IsNearlyZero()) return Keyboard.GetClampedToMaxSize(1.f);
+    const FVector Stick = HeldKeyValues.FindRef(EKeys::Gamepad_Left2D);
+    FVector2D Axis(-Stick.X, Stick.Y);
+	if (!PuzzleScopeWidget->bInversePanInput) Axis *= -1.f;
+    const float Magnitude = Axis.Size();
+    return Magnitude > .18f ? Axis.GetSafeNormal() * FMath::Clamp((Magnitude - .18f) / .82f, 0.f, 1.f) : FVector2D::ZeroVector;
+}
+
+bool AThe_AwakeningPlayerController::HandlePuzzleConfirm(FKey Key, bool bRepeat, int32 UserIndex)
+{
+    if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
+        UserIndex != GetLocalPlayer()->GetControllerId() ||
+        (Key != EKeys::LeftMouseButton && Key != EKeys::Gamepad_FaceButton_Bottom)) return false;
+    if (!bRepeat) PuzzleScopeWidget->ConfirmScopeNode();
+	return true;
+}
+
+bool AThe_AwakeningPlayerController::HandlePuzzleUndo(FKey Key, bool bRepeat, int32 UserIndex)
+{
+	if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
+		UserIndex != GetLocalPlayer()->GetControllerId() ||
+		(Key != EKeys::Z && Key != EKeys::Gamepad_FaceButton_Left)) return false;
+	if (!bRepeat) PuzzleScopeWidget->Undo();
+	return true;
 }

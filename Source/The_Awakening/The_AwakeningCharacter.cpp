@@ -157,7 +157,12 @@ void AThe_AwakeningCharacter::DebugOpenPathPuzzle()
 		UE_LOG(LogTemp, Warning, TEXT("[Puzzle] Cannot load WBP_TestPuzzle for debug key G."));
 		return;
 	}
-	UTAPathPuzzleWidget::OpenPuzzle(PC, PuzzleClass);
+	if (UTAPathPuzzleWidget* Puzzle = UTAPathPuzzleWidget::OpenPuzzle(PC, PuzzleClass))
+	{
+		// Existing test WBP assets may have serialized the newly added flag as false.
+		// Keep the debug microscope using the requested inverse mapping by default.
+		Puzzle->bInversePanInput = true;
+	}
 #endif
 }
 

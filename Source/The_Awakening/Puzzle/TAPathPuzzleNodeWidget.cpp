@@ -12,6 +12,13 @@
 void UTAPathPuzzleNodeWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	EnsureNativeWidgetTree();
+	if (Button_Node) Button_Node->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleNodeWidget::HandleClick);
+}
+
+void UTAPathPuzzleNodeWidget::EnsureNativeWidgetTree()
+{
+	if (!WidgetTree) WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
 	if (!WidgetTree->RootWidget)
 	{
 		Button_Node = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Node"));
@@ -45,11 +52,14 @@ void UTAPathPuzzleNodeWidget::NativeOnInitialized()
 		Image_Node->SetVisibility(ESlateVisibility::HitTestInvisible);
 		Texts->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
-	if (Button_Node) Button_Node->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleNodeWidget::HandleClick);
 }
 
 void UTAPathPuzzleNodeWidget::Configure(int32 Index, const FText& Label, const FText& Effect, const FSlateBrush& Brush, bool bShowLabel)
 {
+	// UUserWidget skips NativeOnInitialized when a commandlet has no player context.
+	// Lazily build the native fallback so those creation paths still render nodes.
+	EnsureNativeWidgetTree();
+	if (Button_Node) Button_Node->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleNodeWidget::HandleClick);
 	NodeIndex = Index;
 	if (Image_Node) Image_Node->SetBrush(Brush);
 	if (Text_Label)

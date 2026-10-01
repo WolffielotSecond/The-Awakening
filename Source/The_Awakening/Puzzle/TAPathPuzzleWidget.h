@@ -11,6 +11,7 @@ class UCanvasPanel;
 class UProgressBar;
 class UTextBlock;
 class UButton;
+class UImage;
 class UTAPathPuzzleNodeWidget;
 
 USTRUCT(BlueprintType)
@@ -63,6 +64,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void Retry();
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void SelectNode(int32 NodeIndex);
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void RefreshBoard();
+	UFUNCTION(BlueprintCallable, Category="Puzzle|Scope") void ConfirmScopeNode();
+	UFUNCTION(BlueprintCallable, Category="Puzzle|Scope") void PanBoard(FVector2D Input, float DeltaSeconds);
+	UFUNCTION(BlueprintCallable, Category="Puzzle|Scope") void RefreshScopePresentation() { UpdateScope(0.f); RefreshChrome(); }
+	UFUNCTION(BlueprintPure, Category="Puzzle|Scope") FVector2D GetBoardViewCenter() const { return ViewCenter; }
+	UFUNCTION(BlueprintPure, Category="Puzzle|Scope") int32 GetAimedNode() const { return AimedNode; }
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="0.1")) float BoardZoom = 2.3f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="0")) float BoardPanSpeed = 450.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="1")) float AimRadius = 30.f;
+	/** When enabled, W/S pan the board down/up and A/D pan it right/left. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope") bool bInversePanInput = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle", meta=(ExposeOnSpawn="true")) FTAPuzzleSettings PuzzleSettings;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle", meta=(ExposeOnSpawn="true")) int32 PuzzleSeed = -1;
@@ -88,6 +99,13 @@ protected:
 
 	/** Optional WBP controls. PuzzleCanvas is required when supplying a custom designer root. */
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional), Category="Puzzle|UI") TObjectPtr<UCanvasPanel> PuzzleCanvas;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCanvasPanel> ScopeFrame;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCanvasPanel> ScopeInstruments;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCanvasPanel> Crosshair;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_ScopeMask;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_EnergyArc;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UImage> Image_TimeArc;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Energy;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UProgressBar> Progress_Time;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Stats;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Path;
@@ -107,6 +125,10 @@ private:
 	void BuildFallback();
 	void RefreshChrome();
 	void ReleaseInput();
+	void UpdateScope(float DeltaSeconds);
+	FVector2D GetNodePosition(int32 Index) const;
+	FVector2D ViewCenter = FVector2D::ZeroVector;
+	int32 AimedNode = INDEX_NONE;
 	UFUNCTION() void HandleChanged();
 	UFUNCTION() void HandleSettled(const FTAPuzzleResult& Result);
 	bool bOwnsInputMode = false;

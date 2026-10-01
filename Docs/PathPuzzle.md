@@ -4,13 +4,13 @@
 
 项目已有 `Content/UI/Minigame/WBP_TestPuzzle`，父类为 `TAPathPuzzleWidget`。运行游戏后按 **G**，主角的 `DebugOpenPathPuzzle` 会加载这个 WBP，并使用其默认设置打开谜题；已有菜单占用输入时不会再打开。此按键仅在非 Shipping 构建启用，不需要额外配置 Input Action。资源改名／移动后，需要同步修改该函数中的资源路径。
 
-默认界面使用完全不透明的全屏背景，谜题内容保持比例缩放。右侧只显示能量、单元、路径和效果，不显示 Seed、Difficulty；底部操作提示已隐藏。成功或失败后停留 1 秒，自动返回主游戏。
+默认界面为固定圆形显微镜视口，圆外全黑，内部棋盘可平移。左侧黄色半环及数字显示剩余能量，右侧绿色半环及数字显示剩余时间；旧倒计时横条和右侧信息／按钮列已从 Designer 删除。成功或失败后停留 1 秒，自动返回主游戏。
 
 ## 创建蓝图界面
 
 1. 创建 Widget Blueprint，父类选择 `TAPathPuzzleWidget`，例如 `WBP_PathPuzzle`。
-2. 如果 Designer 保持空白，运行时自动生成完整占位界面。也可以创建自己的布局，并添加名为 **PuzzleCanvas** 的 Canvas Panel（Is Variable）。这个容器专门承载动态节点、线和文字，不要在里面放需要保留的装饰。
-3. 将 PuzzleCanvas 的尺寸设为 `Appearance.BoardSize`（默认 820×535）。移动容器或对其外层做整体缩放不会破坏内部相对位置。响应式布局可在外层套 SizeBox / ScaleBox。
+2. 如果 Designer 保持空白，运行时自动生成完整占位界面。现有 WBP_TestPuzzle 已生成可编辑的显微镜布局，建议复制它再调整。PuzzleCanvas 专门承载动态节点、线和文字，不要在里面放需要保留的装饰。
+3. 将 PuzzleCanvas 的尺寸设为 `Appearance.BoardSize`（默认 820×535）。棋盘的 Render Translation / Scale 由运行时控制；使用 BoardZoom 调整放大程度。ScopeInstruments 的位置和正方形尺寸控制固定视口与仪表，其他控件可在 Designer 中编辑。
 4. Class Defaults 中设置 `PuzzleSettings`、`Appearance` 和可选的 `NodeWidgetClass`。在 Appearance 的各个 Brush 中选择美术 Texture / Material；默认是不同颜色的矩形 Image。计时条默认绿色。
 5. 蓝图调用 **Open Puzzle**，传入 PlayerController 和上述 Widget Class，得到运行中的实例。也可使用 Create Widget → 设置参数 → Add to Viewport，默认 `bAutoStart=true`。
 6. 绑定实例的 **OnSucceeded / OnFailed**。事件发生时主游戏奖惩已经处理；外部可触发门、剧情、音效。目前临时流程为成功／失败后延迟 1 秒调用 **ClosePuzzle**，移除界面、释放时停并恢复游戏输入。替换正式结算流程时，修改 HandleSettled 中有中文注释的定时器段落即可；提前移除界面会取消定时器。不会自动生成下一题、重玩或失败换题菜单。
@@ -50,30 +50,34 @@ Player 需要有效的本地 PlayerController；Widget Class 留空时使用原�
 
 设置在 StartPuzzle 时复制进 Session。开局后修改 Widget.PuzzleSettings 不会改变当前局；额度调整应使用 Session 的专用接口。使用 Create Widget 手动创建时，应在 Add to Viewport 前配置参数。若关闭 bAutoStart，建议先调用 StartPuzzle，确认成功后再 Add to Viewport，让界面构建时正常接管输入和时停。
 
-## 可选 Designer 控件
+## 显微镜布局与操作
 
-除自定义布局下必须存在的 PuzzleCanvas 外，以下均可选；存在时 C++ 自动绑定更新。
+WASD 移动的是棋盘：W 向下、S 向上、A 向右、D 向左。LS 使用相同的反向平移规则，带死区与速度幅度。鼠标隐藏，左键／Xbox A 选择中心准星下最近且在命中半径内的节点；长按 A 不重复确认。初始视点在起点，先确认起点后倒计时才开始。方向输入来自控制器原始按键记录，主游戏时停不会停下棋盘移动或 UMG 倒计时。背包、对话的虚拟鼠标规则保持原样。
 
-| 名称 | 类型 | 内容 |
+| Designer 名称 | 类型 | 调整方式 |
 |---|---|---|
-| Progress_Time | ProgressBar | 剩余时间比例，颜色来自 Appearance.TimerColor |
-| Text_Time | TextBlock | 剩余秒数 |
-| Text_Stats | TextBlock | 能量、单元（不显示种子和难度） |
-| Text_Path | TextBlock | 当前路径 |
-| Text_Effects | TextBlock | 已获得的效果（主游戏效果仍在等待结算） |
-| Text_Status | TextBlock | 兼容旧布局的绑定，运行时隐藏，不再显示底部提示 |
-| Button_Undo / Text_Undo | Button / TextBlock | 撤销及剩余额度 |
-| Button_Retry / Text_Retry | Button / TextBlock | 重试及剩余额度 |
+| ScreenRoot | Canvas Panel | 全屏根容器 |
+| Image_Background | Image | 圆内底色／底图，默认深色不透明 |
+| ScopeFrame | Canvas Panel | 棋盘坐标父容器，建议保留生成的居中布局 |
+| PuzzleCanvas | Canvas Panel | 仅用于动态棋盘；内部每次刷新会重建，平移和缩放由代码控制 |
+| Image_ScopeMask | Image | 保持全屏，材质圆外黑色；运行时根据 ScopeInstruments 更新开口位置和半径 |
+| ScopeInstruments | Canvas Panel | 默认居中 600×600；移动它改变固定视口位置，保持正方形以保证圆形半环 |
+| Image_EnergyArc | Image | 左侧能量半环，可替换材质；材质参数 Fill 接收 0–1 剩余比例 |
+| Image_TimeArc | Image | 右侧时间半环，可替换材质；同样使用 Fill 参数 |
+| Text_Energy / Text_Time | TextBlock | 仅剩余数字，无单位；位置、字体、颜色可编辑 |
+| Crosshair | Canvas Panel | 准星锚点，内部两张 Image 可替换；代码使用其中心选点 |
 
-节点可另建继承 `TAPathPuzzleNodeWidget` 的 WBP，设置到 NodeWidgetClass。自定义布局使用 Button_Node、Image_Node、Text_Label、Text_Effect；Button_Node 接收点击，图片用于表现。节点和线的坐标都在 PuzzleCanvas 内，连线是旋转的 Image，不是 Slate 绘线。底图可替换，标签仍是独立 TextBlock。
+Class Defaults → Puzzle / Scope：`BoardZoom` 默认 2.3，`BoardPanSpeed` 默认 450，`AimRadius` 默认 30（棋盘坐标单位），`bInversePanInput` 默认开启，此时 W/S 对应棋盘下/上，A/D 对应棋盘右/左；关闭后恢复相反方向。缩放用于控制同时可见的节点数量，不同随机布局不会严格固定为三个。平移限制在棋盘范围内，所有节点都可移到准星下。`PanBoard`、`ConfirmScopeNode`、`RefreshScopePresentation` 可供蓝图自定义操作；`GetAimedNode`、`GetBoardViewCenter` 可查询当前状态。刷新节点不会重置视点。
 
-Appearance 中可配置 NodeNormal / NodeEndpoint / NodeSelected / NodeFailed 四种节点 Brush，以及 EdgeNormal / EdgeSelected / EdgeFailed 三种连线 Brush。BoardSize 默认 820×535，BoardPadding 默认 (55,35)，NodeSize 默认 78×52，EdgeThickness 默认 4；TimerColor 控制计时条颜色。运行时调整图片或板面参数后可调用 RefreshBoard 重建动态内容，它不会重新出题或补充次数。
+圆形遮罩、半环材质在 `Content/UI/Minigame/Materials`。默认半环材质的 Thickness 控制粗细，Fill 控制进度；替换材质时保留 Fill 标量参数即可继续接收进度。遮罩材质保留 CenterX、CenterY、Aspect、Radius 参数，才能跟随可编辑视口。运行时位置转换会考虑控件几何缩放。所有装饰设为不参与命中测试，确认行为只通过准星进入原有 SelectNode 规则。
 
-`Appearance.Show Node Labels` 默认关闭，控制节点上的 1A、2A 等名称是否显示，不影响节点效果文字或内部名称。运行时修改后调用 `RefreshBoard`。手柄左摇杆移动虚拟光标，Xbox A（Gamepad Face Button Bottom）选择光标下的节点；空白处按 A 不会误触发其他焦点按钮，长按不会重复选择。光标下的撤销／重试按钮也可用 A 操作，仍遵循开关和次数限制。
+节点可另建继承 TAPathPuzzleNodeWidget 的 WBP，配置 NodeWidgetClass。节点的 Image_Node、Text_Label、Text_Effect 仍支持原美术与效果文字。Appearance 保留各状态节点／连线 Brush、BoardSize、BoardPadding、NodeSize、EdgeThickness；Show Node Labels 默认关闭。修改后调用 RefreshBoard。普通鼠标点击节点已关闭，避免隐藏鼠标位置误选。
 
-全屏背景由空 Designer 的 C++ 占位布局生成。若使用自定义 Designer 根布局，需要自行添加铺满根容器、不透明的背景，并把等比缩放限制在谜题内容层，避免露出主游戏画面。
+单元限制、奖励、撤销等底层规则全部保留；重试／重置入口暂时注释停用。Undo 可在有剩余额度时显示在右下角，位置和尺寸由 WBP 的 `Button_Undo` CanvasSlot 调整；键盘默认 Z、Xbox 手柄默认 X（`Gamepad_FaceButton_Left`）触发。旧 Text_Stats、Text_Path、Text_Effects、Progress_Time 等 C++ 可选绑定暂留作兼容，但新版资产中没有这些控件。
 
-占位界面的文字目前是英文；自定义标签可使用 FText，后续可接项目本地化。不要把根界面设为 Hidden/Collapsed 或把 Tick Frequency 设为 Never 来隐藏它但保留对局；计时由显示中的 Widget Tick 驱动。需要退出时调用 ClosePuzzle。
+布局生成通过编辑器命令 `-run=TAPuzzleLayout -Microscope` 一次性完成，旧资产备份在 Saved/LayoutBackups/WBP_TestPuzzle_before_microscope.uasset。存在备份时拒绝再次覆盖，正常游戏不会执行生成工具。`-run=TAPuzzleLayout -Verify` 验证绑定和谜题生成；增加 `-Render -AllowCommandletRendering -RenderOffscreen`（不使用 NullRHI）可导出 Saved/PuzzleMicroscopePreview.png。后续直接编辑 WBP，不需要重跑生成器。
+
+保持 Widget Tick 启用。需要退出时调用 ClosePuzzle，它会恢复主游戏输入并释放时停。动画接口与节点增量刷新尚未加入。
 
 ## 规则和状态
 

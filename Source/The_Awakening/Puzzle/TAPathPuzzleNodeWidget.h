@@ -26,6 +26,7 @@ protected:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Label;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Effect;
 private:
+	void EnsureNativeWidgetTree();
 	UFUNCTION() void HandleClick();
 	int32 NodeIndex = INDEX_NONE;
 };

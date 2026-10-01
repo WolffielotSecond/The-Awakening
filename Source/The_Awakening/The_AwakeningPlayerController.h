@@ -66,6 +66,10 @@ public:
 	void SetVirtualCursorAxis(const FKey& AxisKey, float Value);
 	bool ConsumeInventoryTogglePress(const UInputAction* Action);
 	void TickVirtualCursor(float DeltaTime);
+	void SetPuzzleScopeWidget(class UTAPathPuzzleWidget* Widget);
+	FVector2D GetPuzzlePanInput() const;
+	bool HandlePuzzleConfirm(FKey Key, bool bRepeat, int32 UserIndex);
+	bool HandlePuzzleUndo(FKey Key, bool bRepeat, int32 UserIndex);
 	void NotifyApplicationActivationChanged(bool bIsActive);
 
 	/** Scan only requests cursor visibility; it does not enter menu input mode. */
@@ -97,6 +101,7 @@ protected:
 	TMap<TObjectPtr<UInputModifier>, TObjectPtr<UInputModifier>> HeldInputModifiers;
 	int32 ActiveUIModeCount = 0;
 	bool bUIInputModeActive = false;
+	TWeakObjectPtr<class UTAPathPuzzleWidget> PuzzleScopeWidget;
 	bool bDialogueModeActive = false;
 	bool bPreviousShowMouseCursor = false;
 	bool bMouseCursorBeforeScan = false;
