@@ -101,6 +101,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool DropFromSlot(int32 SlotIndex, int32 Count, FTAInventorySlot& OutDropped);
 
+	/** Move, swap, or merge a complete inventory stack between two UI slot indices. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool MoveItemBetweenSlots(int32 SourceSlotIndex, int32 TargetSlotIndex);
+
 	/** 装备外套（Layer 必须是 Outer） */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Clothing")
 	bool EquipOuter(UTAClothingDefinition* OuterDef);

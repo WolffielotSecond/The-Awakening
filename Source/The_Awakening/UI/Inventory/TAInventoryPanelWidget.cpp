@@ -3,6 +3,7 @@
 #include "UI/Inventory/TAClothingPanelWidget.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Inventory/TAClothingDefinition.h"
+#include "Inventory/TAItemDefinition.h"
 #include "Core/TAPlayerState.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
@@ -12,12 +13,17 @@
 #include "Components/Image.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/SizeBox.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
+#include "Scan/TAScanInfoWidget.h"
+#include "Scan/TAScanTypes.h"
+#include "The_AwakeningPlayerController.h"
 #include "UI/TAActionPromptWidget.h"
+#include "UI/TAPromptWidgetUtils.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputCoreTypes.h"
@@ -25,6 +31,8 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/GameInstance.h"
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Framework/Application/SlateApplication.h"
 
 FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -34,17 +42,11 @@ FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& InGeomet
 		return FReply::Handled();
 	if (InKeyEvent.GetKey() != EKeys::Gamepad_FaceButton_Bottom)
 		return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
-	if (!InKeyEvent.IsRepeat() && FSlateApplication::IsInitialized())
+	if (!InKeyEvent.IsRepeat() && LastConfirmClickFrame != GFrameCounter)
 	{
-		const FVector2D CursorPosition = FSlateApplication::Get().GetCursorPos();
-		auto IsUnderCursor = [&CursorPosition](UButton* Button)
-		{
-			return Button && Button->IsVisible() && Button->GetIsEnabled() && Button->GetCachedGeometry().IsUnderLocation(CursorPosition);
-		};
-		if (IsUnderCursor(Button_Inventory)) OnClickInventoryTab();
-		else if (IsUnderCursor(Button_Skills)) OnClickSkillsTab();
+		HandleConfirmPressed();
 	}
-	// Do not let an unrelated focused tab consume the same confirmation.
+	// Treat gamepad confirm as the same pointer click used by keyboard/mouse UI.
 	return FReply::Handled();
 }
 
@@ -113,6 +115,13 @@ void UTAInventoryPanelWidget::NativeConstruct()
 
 void UTAInventoryPanelWidget::NativeDestruct()
 {
+	CancelGamepadDragMode();
+	if (ItemInfoWidget)
+	{
+		ItemInfoWidget->RemoveFromParent();
+		ItemInfoWidget = nullptr;
+	}
+	HoveredItemSlot.Reset();
 	PopInventoryMappingContext();
 	UnbindInventoryInputActions();
 	if (InputIconSubsystem)
@@ -144,6 +153,31 @@ void UTAInventoryPanelWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UTAInventoryPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (bRefreshInputPromptsNextTick)
+	{
+		bRefreshInputPromptsNextTick = false;
+		RefreshInputIcons();
+	}
+	const bool bItemDragActive = bGamepadDragModeActive || UWidgetBlueprintLibrary::IsDragDropping();
+	if (bItemDragActive)
+	{
+		HideItemInfo(HoveredItemSlot.Get());
+	}
+	else if (bWasItemDragActive)
+	{
+		if (UTAInventorySlotWidget* HoveredSlot = CurrentHoveredInventorySlot.Get(); HoveredSlot && HoveredSlot->IsHovered() && !HoveredSlot->IsEmpty())
+		{
+			ShowItemInfo(HoveredSlot, HoveredSlot->GetItemDef());
+		}
+	}
+	bWasItemDragActive = bItemDragActive;
+	UpdateItemInfoWidgetPosition();
+	UpdateGamepadDragVisualPosition();
+}
+
 void UTAInventoryPanelWidget::EnsureDynamicChildren()
 {
 	if (!SlotWidgetClass)
@@ -166,6 +200,7 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 				Named->ClearChildren();
 				Named->AddChild(OutSlot);
 				OutSlot->SetEmpty();
+				BindSlotHoverEvents(OutSlot);
 			}
 		};
 
@@ -183,6 +218,9 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 		if (InnerClothingPanel)
 		{
 			InnerClothingPanel->SlotWidgetClass = SlotWidgetClass;
+			InnerClothingPanel->SetInventoryComponent(Inventory);
+			InnerClothingPanel->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotHovered);
+			InnerClothingPanel->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotUnhovered);
 			NamedSlot_InnerClothing->ClearChildren();
 			NamedSlot_InnerClothing->AddChild(InnerClothingPanel);
 		}
@@ -194,6 +232,9 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 		if (OuterClothingPanel)
 		{
 			OuterClothingPanel->SlotWidgetClass = SlotWidgetClass;
+			OuterClothingPanel->SetInventoryComponent(Inventory);
+			OuterClothingPanel->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotHovered);
+			OuterClothingPanel->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotUnhovered);
 			NamedSlot_OuterClothing->ClearChildren();
 			NamedSlot_OuterClothing->AddChild(OuterClothingPanel);
 			OuterClothingPanel->SetVisibility(ESlateVisibility::Collapsed);
@@ -210,6 +251,25 @@ void UTAInventoryPanelWidget::Init(UTAInventoryComponent* InInventory)
 
 	Inventory = InInventory;
 	EnsureDynamicChildren();
+	if (OuterEquipSlot)
+	{
+		OuterEquipSlot->SetInventoryComponent(Inventory);
+	}
+	for (UTAInventorySlotWidget* StorySlot : StorySlots)
+	{
+		if (StorySlot)
+		{
+			StorySlot->SetInventoryComponent(Inventory);
+		}
+	}
+	if (InnerClothingPanel)
+	{
+		InnerClothingPanel->SetInventoryComponent(Inventory);
+	}
+	if (OuterClothingPanel)
+	{
+		OuterClothingPanel->SetInventoryComponent(Inventory);
+	}
 
 	if (Inventory)
 	{
@@ -226,6 +286,8 @@ void UTAInventoryPanelWidget::HandleInventoryUpdated()
 
 void UTAInventoryPanelWidget::OnClickInventoryTab()
 {
+	CancelGamepadDragMode();
+	HideItemInfo(HoveredItemSlot.Get());
 	if (WidgetSwitcher)
 	{
 		WidgetSwitcher->SetActiveWidgetIndex(0);
@@ -234,6 +296,8 @@ void UTAInventoryPanelWidget::OnClickInventoryTab()
 
 void UTAInventoryPanelWidget::OnClickSkillsTab()
 {
+	CancelGamepadDragMode();
+	HideItemInfo(HoveredItemSlot.Get());
 	if (WidgetSwitcher)
 	{
 		WidgetSwitcher->SetActiveWidgetIndex(1);
@@ -257,6 +321,7 @@ void UTAInventoryPanelWidget::EnsureInventoryInputActions()
 	MakeRuntimeAction(PreviousPageAction, TEXT("Runtime_InventoryPreviousPage"));
 	MakeRuntimeAction(NextPageAction, TEXT("Runtime_InventoryNextPage"));
 	MakeRuntimeAction(ConfirmAction, TEXT("Runtime_InventoryConfirm"));
+	MakeRuntimeAction(GamepadDragModeAction, TEXT("Runtime_InventoryGamepadDragMode"));
 
 	if (!RuntimeInventoryMappingContext)
 	{
@@ -283,6 +348,10 @@ void UTAInventoryPanelWidget::EnsureInventoryInputActions()
 		RuntimeInventoryMappingContext->MapKey(ConfirmAction, EKeys::Enter);
 		RuntimeInventoryMappingContext->MapKey(ConfirmAction, EKeys::SpaceBar);
 		RuntimeInventoryMappingContext->MapKey(ConfirmAction, EKeys::Gamepad_FaceButton_Bottom);
+	}
+	if (GamepadDragModeAction && GamepadDragModeAction->GetFName() == TEXT("Runtime_InventoryGamepadDragMode"))
+	{
+		RuntimeInventoryMappingContext->MapKey(GamepadDragModeAction, EKeys::Gamepad_FaceButton_Right);
 	}
 }
 
@@ -354,6 +423,10 @@ void UTAInventoryPanelWidget::BindInventoryInputActions()
 	{
 		InputBindingHandles.Add(EIC->BindAction(ConfirmAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::ConfirmPageAction).GetHandle());
 	}
+	if (GamepadDragModeAction)
+	{
+		InputBindingHandles.Add(EIC->BindAction(GamepadDragModeAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::ToggleGamepadDragMode).GetHandle());
+	}
 }
 
 void UTAInventoryPanelWidget::UnbindInventoryInputActions()
@@ -388,17 +461,270 @@ void UTAInventoryPanelWidget::ChangePage(int32 Direction)
 	const int32 PageCount = WidgetSwitcher->GetChildrenCount();
 	const int32 CurrentPage = FMath::Clamp(WidgetSwitcher->GetActiveWidgetIndex(), 0, PageCount - 1);
 	const int32 NextPageIndex = (CurrentPage + Direction + PageCount) % PageCount;
+	if (NextPageIndex != CurrentPage)
+	{
+		CancelGamepadDragMode();
+	}
 	WidgetSwitcher->SetActiveWidgetIndex(NextPageIndex);
 }
 
 void UTAInventoryPanelWidget::ConfirmPageAction(const FInputActionValue& Value)
 {
-	OnInventoryConfirmPressed();
+	HandleConfirmPressed();
 }
 
-void UTAInventoryPanelWidget::OnInventoryConfirmPressed_Implementation()
+void UTAInventoryPanelWidget::ToggleGamepadDragMode(const FInputActionValue& Value)
 {
-	// Page-specific selection/activation is supplied by the inventory widget Blueprint.
+	if (InputIconSubsystem && InputIconSubsystem->GetCurrentDeviceType() == EInputDeviceType::KeyboardMouse)
+	{
+		return;
+	}
+
+	if (bGamepadDragModeActive)
+	{
+		CommitGamepadDragMode();
+		return;
+	}
+	BeginGamepadDragMode(CurrentHoveredInventorySlot.Get());
+}
+
+void UTAInventoryPanelWidget::HandleConfirmPressed()
+{
+	if (LastConfirmClickFrame == GFrameCounter)
+	{
+		return;
+	}
+	LastConfirmClickFrame = GFrameCounter;
+	if (bGamepadDragModeActive)
+	{
+		CommitGamepadDragMode();
+	}
+	else
+	{
+		SimulateLeftMouseClick();
+	}
+}
+
+void UTAInventoryPanelWidget::BindSlotHoverEvents(UTAInventorySlotWidget* InventorySlot)
+{
+	if (!InventorySlot)
+	{
+		return;
+	}
+	InventorySlot->SetInventoryComponent(Inventory);
+	InventorySlot->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotHovered);
+	InventorySlot->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotUnhovered);
+}
+
+void UTAInventoryPanelWidget::HandleInventorySlotHovered(UTAInventorySlotWidget* HoveredSlot, UTAItemDefinition* ItemDef)
+{
+	CurrentHoveredInventorySlot = HoveredSlot;
+	ShowItemInfo(HoveredSlot, ItemDef);
+}
+
+void UTAInventoryPanelWidget::HandleInventorySlotUnhovered(UTAInventorySlotWidget* HoveredSlot)
+{
+	if (CurrentHoveredInventorySlot.Get() == HoveredSlot)
+	{
+		CurrentHoveredInventorySlot.Reset();
+	}
+	HideItemInfo(HoveredSlot);
+}
+
+void UTAInventoryPanelWidget::BeginGamepadDragMode(UTAInventorySlotWidget* SourceSlot)
+{
+	if (!SourceSlot || SourceSlot->IsEmpty() || !SourceSlot->GetItemDef() || !Inventory)
+	{
+		return;
+	}
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC)
+	{
+		return;
+	}
+
+	if (!GamepadDragVisualWidget)
+	{
+		GamepadDragVisualWidget = CreateWidget<UTAInventorySlotWidget>(PC, SlotWidgetClass);
+	}
+	if (!GamepadDragVisualWidget)
+	{
+		return;
+	}
+
+	GamepadDragVisualWidget->SetSlotData(SourceSlot->GetSlotData(), SourceSlot->GetFlatIndex());
+	GamepadDragVisualWidget->SetInventoryComponent(Inventory);
+	GamepadDragVisualWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+	GamepadDragVisualWidget->AddToViewport(1000001);
+	GamepadDragVisualWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+
+	GamepadDragSourceSlot = SourceSlot;
+	bGamepadDragModeActive = true;
+	SourceSlot->SetDraggingVisual(true);
+	HideItemInfo(HoveredItemSlot.Get());
+	UpdateGamepadDragVisualPosition();
+}
+
+void UTAInventoryPanelWidget::CancelGamepadDragMode()
+{
+	if (UTAInventorySlotWidget* SourceSlot = GamepadDragSourceSlot.Get())
+	{
+		SourceSlot->SetDraggingVisual(false);
+	}
+	GamepadDragSourceSlot.Reset();
+	bGamepadDragModeActive = false;
+	if (GamepadDragVisualWidget)
+	{
+		GamepadDragVisualWidget->RemoveFromParent();
+		GamepadDragVisualWidget = nullptr;
+	}
+}
+
+void UTAInventoryPanelWidget::CommitGamepadDragMode()
+{
+	UTAInventorySlotWidget* SourceSlot = GamepadDragSourceSlot.Get();
+	UTAInventorySlotWidget* TargetSlot = CurrentHoveredInventorySlot.Get();
+	if (!SourceSlot || SourceSlot->IsEmpty() || !TargetSlot)
+	{
+		CancelGamepadDragMode();
+		return;
+	}
+	if (SourceSlot == TargetSlot)
+	{
+		CancelGamepadDragMode();
+		return;
+	}
+
+	if (Inventory)
+	{
+		Inventory->MoveItemBetweenSlots(SourceSlot->GetFlatIndex(), TargetSlot->GetFlatIndex());
+	}
+	CancelGamepadDragMode();
+}
+
+void UTAInventoryPanelWidget::UpdateGamepadDragVisualPosition()
+{
+	if (!bGamepadDragModeActive || !GamepadDragVisualWidget || !GetOwningPlayer())
+	{
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	int32 ViewportWidth = 0;
+	int32 ViewportHeight = 0;
+	PC->GetViewportSize(ViewportWidth, ViewportHeight);
+	float CursorX = 0.0f;
+	float CursorY = 0.0f;
+	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PC);
+	const bool bHasCursorPosition = CursorController
+		? CursorController->GetScanCursorPosition(CursorX, CursorY)
+		: PC->GetMousePosition(CursorX, CursorY);
+	if (!bHasCursorPosition)
+	{
+		return;
+	}
+
+	const float ViewportScale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(PC), KINDA_SMALL_NUMBER);
+	GamepadDragVisualWidget->SetPositionInViewport(
+		FVector2D(CursorX / ViewportScale + 14.0f, CursorY / ViewportScale + 14.0f), false);
+}
+
+void UTAInventoryPanelWidget::ShowItemInfo(UTAInventorySlotWidget* InventorySlot, UTAItemDefinition* ItemDef)
+{
+	if (bGamepadDragModeActive || UWidgetBlueprintLibrary::IsDragDropping())
+	{
+		HideItemInfo(HoveredItemSlot.Get());
+		return;
+	}
+	if (!InventorySlot || !ItemDef)
+	{
+		HideItemInfo(InventorySlot);
+		return;
+	}
+
+	HoveredItemSlot = InventorySlot;
+	if (!ItemInfoWidgetClass)
+	{
+		ItemInfoWidgetClass = LoadClass<UTAScanInfoWidget>(nullptr, TEXT("/Game/UI/Scan/WBP_ScanInfo.WBP_ScanInfo_C"));
+	}
+	if (!ItemInfoWidget && ItemInfoWidgetClass)
+	{
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			ItemInfoWidget = CreateWidget<UTAScanInfoWidget>(PC, ItemInfoWidgetClass);
+			if (ItemInfoWidget)
+			{
+				ItemInfoWidget->SetVisibility(ESlateVisibility::Collapsed);
+				// AddToViewport adds 10 to the supplied ZOrder internally, so keep this high without overflowing.
+				ItemInfoWidget->AddToViewport(1000000);
+				ItemInfoWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+			}
+		}
+	}
+	if (!ItemInfoWidget)
+	{
+		return;
+	}
+
+	FTAScanTargetInfo Info;
+	Info.Name = ItemDef->DisplayName;
+	Info.Description = ItemDef->Description;
+	Info.TargetType = ETAScanTargetType::Item;
+	ItemInfoWidget->SetTargetInfo(Info);
+	// The card is informational only and must not intercept the cursor leaving the slot.
+	ItemInfoWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+	UpdateItemInfoWidgetPosition();
+}
+
+void UTAInventoryPanelWidget::HideItemInfo(UTAInventorySlotWidget* InventorySlot)
+{
+	if (HoveredItemSlot.IsValid() && InventorySlot && HoveredItemSlot.Get() != InventorySlot)
+	{
+		return;
+	}
+	HoveredItemSlot.Reset();
+	if (ItemInfoWidget)
+	{
+		ItemInfoWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UTAInventoryPanelWidget::UpdateItemInfoWidgetPosition()
+{
+	APlayerController* PC = GetOwningPlayer();
+	if (!ItemInfoWidget || !ItemInfoWidget->IsVisible() || !HoveredItemSlot.IsValid() || !PC)
+	{
+		return;
+	}
+
+	float CursorX = 0.0f;
+	float CursorY = 0.0f;
+	int32 ViewportX = 0;
+	int32 ViewportY = 0;
+	PC->GetViewportSize(ViewportX, ViewportY);
+	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PC);
+	if (!(CursorController ? CursorController->GetScanCursorPosition(CursorX, CursorY) : PC->GetMousePosition(CursorX, CursorY)))
+	{
+		CursorX = ViewportX * 0.5f;
+		CursorY = ViewportY * 0.5f;
+	}
+
+	const float ViewportScale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(PC), KINDA_SMALL_NUMBER);
+	ItemInfoWidget->ForceLayoutPrepass();
+	const FVector2D DesiredSize = ItemInfoWidget->GetDesiredSize();
+	const FVector2D LogicalViewport(ViewportX / ViewportScale, ViewportY / ViewportScale);
+	FVector2D Position(CursorX / ViewportScale + ItemInfoCursorOffset.X, CursorY / ViewportScale + ItemInfoCursorOffset.Y);
+	Position.X = FMath::Clamp(Position.X, 0.0f, FMath::Max(0.0f, LogicalViewport.X - DesiredSize.X));
+	Position.Y = FMath::Clamp(Position.Y, 0.0f, FMath::Max(0.0f, LogicalViewport.Y - DesiredSize.Y));
+	ItemInfoWidget->SetPositionInViewport(Position, false);
+}
+
+void UTAInventoryPanelWidget::SimulateLeftMouseClick()
+{
+	if (AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
+	{
+		PC->SimulateSyntheticLeftMouseClick();
+	}
 }
 
 void UTAInventoryPanelWidget::BuildActionPromptBar()
@@ -436,6 +762,7 @@ void UTAInventoryPanelWidget::BuildActionPromptBar()
 	AddPrompt(PreviousPageAction, PreviousPagePromptTextId);
 	AddPrompt(NextPageAction, NextPagePromptTextId);
 	AddPrompt(ConfirmAction, ConfirmPromptTextId);
+	AddPrompt(GamepadDragModeAction, GamepadDragModePromptTextId);
 }
 
 void UTAInventoryPanelWidget::OnActionPromptClicked(UTAActionPromptWidget* Prompt)
@@ -455,36 +782,61 @@ void UTAInventoryPanelWidget::OnActionPromptClicked(UTAActionPromptWidget* Promp
 	}
 	else if (Action == ConfirmAction)
 	{
-		OnInventoryConfirmPressed();
+		HandleConfirmPressed();
+	}
+	else if (Action == GamepadDragModeAction)
+	{
+		FInputActionValue Value(true);
+		ToggleGamepadDragMode(Value);
 	}
 }
 
 void UTAInventoryPanelWidget::RefreshInputIcons()
 {
-	if (!InputIconSubsystem)
+	if (InputIconSubsystem)
 	{
-		return;
+		if (Image_PreviousPageKey)
+		{
+			FTAPromptWidgetUtils::ApplyKeyIcon(
+				Image_PreviousPageKey,
+				InputIconSubsystem->GetIconForAction(PreviousPageAction),
+				PageShortcutIconHeight,
+				SizeBox_PreviousPageKey);
+		}
+		if (Image_NextPageKey)
+		{
+			FTAPromptWidgetUtils::ApplyKeyIcon(
+				Image_NextPageKey,
+				InputIconSubsystem->GetIconForAction(NextPageAction),
+				PageShortcutIconHeight,
+				SizeBox_NextPageKey);
+		}
 	}
-	if (Image_PreviousPageKey)
-	{
-		Image_PreviousPageKey->SetBrushFromTexture(InputIconSubsystem->GetIconForAction(PreviousPageAction));
-	}
-	if (Image_NextPageKey)
-	{
-		Image_NextPageKey->SetBrushFromTexture(InputIconSubsystem->GetIconForAction(NextPageAction));
-	}
-}
-
-void UTAInventoryPanelWidget::HandleInputDeviceChanged()
-{
-	RefreshInputIcons();
 	for (UTAActionPromptWidget* Prompt : ActionPromptWidgets)
 	{
 		if (Prompt)
 		{
 			Prompt->RefreshPrompt();
+			if (Prompt->GetPromptAction() == GamepadDragModeAction)
+			{
+				const bool bIsGamepad = InputIconSubsystem
+					&& InputIconSubsystem->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
+				Prompt->SetVisibility(bIsGamepad ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			}
 		}
 	}
+}
+
+void UTAInventoryPanelWidget::RefreshInputPrompts()
+{
+	RefreshInputIcons();
+	// Enhanced Input may not have rebuilt mappings until the next frame after the IMC is pushed.
+	bRefreshInputPromptsNextTick = true;
+}
+
+void UTAInventoryPanelWidget::HandleInputDeviceChanged()
+{
+	RefreshInputPrompts();
 }
 
 void UTAInventoryPanelWidget::RefreshAll()

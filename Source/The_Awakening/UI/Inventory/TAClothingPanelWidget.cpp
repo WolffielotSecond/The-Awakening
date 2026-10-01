@@ -193,7 +193,10 @@ void UTAClothingPanelWidget::CreateSlotsForPocket(
 			Cell->AddChild(SlotWidget);
 			if (UTAInventorySlotWidget* InvSlot = Cast<UTAInventorySlotWidget>(SlotWidget))
 			{
+				InvSlot->SetInventoryComponent(Inventory);
 				InvSlot->SetSlotData(PocketRuntime.Slots[i], InOutFlatIndex);
+				InvSlot->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAClothingPanelWidget::HandleSlotHovered);
+				InvSlot->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAClothingPanelWidget::HandleSlotUnhovered);
 			}
 			GeneratedSlots.Add(SlotWidget);
 		}
@@ -207,6 +210,16 @@ void UTAClothingPanelWidget::CreateSlotsForPocket(
 
 		++InOutFlatIndex;
 	}
+}
+
+void UTAClothingPanelWidget::HandleSlotHovered(UTAInventorySlotWidget* HoveredSlot, UTAItemDefinition* ItemDef)
+{
+	OnInventorySlotHovered.Broadcast(HoveredSlot, ItemDef);
+}
+
+void UTAClothingPanelWidget::HandleSlotUnhovered(UTAInventorySlotWidget* HoveredSlot)
+{
+	OnInventorySlotUnhovered.Broadcast(HoveredSlot);
 }
 
 void UTAClothingPanelWidget::BuildFromClothing(const FTAClothingInstance& Instance, int32 FlatIndexStart)

@@ -5,6 +5,9 @@
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
 #include "Components/SizeBox.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Inventory/TAInventoryComponent.h"
+#include "Blueprint/DragDropOperation.h"
 #include "Engine/Texture2D.h"
 
 void UTAInventorySlotWidget::NativeConstruct()
@@ -13,11 +16,95 @@ void UTAInventorySlotWidget::NativeConstruct()
 	RefreshVisuals();
 }
 
+FReply UTAInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!IsEmpty() && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	{
+		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
+	}
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+void UTAInventorySlotWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+	OnInventorySlotHovered.Broadcast(this, IsEmpty() ? nullptr : CachedSlot.ItemDef);
+}
+
+void UTAInventorySlotWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseLeave(InMouseEvent);
+	OnInventorySlotUnhovered.Broadcast(this);
+}
+
+void UTAInventorySlotWidget::NativeOnDragDetected(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent,
+	UDragDropOperation*& OutOperation)
+{
+	Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
+	if (IsEmpty() || !Inventory)
+	{
+		return;
+	}
+
+	UDragDropOperation* DragOperation = UWidgetBlueprintLibrary::CreateDragDropOperation(UDragDropOperation::StaticClass());
+	if (!DragOperation)
+	{
+		return;
+	}
+
+	DragOperation->Payload = this;
+	DragOperation->Pivot = EDragPivot::MouseDown;
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (UTAInventorySlotWidget* DragVisual = CreateWidget<UTAInventorySlotWidget>(PC, GetClass()))
+		{
+			DragVisual->SetSlotData(CachedSlot, FlatIndex);
+			DragVisual->SetInventoryComponent(Inventory);
+			DragOperation->DefaultDragVisual = DragVisual;
+		}
+	}
+
+	OutOperation = DragOperation;
+	SetDraggingVisual(true);
+}
+
+void UTAInventorySlotWidget::NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	SetDraggingVisual(false);
+	if (IsHovered())
+	{
+		OnInventorySlotHovered.Broadcast(this, IsEmpty() ? nullptr : CachedSlot.ItemDef);
+	}
+	Super::NativeOnDragCancelled(InDragDropEvent, InOperation);
+}
+
+bool UTAInventorySlotWidget::NativeOnDrop(
+	const FGeometry& InGeometry,
+	const FDragDropEvent& InDragDropEvent,
+	UDragDropOperation* InOperation)
+{
+	UTAInventorySlotWidget* SourceSlot = InOperation ? Cast<UTAInventorySlotWidget>(InOperation->Payload) : nullptr;
+	if (!SourceSlot || SourceSlot == this || !Inventory || SourceSlot->Inventory != Inventory)
+	{
+		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+	}
+
+	SourceSlot->SetDraggingVisual(false);
+	const bool bMoved = Inventory->MoveItemBetweenSlots(SourceSlot->FlatIndex, FlatIndex);
+	return bMoved || Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+}
+
 void UTAInventorySlotWidget::SetSlotData(const FTAInventorySlot& SlotData, int32 InFlatIndex)
 {
 	CachedSlot = SlotData;
 	FlatIndex = InFlatIndex;
 	RefreshVisuals();
+	if (IsHovered())
+	{
+		OnInventorySlotHovered.Broadcast(this, IsEmpty() ? nullptr : CachedSlot.ItemDef);
+	}
 }
 
 void UTAInventorySlotWidget::SetEmpty()
@@ -25,6 +112,28 @@ void UTAInventorySlotWidget::SetEmpty()
 	CachedSlot = FTAInventorySlot();
 	FlatIndex = INDEX_NONE;
 	RefreshVisuals();
+	if (IsHovered())
+	{
+		OnInventorySlotHovered.Broadcast(this, nullptr);
+	}
+}
+
+void UTAInventorySlotWidget::SetDraggingVisual(bool bDragging)
+{
+	bIsDragging = bDragging;
+	const float Opacity = bIsDragging ? 0.5f : 1.0f;
+	if (Image_item)
+	{
+		Image_item->SetRenderOpacity(Opacity);
+	}
+	if (Text_Count)
+	{
+		Text_Count->SetRenderOpacity(Opacity);
+	}
+	if (Text_Name)
+	{
+		Text_Name->SetRenderOpacity(Opacity);
+	}
 }
 
 bool UTAInventorySlotWidget::IsEmpty() const

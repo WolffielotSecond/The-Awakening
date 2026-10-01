@@ -1,4 +1,5 @@
 #include "UI/TAActionPromptWidget.h"
+#include "UI/TAPromptWidgetUtils.h"
 
 #include "Core/TAInputIconSubsystem.h"
 #include "Core/TALocalizeSubsystem.h"
@@ -100,6 +101,10 @@ void UTAActionPromptWidget::EnsureWidgetBindings()
 	{
 		Image_Icon = Cast<UImage>(GetWidgetFromName(TEXT("Image_Icon")));
 	}
+	if (!SizeBox_Icon)
+	{
+		SizeBox_Icon = Cast<USizeBox>(GetWidgetFromName(TEXT("SizeBox_Icon")));
+	}
 	if (!Text_ActionName)
 	{
 		Text_ActionName = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_ActionName")));
@@ -115,7 +120,7 @@ void UTAActionPromptWidget::BuildFallbackWidget()
 
 	UBorder* Background = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ActionPromptBackground"));
 	UHorizontalBox* Content = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ActionPromptContent"));
-	USizeBox* IconSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ActionPromptIconSize"));
+	USizeBox* IconSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SizeBox_Icon"));
 	Image_Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_Icon"));
 	Text_ActionName = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_ActionName"));
 	if (!Background || !Content || !IconSize || !Image_Icon || !Text_ActionName)
@@ -125,8 +130,8 @@ void UTAActionPromptWidget::BuildFallbackWidget()
 
 	Background->SetBrushColor(FLinearColor(0.025f, 0.03f, 0.04f, 0.82f));
 	Background->SetPadding(FMargin(8.0f, 4.0f));
-	IconSize->SetWidthOverride(34.0f);
-	IconSize->SetHeightOverride(28.0f);
+	SizeBox_Icon = IconSize;
+	IconSize->SetHeightOverride(IconHeight);
 	IconSize->AddChild(Image_Icon);
 	Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
 	Text_ActionName->SetColorAndOpacity(FSlateColor(FLinearColor::White));
@@ -157,7 +162,11 @@ void UTAActionPromptWidget::RefreshPrompt()
 
 	if (Image_Icon && InputIconSubsystem)
 	{
-		Image_Icon->SetBrushFromTexture(PromptAction ? InputIconSubsystem->GetIconForAction(PromptAction) : nullptr);
+		FTAPromptWidgetUtils::ApplyKeyIcon(
+			Image_Icon,
+			PromptAction ? InputIconSubsystem->GetIconForAction(PromptAction) : nullptr,
+			IconHeight,
+			SizeBox_Icon);
 	}
 }
 

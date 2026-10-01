@@ -1,9 +1,50 @@
 #include "UI/TAPromptWidgetUtils.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/Image.h"
+#include "Components/PanelWidget.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Styling/SlateBrush.h"
+
+void FTAPromptWidgetUtils::ApplyKeyIcon(
+	UImage* Image,
+	UTexture2D* KeyIcon,
+	float TargetIconHeight,
+	USizeBox* IconSizeBox)
+{
+	if (!Image)
+	{
+		return;
+	}
+	if (!KeyIcon)
+	{
+		Image->SetBrush(FSlateBrush());
+		Image->SetVisibility(ESlateVisibility::Hidden);
+		return;
+	}
+
+	const float DrawHeight = FMath::Max(TargetIconHeight, 1.0f);
+	const float TextureHeight = static_cast<float>(FMath::Max(KeyIcon->GetSizeY(), 1));
+	const float DrawWidth = static_cast<float>(KeyIcon->GetSizeX()) * (DrawHeight / TextureHeight);
+
+	FSlateBrush Brush;
+	Brush.SetResourceObject(KeyIcon);
+	Brush.ImageSize = FVector2D(DrawWidth, DrawHeight);
+	Image->SetBrush(Brush);
+	Image->SetDesiredSizeOverride(FVector2D(DrawWidth, DrawHeight));
+	Image->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	if (!IconSizeBox)
+	{
+		IconSizeBox = Cast<USizeBox>(Image->GetParent());
+	}
+	if (IconSizeBox)
+	{
+		IconSizeBox->SetWidthOverride(DrawWidth);
+		IconSizeBox->SetHeightOverride(DrawHeight);
+	}
+}
 
 void FTAPromptWidgetUtils::ApplyPrompt(
 	UUserWidget* Widget,
@@ -23,17 +64,7 @@ void FTAPromptWidgetUtils::ApplyPrompt(
 
 	if (UImage* Image = Cast<UImage>(Widget->GetWidgetFromName(TEXT("Image_Key"))))
 	{
-		if (KeyIcon)
-		{
-			const float TexW = static_cast<float>(KeyIcon->GetSizeX());
-			const float TexH = static_cast<float>(FMath::Max(KeyIcon->GetSizeY(), 1));
-			const float DrawW = TexW * (TargetIconHeight / TexH);
-
-			FSlateBrush Brush;
-			Brush.SetResourceObject(KeyIcon);
-			Brush.ImageSize = FVector2D(DrawW, TargetIconHeight);
-			Image->SetBrush(Brush);
-			Image->SetVisibility(ESlateVisibility::HitTestInvisible);
-		}
+		USizeBox* IconSizeBox = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("SizeBox_Key")));
+		ApplyKeyIcon(Image, KeyIcon, TargetIconHeight, IconSizeBox);
 	}
 }

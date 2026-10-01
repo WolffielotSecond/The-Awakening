@@ -12,6 +12,7 @@ class UVerticalBox;
 class UTextBlock;
 class UButton;
 class UImage;
+class USizeBox;
 class UInputAction;
 class UTALocalizeSubsystem;
 class UTAInputIconSubsystem;
@@ -70,6 +71,13 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_CloseIcon;
+
+	/** Optional wrapper named SizeBox_CloseIcon; width is updated from the texture ratio. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_CloseIcon;
+
+	UPROPERTY(EditAnywhere, Category = "Dialogue History|Input", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float CloseIconHeight = 28.0f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> CloseHistoryAction;

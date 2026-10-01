@@ -12,6 +12,10 @@ class UHorizontalBox;
 class UVerticalBox;
 class UPanelWidget;
 class UTAInventorySlotWidget;
+class UTAItemDefinition;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTAClothingSlotHovered, UTAInventorySlotWidget*, Slot, UTAItemDefinition*, ItemDef);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTAClothingSlotUnhovered, UTAInventorySlotWidget*, Slot);
 
 UCLASS()
 class THE_AWAKENING_API UTAClothingPanelWidget : public UUserWidget
@@ -21,6 +25,14 @@ class THE_AWAKENING_API UTAClothingPanelWidget : public UUserWidget
 public:
 	UFUNCTION(BlueprintCallable, Category = "ClothingUI")
 	void BuildFromClothing(const FTAClothingInstance& Instance, int32 FlatIndexStart = 0);
+
+	void SetInventoryComponent(UTAInventoryComponent* InInventory) { Inventory = InInventory; }
+
+	UPROPERTY(BlueprintAssignable, Category = "ClothingUI|Hover")
+	FOnTAClothingSlotHovered OnInventorySlotHovered;
+
+	UPROPERTY(BlueprintAssignable, Category = "ClothingUI|Hover")
+	FOnTAClothingSlotUnhovered OnInventorySlotUnhovered;
 
 	UFUNCTION(BlueprintCallable, Category = "ClothingUI")
 	void ClearPanel();
@@ -40,6 +52,12 @@ protected:
 		const FTAPocketRuntime& PocketRuntime,
 		const FTAPocketDef& PocketDef,
 		int32& InOutFlatIndex);
+
+	UFUNCTION()
+	void HandleSlotHovered(UTAInventorySlotWidget* HoveredSlot, UTAItemDefinition* ItemDef);
+
+	UFUNCTION()
+	void HandleSlotUnhovered(UTAInventorySlotWidget* HoveredSlot);
 
 protected:
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -78,6 +96,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTAClothingDefinition> CurrentDef;
+
+	UPROPERTY()
+	TObjectPtr<UTAInventoryComponent> Inventory;
 
 	UPROPERTY()
 	TObjectPtr<UTAClothingDefinition> BuiltDef;

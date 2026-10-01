@@ -346,6 +346,86 @@ bool UTAInventoryComponent::DropFromSlot(int32 SlotIndex, int32 Count, FTAInvent
 	return true;
 }
 
+bool UTAInventoryComponent::MoveItemBetweenSlots(int32 SourceSlotIndex, int32 TargetSlotIndex)
+{
+	if (SourceSlotIndex == TargetSlotIndex)
+	{
+		return false;
+	}
+
+	FTAInventorySlot* SourceSlot = nullptr;
+	FTAInventorySlot* TargetSlot = nullptr;
+	const bool bSourceStorySlot = SourceSlotIndex <= -100 && SourceSlotIndex > -100 - StorySlotCount;
+	const bool bTargetStorySlot = TargetSlotIndex <= -100 && TargetSlotIndex > -100 - StorySlotCount;
+
+	if (bSourceStorySlot != bTargetStorySlot)
+	{
+		return false;
+	}
+
+	if (bSourceStorySlot)
+	{
+		const int32 SourceStoryIndex = -100 - SourceSlotIndex;
+		const int32 TargetStoryIndex = -100 - TargetSlotIndex;
+		if (!StorySlots.IsValidIndex(SourceStoryIndex) || !StorySlots.IsValidIndex(TargetStoryIndex))
+		{
+			return false;
+		}
+		SourceSlot = &StorySlots[SourceStoryIndex];
+		TargetSlot = &StorySlots[TargetStoryIndex];
+	}
+	else
+	{
+		FTAClothingInstance* SourceClothing = nullptr;
+		FTAClothingInstance* TargetClothing = nullptr;
+		int32 SourcePocketIndex = INDEX_NONE;
+		int32 TargetPocketIndex = INDEX_NONE;
+		int32 SourceIndexInPocket = INDEX_NONE;
+		int32 TargetIndexInPocket = INDEX_NONE;
+		if (!ResolveFlatIndex(SourceSlotIndex, SourceClothing, SourcePocketIndex, SourceIndexInPocket)
+			|| !ResolveFlatIndex(TargetSlotIndex, TargetClothing, TargetPocketIndex, TargetIndexInPocket))
+		{
+			return false;
+		}
+		SourceSlot = &SourceClothing->Pockets[SourcePocketIndex].Slots[SourceIndexInPocket];
+		TargetSlot = &TargetClothing->Pockets[TargetPocketIndex].Slots[TargetIndexInPocket];
+	}
+
+	if (!SourceSlot || !TargetSlot || SourceSlot->IsEmpty())
+	{
+		return false;
+	}
+
+	if (TargetSlot->IsEmpty())
+	{
+		Swap(*SourceSlot, *TargetSlot);
+	}
+	else if (SourceSlot->ItemDef == TargetSlot->ItemDef && SourceSlot->ItemDef->bCanStack)
+	{
+		const int32 MaxStack = FMath::Max(1, SourceSlot->ItemDef->MaxStack);
+		const int32 TransferCount = FMath::Min(SourceSlot->Count, FMath::Max(0, MaxStack - TargetSlot->Count));
+		if (TransferCount <= 0)
+		{
+			return false;
+		}
+
+		TargetSlot->Count += TransferCount;
+		SourceSlot->Count -= TransferCount;
+		if (SourceSlot->Count <= 0)
+		{
+			*SourceSlot = FTAInventorySlot();
+		}
+	}
+	else
+	{
+		Swap(*SourceSlot, *TargetSlot);
+	}
+
+	RebuildFlattenedSlots();
+	NotifyUpdated();
+	return true;
+}
+
 bool UTAInventoryComponent::EquipOuter(UTAClothingDefinition* OuterDef)
 {
 	if (!OuterDef || OuterDef->Layer != ETAClothingLayer::Outer)

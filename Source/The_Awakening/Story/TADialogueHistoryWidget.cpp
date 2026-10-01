@@ -1,5 +1,6 @@
 // Source/The_Awakening/Story/TADialogueHistoryWidget.cpp
 #include "Story/TADialogueHistoryWidget.h"
+#include "UI/TAPromptWidgetUtils.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "InputAction.h"
@@ -8,6 +9,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -49,6 +51,7 @@ void UTADialogueHistoryWidget::NativeConstruct()
 	if (!Button_Close) Button_Close = FindHistoryWidget<UButton>(this, TEXT("Button_Close"));
 	if (!Text_CloseText) Text_CloseText = FindHistoryWidget<UTextBlock>(this, TEXT("Text_CloseText"));
 	if (!Image_CloseIcon) Image_CloseIcon = FindHistoryWidget<UImage>(this, TEXT("Image_CloseIcon"));
+	if (!SizeBox_CloseIcon) SizeBox_CloseIcon = FindHistoryWidget<USizeBox>(this, TEXT("SizeBox_CloseIcon"));
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.AddDynamic(this, &UTADialogueHistoryWidget::HandleCloseClicked);
@@ -107,7 +110,11 @@ void UTADialogueHistoryWidget::RefreshClosePrompt()
 	}
 	if (Image_CloseIcon && InputIconSubsystem)
 	{
-		Image_CloseIcon->SetBrushFromTexture(CloseHistoryAction ? InputIconSubsystem->GetIconForAction(CloseHistoryAction) : nullptr);
+		FTAPromptWidgetUtils::ApplyKeyIcon(
+			Image_CloseIcon,
+			CloseHistoryAction ? InputIconSubsystem->GetIconForAction(CloseHistoryAction) : nullptr,
+			CloseIconHeight,
+			SizeBox_CloseIcon);
 	}
 }
 

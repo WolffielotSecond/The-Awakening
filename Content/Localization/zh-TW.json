@@ -32,6 +32,7 @@
 	"UI_Dialogue_History": "歷史紀錄",
 	"UI_Inventory": "背包",
 	"UI_Inventory_Confirm": "確認",
+	"UI_Inventory_DragMode": "移動物品",
 	"UI_Inventory_NextPage": "下一頁",
 	"UI_Inventory_PreviousPage": "上一頁",
 	"UI_Settings": "設置",

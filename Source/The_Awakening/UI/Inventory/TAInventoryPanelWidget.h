@@ -14,9 +14,12 @@ class UButton;
 class UNamedSlot;
 class UImage;
 class UHorizontalBox;
+class USizeBox;
 class UInputAction;
 class UInputMappingContext;
 class UTAActionPromptWidget;
+class UTAItemDefinition;
+class UTAScanInfoWidget;
 struct FInputActionValue;
 
 UCLASS()
@@ -27,6 +30,7 @@ class THE_AWAKENING_API UTAInventoryPanelWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UFUNCTION(BlueprintCallable, Category = "InventoryUI")
 	void Init(UTAInventoryComponent* InInventory);
@@ -34,10 +38,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "InventoryUI")
 	void RefreshAll();
 
-	/** Called when the inventory confirm action is pressed; implement item/slot confirmation in the widget Blueprint. */
-	UFUNCTION(BlueprintNativeEvent, Category = "InventoryUI|Input")
-	void OnInventoryConfirmPressed();
-	virtual void OnInventoryConfirmPressed_Implementation();
+	/** Refresh shortcut icons and bottom-row prompts using the currently active input device. */
+	UFUNCTION(BlueprintCallable, Category = "InventoryUI|Input")
+	void RefreshInputPrompts();
 
 protected:
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
@@ -64,14 +67,30 @@ protected:
 	void PushInventoryMappingContext();
 	void PopInventoryMappingContext();
 	void RefreshInputIcons();
+	UFUNCTION()
 	void HandleInputDeviceChanged();
 	void PreviousPage(const FInputActionValue& Value);
 	void NextPage(const FInputActionValue& Value);
 	void ConfirmPageAction(const FInputActionValue& Value);
+	void ToggleGamepadDragMode(const FInputActionValue& Value);
+	void HandleConfirmPressed();
+	void BeginGamepadDragMode(UTAInventorySlotWidget* SourceSlot);
+	void CancelGamepadDragMode();
+	void CommitGamepadDragMode();
+	void UpdateGamepadDragVisualPosition();
+	void SimulateLeftMouseClick();
 	UFUNCTION()
 	void OnActionPromptClicked(UTAActionPromptWidget* Prompt);
 	void ChangePage(int32 Direction);
 	void BuildActionPromptBar();
+	void BindSlotHoverEvents(UTAInventorySlotWidget* InventorySlot);
+	void ShowItemInfo(UTAInventorySlotWidget* InventorySlot, UTAItemDefinition* ItemDef);
+	void HideItemInfo(UTAInventorySlotWidget* InventorySlot);
+	void UpdateItemInfoWidgetPosition();
+	UFUNCTION()
+	void HandleInventorySlotHovered(UTAInventorySlotWidget* HoveredSlot, UTAItemDefinition* ItemDef);
+	UFUNCTION()
+	void HandleInventorySlotUnhovered(UTAInventorySlotWidget* HoveredSlot);
 
 protected:
 	UPROPERTY()
@@ -152,6 +171,15 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_NextPageKey;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_PreviousPageKey;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_NextPageKey;
+
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float PageShortcutIconHeight = 28.0f;
+
 	/** Optional bottom-row action prompt container, matching the dialogue UI pattern. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> HorizontalBox_Controls;
@@ -165,6 +193,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TObjectPtr<UInputAction> ConfirmAction;
+
+	/** Gamepad-only toggle for selecting and placing an inventory item. */
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
+	TObjectPtr<UInputAction> GamepadDragModeAction;
 
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TObjectPtr<UInputMappingContext> InventoryMappingContext;
@@ -184,6 +216,16 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	FString ConfirmPromptTextId = TEXT("UI_Inventory_Confirm");
 
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
+	FString GamepadDragModePromptTextId = TEXT("UI_Inventory_DragMode");
+
+	/** Defaults to the same WBP_ScanInfo used by the scanning UI. */
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Item Hover")
+	TSubclassOf<UTAScanInfoWidget> ItemInfoWidgetClass;
+
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Item Hover")
+	FVector2D ItemInfoCursorOffset = FVector2D(20.0f, 20.0f);
+
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RuntimeInventoryMappingContext;
 
@@ -193,6 +235,20 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<class UTAInputIconSubsystem> InputIconSubsystem;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UTAScanInfoWidget> ItemInfoWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTAInventorySlotWidget> GamepadDragVisualWidget;
+
+	TWeakObjectPtr<UTAInventorySlotWidget> HoveredItemSlot;
+	TWeakObjectPtr<UTAInventorySlotWidget> CurrentHoveredInventorySlot;
+	TWeakObjectPtr<UTAInventorySlotWidget> GamepadDragSourceSlot;
+
 	TArray<uint32> InputBindingHandles;
 	bool bInventoryMappingPushed = false;
+	bool bRefreshInputPromptsNextTick = false;
+	bool bGamepadDragModeActive = false;
+	bool bWasItemDragActive = false;
+	uint64 LastConfirmClickFrame = MAX_uint64;
 };

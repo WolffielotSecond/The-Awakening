@@ -6,6 +6,7 @@
 
 class UImage;
 class UInputAction;
+class USizeBox;
 class UTextBlock;
 class UTAInputIconSubsystem;
 class UTALocalizeSubsystem;
@@ -61,6 +62,14 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Action Prompt")
 	bool bUseLocalizationId = false;
+
+	/** All action prompt icons use this height; their width follows each texture's aspect ratio. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Action Prompt", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float IconHeight = 28.0f;
+
+	/** Optional size box around Image_Icon; name the widget SizeBox_Icon to bind it. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_Icon;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Icon;

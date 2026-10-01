@@ -23,6 +23,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/NavigationConfig.h"
+#include "Widgets/SWindow.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
@@ -83,6 +84,10 @@ void FTAInputDeviceDetector::Tick(const float DeltaTime, FSlateApplication& Soft
 
 bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent)
 {
+	if (Owner && Owner->IsSimulatingSyntheticLeftMouseClick())
+	{
+		return false;
+	}
 	if (Owner)
 	{
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
@@ -93,6 +98,10 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 
 bool FTAInputDeviceDetector::HandleMouseButtonUpEvent(FSlateApplication&, const FPointerEvent& Event)
 {
+	if (Owner && Owner->IsSimulatingSyntheticLeftMouseClick())
+	{
+		return false;
+	}
 	if (Owner) Owner->RecordHeldInput(Event.GetEffectingButton(), 0.f, Event.GetUserIndex());
 	return false;
 }
@@ -180,6 +189,10 @@ void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayR
 
 void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 {
+	if (bSimulatingSyntheticLeftMouseClick && Key == EKeys::LeftMouseButton)
+	{
+		return;
+	}
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UTAInputIconSubsystem* IconSys = GI->GetSubsystem<UTAInputIconSubsystem>())
@@ -187,6 +200,29 @@ void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 			IconSys->NotifyInputKey(Key);
 		}
 	}
+}
+
+void AThe_AwakeningPlayerController::SimulateSyntheticLeftMouseClick()
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+	TGuardValue<bool> SyntheticClickGuard(bSimulatingSyntheticLeftMouseClick, true);
+	FSlateApplication& SlateApp = FSlateApplication::Get();
+	const FVector2D CursorPosition = SlateApp.GetCursorPos();
+	const TSet<FKey> PressedButtons = { EKeys::LeftMouseButton };
+	const TSet<FKey> ReleasedButtons;
+	const FModifierKeysState Modifiers;
+	const FPointerEvent MouseDownEvent(
+		0, 0, CursorPosition, CursorPosition, PressedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
+	const FPointerEvent MouseUpEvent(
+		0, 0, CursorPosition, CursorPosition, ReleasedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
+
+	TSharedPtr<SWindow> ActiveWindow = SlateApp.GetActiveTopLevelWindow();
+	const TSharedPtr<FGenericWindow> NativeWindow = ActiveWindow.IsValid() ? ActiveWindow->GetNativeWindow() : nullptr;
+	SlateApp.ProcessMouseButtonDownEvent(NativeWindow, MouseDownEvent);
+	SlateApp.ProcessMouseButtonUpEvent(MouseUpEvent);
 }
 
 void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int32 UserIndex)

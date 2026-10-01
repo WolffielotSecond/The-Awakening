@@ -903,6 +903,7 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	InventoryPanelInstance->AddToViewport(50);
 
 	PC->BeginUIInputMode(InventoryPanelInstance);
+	InventoryPanelInstance->RefreshInputPrompts();
 }
 
 bool AThe_AwakeningCharacter::IsUIInputActive() const

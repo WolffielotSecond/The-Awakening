@@ -60,6 +60,9 @@ public:
 	void EndUIInputMode();
 	void SetUIFocusWidget(UUserWidget* FocusWidget);
 	bool IsUIInputModeActive() const { return bUIInputModeActive; }
+	/** Route a virtual/gamepad confirmation through Slate as a left click without changing input device state. */
+	void SimulateSyntheticLeftMouseClick();
+	bool IsSimulatingSyntheticLeftMouseClick() const { return bSimulatingSyntheticLeftMouseClick; }
 	void SetVirtualCursorAxis(const FKey& AxisKey, float Value);
 	bool ConsumeInventoryTogglePress(const UInputAction* Action);
 	void TickVirtualCursor(float DeltaTime);
@@ -98,6 +101,7 @@ protected:
 	bool bPreviousShowMouseCursor = false;
 	bool bMouseCursorBeforeScan = false;
 	bool bScanCursorModeActive = false;
+	bool bSimulatingSyntheticLeftMouseClick = false;
 	FVector2D VirtualCursorAxis = FVector2D::ZeroVector;
 	FVector2D ScanRightCursorAxis = FVector2D::ZeroVector;
 
