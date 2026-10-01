@@ -31,6 +31,9 @@
 	"UI_Dialogue_Continue": "Continue",
 	"UI_Dialogue_History": "History",
 	"UI_Inventory": "Inventory",
+	"UI_Inventory_Confirm": "Confirm",
+	"UI_Inventory_NextPage": "Next Page",
+	"UI_Inventory_PreviousPage": "Previous Page",
 	"UI_Settings": "Settings",
 	"UI_Skill": "Skills",
 	"UI_StartGame": "Start Game"

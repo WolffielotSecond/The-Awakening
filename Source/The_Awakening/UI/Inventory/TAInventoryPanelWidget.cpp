@@ -9,8 +9,22 @@
 #include "Components/WidgetSwitcher.h"
 #include "Components/Button.h"
 #include "Components/NamedSlot.h"
+#include "Components/Image.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
 #include "Core/TALocalizeSubsystem.h"
+#include "Core/TAInputIconSubsystem.h"
+#include "UI/TAActionPromptWidget.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputCoreTypes.h"
+#include "InputMappingContext.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/GameInstance.h"
+#include "Blueprint/WidgetTree.h"
 
 void UTAInventoryPanelWidget::NativeConstruct()
 {
@@ -29,10 +43,12 @@ void UTAInventoryPanelWidget::NativeConstruct()
 
 	if (Button_Inventory)
 	{
+		Button_Inventory->OnClicked.RemoveDynamic(this, &UTAInventoryPanelWidget::OnClickInventoryTab);
 		Button_Inventory->OnClicked.AddDynamic(this, &UTAInventoryPanelWidget::OnClickInventoryTab);
 	}
 	if (Button_Skills)
 	{
+		Button_Skills->OnClicked.RemoveDynamic(this, &UTAInventoryPanelWidget::OnClickSkillsTab);
 		Button_Skills->OnClicked.AddDynamic(this, &UTAInventoryPanelWidget::OnClickSkillsTab);
 	}
 
@@ -40,6 +56,24 @@ void UTAInventoryPanelWidget::NativeConstruct()
 	{
 		WidgetSwitcher->SetActiveWidgetIndex(0);
 	}
+	EnsureInventoryInputActions();
+	PushInventoryMappingContext();
+	BindInventoryInputActions();
+	BuildActionPromptBar();
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		InputIconSubsystem = GI->GetSubsystem<UTAInputIconSubsystem>();
+		if (InputIconSubsystem)
+		{
+			InputIconSubsystem->OnInputDeviceChanged.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInputDeviceChanged);
+			if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+			{
+				InputIconSubsystem->RefreshCurrentDeviceForUser(LocalPlayer->GetPlatformUserId());
+			}
+		}
+	}
+	RefreshInputIcons();
 
 	RefreshLocalizedChrome();
 
@@ -55,6 +89,21 @@ void UTAInventoryPanelWidget::NativeConstruct()
 
 void UTAInventoryPanelWidget::NativeDestruct()
 {
+	PopInventoryMappingContext();
+	UnbindInventoryInputActions();
+	if (InputIconSubsystem)
+	{
+		InputIconSubsystem->OnInputDeviceChanged.RemoveDynamic(this, &UTAInventoryPanelWidget::HandleInputDeviceChanged);
+		InputIconSubsystem = nullptr;
+	}
+	if (Button_Inventory)
+	{
+		Button_Inventory->OnClicked.RemoveDynamic(this, &UTAInventoryPanelWidget::OnClickInventoryTab);
+	}
+	if (Button_Skills)
+	{
+		Button_Skills->OnClicked.RemoveDynamic(this, &UTAInventoryPanelWidget::OnClickSkillsTab);
+	}
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
@@ -164,6 +213,253 @@ void UTAInventoryPanelWidget::OnClickSkillsTab()
 	if (WidgetSwitcher)
 	{
 		WidgetSwitcher->SetActiveWidgetIndex(1);
+	}
+}
+
+void UTAInventoryPanelWidget::EnsureInventoryInputActions()
+{
+	auto MakeRuntimeAction = [this](TObjectPtr<UInputAction>& Action, const TCHAR* Name)
+	{
+		if (!Action)
+		{
+			Action = NewObject<UInputAction>(this, Name);
+			if (Action)
+			{
+				Action->ValueType = EInputActionValueType::Boolean;
+			}
+		}
+	};
+
+	MakeRuntimeAction(PreviousPageAction, TEXT("Runtime_InventoryPreviousPage"));
+	MakeRuntimeAction(NextPageAction, TEXT("Runtime_InventoryNextPage"));
+	MakeRuntimeAction(ConfirmAction, TEXT("Runtime_InventoryConfirm"));
+
+	if (!RuntimeInventoryMappingContext)
+	{
+		RuntimeInventoryMappingContext = NewObject<UInputMappingContext>(this, TEXT("Runtime_InventoryMappingContext"));
+	}
+	if (!RuntimeInventoryMappingContext)
+	{
+		return;
+	}
+
+	// Runtime defaults are only added for transient actions. Designer-created IMC mappings remain authoritative.
+	if (PreviousPageAction && PreviousPageAction->GetFName() == TEXT("Runtime_InventoryPreviousPage"))
+	{
+		RuntimeInventoryMappingContext->MapKey(PreviousPageAction, EKeys::Left);
+		RuntimeInventoryMappingContext->MapKey(PreviousPageAction, EKeys::Gamepad_DPad_Left);
+	}
+	if (NextPageAction && NextPageAction->GetFName() == TEXT("Runtime_InventoryNextPage"))
+	{
+		RuntimeInventoryMappingContext->MapKey(NextPageAction, EKeys::Right);
+		RuntimeInventoryMappingContext->MapKey(NextPageAction, EKeys::Gamepad_DPad_Right);
+	}
+	if (ConfirmAction && ConfirmAction->GetFName() == TEXT("Runtime_InventoryConfirm"))
+	{
+		RuntimeInventoryMappingContext->MapKey(ConfirmAction, EKeys::Enter);
+		RuntimeInventoryMappingContext->MapKey(ConfirmAction, EKeys::SpaceBar);
+		RuntimeInventoryMappingContext->MapKey(ConfirmAction, EKeys::Gamepad_FaceButton_Bottom);
+	}
+}
+
+void UTAInventoryPanelWidget::PushInventoryMappingContext()
+{
+	if (bInventoryMappingPushed)
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetOwningLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer
+		? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	if (!InputSubsystem)
+	{
+		return;
+	}
+	if (InventoryMappingContext)
+	{
+		InputSubsystem->AddMappingContext(InventoryMappingContext, InventoryMappingPriority);
+	}
+	if (RuntimeInventoryMappingContext)
+	{
+		InputSubsystem->AddMappingContext(RuntimeInventoryMappingContext, InventoryMappingPriority + 1);
+	}
+	bInventoryMappingPushed = InventoryMappingContext || RuntimeInventoryMappingContext;
+}
+
+void UTAInventoryPanelWidget::PopInventoryMappingContext()
+{
+	if (!bInventoryMappingPushed)
+	{
+		return;
+	}
+	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+		{
+			if (InventoryMappingContext)
+			{
+				InputSubsystem->RemoveMappingContext(InventoryMappingContext);
+			}
+			if (RuntimeInventoryMappingContext)
+			{
+				InputSubsystem->RemoveMappingContext(RuntimeInventoryMappingContext);
+			}
+		}
+	}
+	bInventoryMappingPushed = false;
+}
+
+void UTAInventoryPanelWidget::BindInventoryInputActions()
+{
+	APlayerController* PC = GetOwningPlayer();
+	UEnhancedInputComponent* EIC = PC ? Cast<UEnhancedInputComponent>(PC->InputComponent) : nullptr;
+	if (!EIC)
+	{
+		return;
+	}
+	if (PreviousPageAction)
+	{
+		InputBindingHandles.Add(EIC->BindAction(PreviousPageAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::PreviousPage).GetHandle());
+	}
+	if (NextPageAction)
+	{
+		InputBindingHandles.Add(EIC->BindAction(NextPageAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::NextPage).GetHandle());
+	}
+	if (ConfirmAction)
+	{
+		InputBindingHandles.Add(EIC->BindAction(ConfirmAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::ConfirmPageAction).GetHandle());
+	}
+}
+
+void UTAInventoryPanelWidget::UnbindInventoryInputActions()
+{
+	APlayerController* PC = GetOwningPlayer();
+	if (UEnhancedInputComponent* EIC = PC ? Cast<UEnhancedInputComponent>(PC->InputComponent) : nullptr)
+	{
+		for (const uint32 Handle : InputBindingHandles)
+		{
+			EIC->RemoveBindingByHandle(Handle);
+		}
+	}
+	InputBindingHandles.Reset();
+}
+
+void UTAInventoryPanelWidget::PreviousPage(const FInputActionValue& Value)
+{
+	ChangePage(-1);
+}
+
+void UTAInventoryPanelWidget::NextPage(const FInputActionValue& Value)
+{
+	ChangePage(1);
+}
+
+void UTAInventoryPanelWidget::ChangePage(int32 Direction)
+{
+	if (!WidgetSwitcher || WidgetSwitcher->GetChildrenCount() < 2)
+	{
+		return;
+	}
+	const int32 PageCount = WidgetSwitcher->GetChildrenCount();
+	const int32 CurrentPage = FMath::Clamp(WidgetSwitcher->GetActiveWidgetIndex(), 0, PageCount - 1);
+	const int32 NextPageIndex = (CurrentPage + Direction + PageCount) % PageCount;
+	WidgetSwitcher->SetActiveWidgetIndex(NextPageIndex);
+}
+
+void UTAInventoryPanelWidget::ConfirmPageAction(const FInputActionValue& Value)
+{
+	OnInventoryConfirmPressed();
+}
+
+void UTAInventoryPanelWidget::OnInventoryConfirmPressed_Implementation()
+{
+	// Page-specific selection/activation is supplied by the inventory widget Blueprint.
+}
+
+void UTAInventoryPanelWidget::BuildActionPromptBar()
+{
+	if (!HorizontalBox_Controls || ActionPromptWidgets.Num() > 0)
+	{
+		return;
+	}
+	UClass* PromptClass = ActionPromptWidgetClass.Get();
+	if (!PromptClass)
+	{
+		PromptClass = LoadClass<UTAActionPromptWidget>(nullptr, TEXT("/Game/UI/WBP_ActionPrompt.WBP_ActionPrompt_C"));
+	}
+	if (!PromptClass)
+	{
+		PromptClass = UTAActionPromptWidget::StaticClass();
+	}
+
+	auto AddPrompt = [this, PromptClass](UInputAction* Action, const FString& TextId)
+	{
+		if (!Action)
+		{
+			return;
+		}
+		UTAActionPromptWidget* Prompt = CreateWidget<UTAActionPromptWidget>(this, PromptClass);
+		if (!Prompt)
+		{
+			return;
+		}
+		Prompt->ConfigureLocalizedPrompt(Action, TextId);
+		Prompt->OnPromptClicked.AddDynamic(this, &UTAInventoryPanelWidget::OnActionPromptClicked);
+		HorizontalBox_Controls->AddChildToHorizontalBox(Prompt)->SetPadding(FMargin(6.0f, 0.0f));
+		ActionPromptWidgets.Add(Prompt);
+	};
+	AddPrompt(PreviousPageAction, PreviousPagePromptTextId);
+	AddPrompt(NextPageAction, NextPagePromptTextId);
+	AddPrompt(ConfirmAction, ConfirmPromptTextId);
+}
+
+void UTAInventoryPanelWidget::OnActionPromptClicked(UTAActionPromptWidget* Prompt)
+{
+	if (!Prompt)
+	{
+		return;
+	}
+	UInputAction* Action = Prompt->GetPromptAction();
+	if (Action == PreviousPageAction)
+	{
+		ChangePage(-1);
+	}
+	else if (Action == NextPageAction)
+	{
+		ChangePage(1);
+	}
+	else if (Action == ConfirmAction)
+	{
+		OnInventoryConfirmPressed();
+	}
+}
+
+void UTAInventoryPanelWidget::RefreshInputIcons()
+{
+	if (!InputIconSubsystem)
+	{
+		return;
+	}
+	if (Image_PreviousPageKey)
+	{
+		Image_PreviousPageKey->SetBrushFromTexture(InputIconSubsystem->GetIconForAction(PreviousPageAction));
+	}
+	if (Image_NextPageKey)
+	{
+		Image_NextPageKey->SetBrushFromTexture(InputIconSubsystem->GetIconForAction(NextPageAction));
+	}
+}
+
+void UTAInventoryPanelWidget::HandleInputDeviceChanged()
+{
+	RefreshInputIcons();
+	for (UTAActionPromptWidget* Prompt : ActionPromptWidgets)
+	{
+		if (Prompt)
+		{
+			Prompt->RefreshPrompt();
+		}
 	}
 }
 

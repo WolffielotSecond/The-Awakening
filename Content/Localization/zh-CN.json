@@ -31,6 +31,9 @@
 	"UI_Dialogue_Continue": "继续",
 	"UI_Dialogue_History": "历史记录",
 	"UI_Inventory": "背包",
+	"UI_Inventory_Confirm": "确认",
+	"UI_Inventory_NextPage": "下一页",
+	"UI_Inventory_PreviousPage": "上一页",
 	"UI_Settings": "设置",
 	"UI_Skill": "技能",
 	"UI_StartGame": "开始游戏"
