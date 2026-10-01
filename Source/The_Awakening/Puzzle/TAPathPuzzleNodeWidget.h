@@ -16,7 +16,8 @@ class THE_AWAKENING_API UTAPathPuzzleNodeWidget : public UUserWidget
 {
 	GENERATED_BODY()
 public:
-	void Configure(int32 Index, const FText& Label, const FText& Effect, const FSlateBrush& Brush);
+	void Configure(int32 Index, const FText& Label, const FText& Effect, const FSlateBrush& Brush, bool bShowLabel = false);
+	bool ClickAtCursor(const FVector2D& ScreenPosition);
 	UPROPERTY(BlueprintAssignable, Category="Puzzle") FTAOnPuzzleNodeClicked OnNodeClicked;
 protected:
 	virtual void NativeOnInitialized() override;

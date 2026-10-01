@@ -16,6 +16,8 @@
 #include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
 #include "Brushes/SlateColorBrush.h"
+#include "Framework/Application/SlateApplication.h"
+#include "InputCoreTypes.h"
 
 FTAPuzzleAppearance::FTAPuzzleAppearance()
 {
@@ -57,9 +59,35 @@ UTAPathPuzzleWidget* UTAPathPuzzleWidget::OpenPuzzleInternal(APlayerController* 
 void UTAPathPuzzleWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	SetIsFocusable(true);
 	BuildFallback();
 	if (Button_Undo) Button_Undo->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleWidget::Undo);
 	if (Button_Retry) Button_Retry->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleWidget::Retry);
+}
+
+FReply UTAPathPuzzleWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() != EKeys::Gamepad_FaceButton_Bottom)
+		return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+	// Xbox A activates the control under the virtual cursor, not an unrelated keyboard-focused button.
+	// Consume repeats and empty-space presses so one press cannot select multiple path nodes.
+	if (!InKeyEvent.IsRepeat() && Session && !Session->IsTerminal() && FSlateApplication::IsInitialized())
+	{
+		const FVector2D CursorPosition = FSlateApplication::Get().GetCursorPos();
+		if (PuzzleCanvas)
+		{
+			for (UWidget* Child : PuzzleCanvas->GetAllChildren())
+				if (auto* Node = Cast<UTAPathPuzzleNodeWidget>(Child); Node && Node->ClickAtCursor(CursorPosition))
+					return FReply::Handled();
+		}
+		auto IsUnderCursor = [&CursorPosition](UButton* Button)
+		{
+			return Button && Button->IsVisible() && Button->GetIsEnabled() && Button->GetCachedGeometry().IsUnderLocation(CursorPosition);
+		};
+		if (IsUnderCursor(Button_Undo)) Undo();
+		else if (IsUnderCursor(Button_Retry)) Retry();
+	}
+	return FReply::Handled();
 }
 
 void UTAPathPuzzleWidget::NativeConstruct()
@@ -271,7 +299,7 @@ void UTAPathPuzzleWidget::RefreshBoard()
 		UTAPathPuzzleNodeWidget* Node = CreateWidget<UTAPathPuzzleNodeWidget>(this, NodeWidgetClass ? NodeWidgetClass.Get() : UTAPathPuzzleNodeWidget::StaticClass());
 		if (!Node) continue;
 		const bool bShowEffect = N.Effect.IsMainGame() ? Session->Settings.bEnableMainGameEffects : Session->Settings.bEnableMinigameEffects;
-		Node->Configure(Index, N.Label, bShowEffect ? N.Effect.GetLabel() : FText::GetEmpty(), Brush);
+		Node->Configure(Index, N.Label, bShowEffect ? N.Effect.GetLabel() : FText::GetEmpty(), Brush, Appearance.bShowNodeLabels);
 		Node->OnNodeClicked.AddDynamic(this, &UTAPathPuzzleWidget::SelectNode);
 		Node->SetIsEnabled(!Session->IsTerminal());
 		UCanvasPanelSlot* NodeSlot = PuzzleCanvas->AddChildToCanvas(Node);

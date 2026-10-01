@@ -29,6 +29,7 @@ struct THE_AWAKENING_API FTAPuzzleAppearance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector2D BoardSize = FVector2D(820, 535);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector2D BoardPadding = FVector2D(55, 35);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector2D NodeSize = FVector2D(78, 52);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bShowNodeLabels = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="1")) float EdgeThickness = 4.f;
 };
 
@@ -80,6 +81,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;

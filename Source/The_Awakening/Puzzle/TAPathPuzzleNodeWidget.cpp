@@ -48,12 +48,24 @@ void UTAPathPuzzleNodeWidget::NativeOnInitialized()
 	if (Button_Node) Button_Node->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleNodeWidget::HandleClick);
 }
 
-void UTAPathPuzzleNodeWidget::Configure(int32 Index, const FText& Label, const FText& Effect, const FSlateBrush& Brush)
+void UTAPathPuzzleNodeWidget::Configure(int32 Index, const FText& Label, const FText& Effect, const FSlateBrush& Brush, bool bShowLabel)
 {
 	NodeIndex = Index;
 	if (Image_Node) Image_Node->SetBrush(Brush);
-	if (Text_Label) Text_Label->SetText(Label);
+	if (Text_Label)
+	{
+		Text_Label->SetText(Label);
+		Text_Label->SetVisibility(bShowLabel ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	if (Text_Effect) Text_Effect->SetText(Effect);
 }
 
 void UTAPathPuzzleNodeWidget::HandleClick() { OnNodeClicked.Broadcast(NodeIndex); }
+
+bool UTAPathPuzzleNodeWidget::ClickAtCursor(const FVector2D& ScreenPosition)
+{
+	if (!IsVisible() || !GetIsEnabled() || !Button_Node || !Button_Node->IsVisible() || !Button_Node->GetIsEnabled() ||
+		!Button_Node->GetCachedGeometry().IsUnderLocation(ScreenPosition)) return false;
+	HandleClick();
+	return true;
+}

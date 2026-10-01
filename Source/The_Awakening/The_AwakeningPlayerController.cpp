@@ -57,15 +57,18 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 	const FKey Key = InAnalogInputEvent.GetKey();
 	Owner->NotifyRawInputKey(Key);
 	Owner->RecordHeldInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex());
-	if (!Owner->IsUIInputModeActive() || !Key.IsGamepadKey())
+	if ((!Owner->IsUIInputModeActive() && !Owner->IsScanCursorModeActive()) || !Key.IsGamepadKey())
 	{
 		return false;
 	}
 
-	if (Key == EKeys::Gamepad_LeftX || Key == EKeys::Gamepad_LeftY)
+	if (Key == EKeys::Gamepad_LeftX || Key == EKeys::Gamepad_LeftY ||
+		(Owner->IsScanCursorModeActive() && (Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY)))
 	{
+		if (!Owner->GetLocalPlayer() || InAnalogInputEvent.GetUserIndex() != Owner->GetLocalPlayer()->GetControllerId()) return false;
 		Owner->SetVirtualCursorAxis(Key, InAnalogInputEvent.GetAnalogValue());
-		return true;
+		// Scan keeps Enhanced Input's axis state current; the character suppresses its scan Look callback.
+		return Owner->IsUIInputModeActive();
 	}
 	return false;
 }
@@ -118,7 +121,9 @@ void AThe_AwakeningPlayerController::BeginPlay()
 				{
 					for (auto It = HeldKeyValues.CreateIterator(); It; ++It)
 						if (It.Key().IsGamepadKey()) It.RemoveCurrent();
-					VirtualCursorAxis = FVector2D::ZeroVector;
+					for (auto It = ConsumedInventoryKeys.CreateIterator(); It; ++It)
+						if (It->IsGamepadKey()) It.RemoveCurrent();
+					VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
 				}
 			});
 		if (FSlateApplication::IsInitialized())
@@ -188,6 +193,8 @@ void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int3
 {
 	if (!bApplicationInputActive || !GetLocalPlayer() || UserIndex != GetLocalPlayer()->GetControllerId()) return;
 	HeldKeyValues.FindOrAdd(Key) = FVector(Value, 0.f, 0.f);
+	// Raw releases survive menu focus/input-mode changes and rearm the toggle.
+	if (FMath::IsNearlyZero(Value)) ConsumedInventoryKeys.Remove(Key);
 	// Slate sends separate X/Y events even when the mapping uses Gamepad_Left2D.
 	const EPairedAxis Axis = Key.GetPairedAxis();
 	if (Axis != EPairedAxis::Unpaired)
@@ -197,6 +204,17 @@ void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int3
 		else if (Axis == EPairedAxis::Y) Pair.Y = Value;
 		else if (Axis == EPairedAxis::Z) Pair.Z = Value;
 	}
+}
+
+bool AThe_AwakeningPlayerController::ConsumeInventoryTogglePress(const UInputAction* Action)
+{
+	if (!ConsumedInventoryKeys.IsEmpty()) return false;
+	const auto* Input = Cast<UTAPlayerInput>(PlayerInput);
+	if (Input && Action)
+		for (const auto& Mapping : Input->GetHeldActionMappings())
+			if (Mapping.Action == Action && !HeldKeyValues.FindRef(Mapping.Key).IsNearlyZero())
+				ConsumedInventoryKeys.Add(Mapping.Key);
+	return true;
 }
 
 FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAction* Action)
@@ -339,7 +357,7 @@ void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
 	}
 
 	bUIInputModeActive = true;
-	VirtualCursorAxis = FVector2D::ZeroVector;
+	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
 	if (AThe_AwakeningCharacter* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn()))
 	{
 		ControlledCharacter->ClearMovementInput();
@@ -373,7 +391,7 @@ void AThe_AwakeningPlayerController::EndUIInputMode()
 	}
 
 	bUIInputModeActive = false;
-	VirtualCursorAxis = FVector2D::ZeroVector;
+	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
 	SetShowMouseCursor(bScanCursorModeActive ? true : bPreviousShowMouseCursor);
 	SetInputMode(FInputModeGameOnly());
 }
@@ -384,8 +402,9 @@ void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIs
 	if (!bIsActive)
 	{
 		HeldKeyValues.Reset();
+		ConsumedInventoryKeys.Reset();
 		HeldInputModifiers.Reset();
-		VirtualCursorAxis = FVector2D::ZeroVector;
+		VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
 		if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
 	}
 	if (!ScanningComponent)
@@ -411,6 +430,10 @@ void AThe_AwakeningPlayerController::BeginScanCursorMode()
 	}
 
 	bScanCursorModeActive = true;
+	SetVirtualCursorAxis(EKeys::Gamepad_LeftX, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).X);
+	SetVirtualCursorAxis(EKeys::Gamepad_LeftY, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).Y);
+	SetVirtualCursorAxis(EKeys::Gamepad_RightX, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).X);
+	SetVirtualCursorAxis(EKeys::Gamepad_RightY, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).Y);
 	bMouseCursorBeforeScan = bUIInputModeActive ? bPreviousShowMouseCursor : bShowMouseCursor;
 	SetShowMouseCursor(true);
 }
@@ -423,6 +446,7 @@ void AThe_AwakeningPlayerController::EndScanCursorMode()
 	}
 
 	bScanCursorModeActive = false;
+	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
 	if (bUIInputModeActive)
 	{
 		SetShowMouseCursor(true);
@@ -477,11 +501,14 @@ void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, f
 	{
 		VirtualCursorAxis.Y = Remapped;
 	}
+	else if (AxisKey == EKeys::Gamepad_RightX) ScanRightCursorAxis.X = Remapped;
+	else if (AxisKey == EKeys::Gamepad_RightY) ScanRightCursorAxis.Y = Remapped;
 }
 
 void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 {
-	if (!bUIInputModeActive || VirtualCursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
+	const FVector2D CursorAxis = (VirtualCursorAxis + (bScanCursorModeActive && !bUIInputModeActive ? ScanRightCursorAxis : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
+	if ((!bUIInputModeActive && !bScanCursorModeActive) || !bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
 	{
 		return;
 	}
@@ -503,12 +530,41 @@ void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 
 	FSlateApplication& SlateApp = FSlateApplication::Get();
 	FVector2D CursorPosition(SlateApp.GetCursorPos());
-	const AThe_AwakeningCharacter* PlayerCharacter = Cast<AThe_AwakeningCharacter>(GetPawn());
+	AThe_AwakeningCharacter* PlayerCharacter = Cast<AThe_AwakeningCharacter>(GetPawn());
 	const float CursorSpeed = PlayerCharacter ? PlayerCharacter->GetMenuCursorSpeed() : 1100.0f;
-	CursorPosition += FVector2D(VirtualCursorAxis.X, -VirtualCursorAxis.Y) * CursorSpeed * DeltaTime;
+	CursorPosition += FVector2D(CursorAxis.X, -CursorAxis.Y) * CursorSpeed * DeltaTime;
 	CursorPosition.X = FMath::Clamp(CursorPosition.X, ViewportOrigin.X, ViewportOrigin.X + ViewportSize.X - 1.0f);
 	CursorPosition.Y = FMath::Clamp(CursorPosition.Y, ViewportOrigin.Y, ViewportOrigin.Y + ViewportSize.Y - 1.0f);
 	SlateApp.SetCursorPos(CursorPosition);
+	// Slate time keeps both controls responsive while the character is frozen.
+	// The character suppresses the normal gamepad Look callback during scanning.
+	if (IsScanStickCursorActive() && PlayerCharacter)
+	{
+		PlayerCharacter->DoLook(CursorAxis.X * DeltaTime * 60.f, -CursorAxis.Y * DeltaTime * 60.f);
+	}
+}
+
+bool AThe_AwakeningPlayerController::GetScanCursorPosition(float& X, float& Y) const
+{
+	// SetCursorPos can move the OS cursor without updating SceneViewport's cached mouse position.
+	// Read the same Slate position used to draw/move it, converting desktop units to viewport pixels.
+	UGameViewportClient* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	const TSharedPtr<SViewport> Widget = Client ? Client->GetGameViewportWidget() : nullptr;
+	if (FSlateApplication::IsInitialized() && Widget.IsValid())
+	{
+		const FGeometry Geometry = Widget->GetCachedGeometry();
+		const FVector2D Size = Geometry.GetLocalSize();
+		int32 Width = 0, Height = 0;
+		GetViewportSize(Width, Height);
+		if (Size.X > 0.f && Size.Y > 0.f && Width > 0 && Height > 0)
+		{
+			const FVector2D Local = Geometry.AbsoluteToLocal(FSlateApplication::Get().GetCursorPos());
+			X = Local.X * Width / Size.X;
+			Y = Local.Y * Height / Size.Y;
+			return true;
+		}
+	}
+	return GetMousePosition(X, Y);
 }
 
 bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)

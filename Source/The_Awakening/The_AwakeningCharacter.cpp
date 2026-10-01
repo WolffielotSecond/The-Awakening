@@ -223,7 +223,7 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 		}
 
 		// Look
-		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::Look);
+		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::MouseLook);
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::Look);
 
 		// Interact
@@ -468,8 +468,21 @@ void AThe_AwakeningCharacter::UpdateMovementInput()
 
 void AThe_AwakeningCharacter::Look(const FInputActionValue& Value)
 {
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (PC && PC->IsScanCursorModeActive()) return;
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
 	DoLook(LookAxisVector.X, LookAxisVector.Y);
+}
+
+void AThe_AwakeningCharacter::MouseLook(const FInputActionValue& Value)
+{
+	// Cursor warping must not add a second camera delta to the scan stick's explicit look.
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (!PC || !PC->IsScanStickCursorActive())
+	{
+		const FVector2D Axis = Value.Get<FVector2D>();
+		DoLook(Axis.X, Axis.Y);
+	}
 }
 
 void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
@@ -839,6 +852,7 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	{
 		return;
 	}
+	if (!PC->ConsumeInventoryTogglePress(ToggleInventoryAction)) return;
 
 	if (InventoryPanelInstance && InventoryPanelInstance->IsInViewport())
 	{

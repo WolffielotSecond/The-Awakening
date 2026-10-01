@@ -69,6 +69,8 @@ Player 需要有效的本地 PlayerController；Widget Class 留空时使用原�
 
 Appearance 中可配置 NodeNormal / NodeEndpoint / NodeSelected / NodeFailed 四种节点 Brush，以及 EdgeNormal / EdgeSelected / EdgeFailed 三种连线 Brush。BoardSize 默认 820×535，BoardPadding 默认 (55,35)，NodeSize 默认 78×52，EdgeThickness 默认 4；TimerColor 控制计时条颜色。运行时调整图片或板面参数后可调用 RefreshBoard 重建动态内容，它不会重新出题或补充次数。
 
+`Appearance.Show Node Labels` 默认关闭，控制节点上的 1A、2A 等名称是否显示，不影响节点效果文字或内部名称。运行时修改后调用 `RefreshBoard`。手柄左摇杆移动虚拟光标，Xbox A（Gamepad Face Button Bottom）选择光标下的节点；空白处按 A 不会误触发其他焦点按钮，长按不会重复选择。光标下的撤销／重试按钮也可用 A 操作，仍遵循开关和次数限制。
+
 全屏背景由空 Designer 的 C++ 占位布局生成。若使用自定义 Designer 根布局，需要自行添加铺满根容器、不透明的背景，并把等比缩放限制在谜题内容层，避免露出主游戏画面。
 
 占位界面的文字目前是英文；自定义标签可使用 FText，后续可接项目本地化。不要把根界面设为 Hidden/Collapsed 或把 Tick Frequency 设为 Never 来隐藏它但保留对局；计时由显示中的 Widget Tick 驱动。需要退出时调用 ClosePuzzle。
