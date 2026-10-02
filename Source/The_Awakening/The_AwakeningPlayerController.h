@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Framework/Application/IInputProcessor.h"
+#include "Core/TAInputRouter.h"
 #include "The_AwakeningPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -37,6 +38,7 @@ public:
 
 private:
 	AThe_AwakeningPlayerController* Owner = nullptr;
+	TSet<FKey> ConsumedPresses;
 };
 
 UCLASS(abstract)
@@ -46,6 +48,9 @@ class AThe_AwakeningPlayerController : public APlayerController
 
 public:
 	AThe_AwakeningPlayerController();
+	bool OwnsPlayerInput(const FVector2D* Pointer = nullptr) const;
+	bool AllowsInput(ETAInputCapability Capability) const;
+	void RefreshInputOwnership();
 	void NotifyRawInputKey(const FKey& Key);
 	/** Observe held inputs before UI consumes them, separately from gameplay permission. */
 	void RecordHeldInput(FKey Key, float Value, int32 UserIndex);
@@ -57,7 +62,7 @@ public:
 
 	/** 所有可交互 UI 共用的输入模式。调用需成对，支持多个 UI 同时打开。 */
 	void BeginUIInputMode(UUserWidget* FocusWidget = nullptr);
-	void EndUIInputMode();
+	void EndUIInputMode(UUserWidget* RequestOwner = nullptr);
 	void SetUIFocusWidget(UUserWidget* FocusWidget);
 	bool IsUIInputModeActive() const { return bUIInputModeActive; }
 	/** Route a virtual/gamepad confirmation through Slate as a left click without changing input device state. */
@@ -95,6 +100,13 @@ protected:
 	FDelegateHandle ApplicationActivationHandle;
 	FDelegateHandle DeviceConnectionHandle;
 	TMap<FKey, FVector> HeldKeyValues;
+	FTAInputRouter InputRouter;
+	TArray<FTAInputRouter::FHandle> MenuInputHandles;
+	TArray<TWeakObjectPtr<UUserWidget>> MenuInputOwners;
+	TWeakObjectPtr<UUserWidget> DialogueInputOwner;
+	FTAInputRouter::FHandle ScanInputHandle = 0;
+	FTAInputRouter::FHandle PuzzleInputHandle = 0;
+	uint64 InternalFocusTransitionUntil = 0;
 	TSet<FKey> ConsumedInventoryKeys;
 	bool bApplicationInputActive = true;
 	UPROPERTY(Transient)

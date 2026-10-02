@@ -7,6 +7,7 @@
 #include "InputMappingContext.h"
 #include "EnhancedPlayerInput.h"
 #include "Core/TAPlayerInput.h"
+#include "Core/TAInputOwnershipAdapter.h"
 #include "Puzzle/TAPathPuzzleWidget.h"
 #include "InputAction.h"
 #include "InputModifiers.h"
@@ -35,12 +36,14 @@ AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
 
 bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, const FKeyEvent& InKeyEvent)
 {
+	if (!Owner || !Owner->OwnsPlayerInput()) return false;
 	if (Owner)
 	{
 		Owner->NotifyRawInputKey(InKeyEvent.GetKey());
 		Owner->RecordHeldInput(InKeyEvent.GetKey(), 1.f, InKeyEvent.GetUserIndex());
-		if (Owner->HandlePuzzleConfirm(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex())) return true;
-		if (Owner->HandlePuzzleUndo(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex())) return true;
+		if (Owner->HandlePuzzleConfirm(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex()) ||
+			Owner->HandlePuzzleUndo(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex()))
+		{ ConsumedPresses.Add(InKeyEvent.GetKey()); return true; }
 	}
 	return false;
 }
@@ -48,7 +51,7 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& Event)
 {
 	if (Owner) Owner->RecordHeldInput(Event.GetKey(), 0.f, Event.GetUserIndex());
-	return false;
+	return ConsumedPresses.Remove(Event.GetKey()) > 0;
 }
 
 bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, const FAnalogInputEvent& InAnalogInputEvent)
@@ -59,6 +62,11 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 	}
 
 	const FKey Key = InAnalogInputEvent.GetKey();
+	if (!Owner->OwnsPlayerInput())
+	{
+		Owner->RecordHeldInput(Key, 0.f, InAnalogInputEvent.GetUserIndex());
+		return false;
+	}
 	Owner->NotifyRawInputKey(Key);
 	Owner->RecordHeldInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex());
 	if ((!Owner->IsUIInputModeActive() && !Owner->IsScanCursorModeActive()) || !Key.IsGamepadKey())
@@ -81,12 +89,15 @@ void FTAInputDeviceDetector::Tick(const float DeltaTime, FSlateApplication& Soft
 {
 	if (Owner)
 	{
+		Owner->RefreshInputOwnership();
 		Owner->TickVirtualCursor(DeltaTime);
 	}
 }
 
 bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent)
 {
+	const FVector2D Position = MouseEvent.GetScreenSpacePosition();
+	if (!Owner || !Owner->OwnsPlayerInput(&Position)) return false;
 	if (Owner && Owner->IsSimulatingSyntheticLeftMouseClick())
 	{
 		return false;
@@ -95,8 +106,9 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 	{
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
-		if (Owner->HandlePuzzleConfirm(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex())) return true;
-		if (Owner->HandlePuzzleUndo(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex())) return true;
+		if (Owner->HandlePuzzleConfirm(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()) ||
+			Owner->HandlePuzzleUndo(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()))
+		{ ConsumedPresses.Add(MouseEvent.GetEffectingButton()); return true; }
 	}
 	return false;
 }
@@ -108,11 +120,13 @@ bool FTAInputDeviceDetector::HandleMouseButtonUpEvent(FSlateApplication&, const 
 		return false;
 	}
 	if (Owner) Owner->RecordHeldInput(Event.GetEffectingButton(), 0.f, Event.GetUserIndex());
-	return false;
+	return ConsumedPresses.Remove(Event.GetEffectingButton()) > 0;
 }
 
 bool FTAInputDeviceDetector::HandleMouseMoveEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent)
 {
+	const FVector2D Position = MouseEvent.GetScreenSpacePosition();
+	if (!Owner || !Owner->OwnsPlayerInput(&Position)) return false;
 	if (Owner && MouseEvent.GetCursorDelta().SizeSquared() > 0.0f)
 	{
 		Owner->NotifyRawInputKey(EKeys::MouseX);
@@ -233,6 +247,8 @@ void AThe_AwakeningPlayerController::SimulateSyntheticLeftMouseClick()
 void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int32 UserIndex)
 {
 	if (!bApplicationInputActive || !GetLocalPlayer() || UserIndex != GetLocalPlayer()->GetControllerId()) return;
+	// Releases always clear observed state. Press ownership is checked at ingress;
+	// this observer never grants permission to execute a gameplay action.
 	HeldKeyValues.FindOrAdd(Key) = FVector(Value, 0.f, 0.f);
 	// Raw releases survive menu focus/input-mode changes and rearm the toggle.
 	if (FMath::IsNearlyZero(Value)) ConsumedInventoryKeys.Remove(Key);
@@ -263,15 +279,10 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 	if (!Action) return FInputActionValue();
 	FInputActionValue Result(Action->ValueType, FVector::ZeroVector);
 	const UTAPlayerInput* Enhanced = Cast<UTAPlayerInput>(PlayerInput);
-	if (!Enhanced || !bApplicationInputActive) return Result;
+	if (!Enhanced || !AllowsInput(ETAInputCapability::Gameplay)) return Result;
 	// UI -> game focus may take a frame to settle. Suppress gameplay while unfocused,
 	// but preserve held keys so a keyboard does not need a second key-down to resume.
 	// Key-up events still update the cache; actual application deactivation clears it.
-	if (const UGameViewportClient* ViewportClient = GetWorld()->GetGameViewport();
-		ViewportClient && ViewportClient->Viewport && !bUIInputModeActive && !ViewportClient->Viewport->HasFocus())
-	{
-		return Result;
-	}
 	auto Modify = [&](const TArray<TObjectPtr<UInputModifier>>& Modifiers, FInputActionValue Value)
 	{
 		for (UInputModifier* Source : Modifiers)
@@ -318,10 +329,12 @@ void AThe_AwakeningPlayerController::SetDialogueModeActive(bool bActive, UUserWi
 	if (bActive)
 	{
 		BeginUIInputMode(FocusWidget);
+		DialogueInputOwner = FocusWidget;
 	}
 	else
 	{
-		EndUIInputMode();
+		EndUIInputMode(DialogueInputOwner.Get());
+		DialogueInputOwner.Reset();
 	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
@@ -381,6 +394,7 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 
 void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
 {
+	InternalFocusTransitionUntil = GFrameCounter + 2;
 	if (!IsLocalPlayerController())
 	{
 		return;
@@ -392,8 +406,12 @@ void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
 	}
 
 	++ActiveUIModeCount;
+	MenuInputOwners.Add(FocusWidget);
+	MenuInputHandles.Add(InputRouter.Acquire(FocusWidget ? static_cast<UObject*>(FocusWidget) : this, 200,
+		{ETAInputCapability::Menu, ETAInputCapability::Cursor}));
 	if (ActiveUIModeCount > 1)
 	{
+		if (FocusWidget) FocusWidget->SetUserFocus(this);
 		return;
 	}
 
@@ -418,16 +436,22 @@ void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
 	SetUIFocusWidget(FocusWidget);
 }
 
-void AThe_AwakeningPlayerController::EndUIInputMode()
+void AThe_AwakeningPlayerController::EndUIInputMode(UUserWidget* RequestOwner)
 {
+	InternalFocusTransitionUntil = GFrameCounter + 2;
 	if (!IsLocalPlayerController() || ActiveUIModeCount <= 0)
 	{
 		return;
 	}
 
-	--ActiveUIModeCount;
+	const int32 Index = RequestOwner ? MenuInputOwners.IndexOfByPredicate([RequestOwner](const auto& Owner) { return Owner.Get() == RequestOwner; }) : MenuInputHandles.Num()-1;
+	if (!MenuInputHandles.IsValidIndex(Index)) return;
+	InputRouter.Release(MenuInputHandles[Index]);
+	MenuInputHandles.RemoveAt(Index); MenuInputOwners.RemoveAt(Index);
+	ActiveUIModeCount = MenuInputHandles.Num();
 	if (ActiveUIModeCount > 0)
 	{
+		if (auto* Focus = MenuInputOwners.Last().Get()) Focus->SetUserFocus(this);
 		return;
 	}
 
@@ -471,6 +495,7 @@ void AThe_AwakeningPlayerController::BeginScanCursorMode()
 	}
 
 	bScanCursorModeActive = true;
+	ScanInputHandle = InputRouter.Acquire(this, 100, {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor});
 	SetVirtualCursorAxis(EKeys::Gamepad_LeftX, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).X);
 	SetVirtualCursorAxis(EKeys::Gamepad_LeftY, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).Y);
 	SetVirtualCursorAxis(EKeys::Gamepad_RightX, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).X);
@@ -487,6 +512,7 @@ void AThe_AwakeningPlayerController::EndScanCursorMode()
 	}
 
 	bScanCursorModeActive = false;
+	InputRouter.Release(ScanInputHandle); ScanInputHandle = 0;
 	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
 	if (bUIInputModeActive)
 	{
@@ -548,6 +574,7 @@ void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, f
 
 void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 {
+	if (!AllowsInput(ETAInputCapability::Cursor)) return;
 	if (PuzzleScopeWidget.IsValid()) return;
 	const FVector2D CursorAxis = (VirtualCursorAxis + (bScanCursorModeActive && !bUIInputModeActive ? ScanRightCursorAxis : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
 	if ((!bUIInputModeActive && !bScanCursorModeActive) || !bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
@@ -611,6 +638,7 @@ bool AThe_AwakeningPlayerController::GetScanCursorPosition(float& X, float& Y) c
 
 bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
+	if (!OwnsPlayerInput() && Params.Event != IE_Released) return false;
 	if (Params.Key.IsValid())
 	{
 		NotifyRawInputKey(Params.Key);
@@ -620,6 +648,8 @@ bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 
 void AThe_AwakeningPlayerController::SetPuzzleScopeWidget(UTAPathPuzzleWidget* Widget)
 {
+	InputRouter.Release(PuzzleInputHandle); PuzzleInputHandle = 0;
+	if (Widget) PuzzleInputHandle = InputRouter.Acquire(Widget, 300, {ETAInputCapability::Puzzle});
     PuzzleScopeWidget = Widget;
     VirtualCursorAxis = ScanRightCursorAxis = FVector2D::ZeroVector;
     if (Widget)
@@ -632,6 +662,7 @@ void AThe_AwakeningPlayerController::SetPuzzleScopeWidget(UTAPathPuzzleWidget* W
 
 FVector2D AThe_AwakeningPlayerController::GetPuzzlePanInput() const
 {
+	if (!AllowsInput(ETAInputCapability::Puzzle)) return FVector2D::ZeroVector;
     if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid()) return FVector2D::ZeroVector;
     auto Down = [this](FKey Key) { return HeldKeyValues.FindRef(Key).X != 0.f ? 1.f : 0.f; };
 	FVector2D Keyboard(Down(EKeys::A) - Down(EKeys::D), Down(EKeys::W) - Down(EKeys::S));
@@ -646,6 +677,7 @@ FVector2D AThe_AwakeningPlayerController::GetPuzzlePanInput() const
 
 bool AThe_AwakeningPlayerController::HandlePuzzleConfirm(FKey Key, bool bRepeat, int32 UserIndex)
 {
+	if (!AllowsInput(ETAInputCapability::Puzzle)) return false;
     if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
         UserIndex != GetLocalPlayer()->GetControllerId() ||
         (Key != EKeys::LeftMouseButton && Key != EKeys::Gamepad_FaceButton_Bottom)) return false;
@@ -655,9 +687,31 @@ bool AThe_AwakeningPlayerController::HandlePuzzleConfirm(FKey Key, bool bRepeat,
 
 bool AThe_AwakeningPlayerController::HandlePuzzleUndo(FKey Key, bool bRepeat, int32 UserIndex)
 {
+	if (!AllowsInput(ETAInputCapability::Puzzle)) return false;
 	if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
 		UserIndex != GetLocalPlayer()->GetControllerId() ||
 		(Key != EKeys::RightMouseButton && Key != EKeys::Gamepad_FaceButton_Right)) return false;
 	if (!bRepeat) PuzzleScopeWidget->Undo();
 	return true;
+}
+
+bool AThe_AwakeningPlayerController::OwnsPlayerInput(const FVector2D* Pointer) const
+{
+	return bApplicationInputActive && TAInputOwnershipAdapter::OwnsInput(this, Pointer);
+}
+
+bool AThe_AwakeningPlayerController::AllowsInput(ETAInputCapability Capability) const
+{
+	return OwnsPlayerInput() && InputRouter.Allows(Capability);
+}
+
+void AThe_AwakeningPlayerController::RefreshInputOwnership()
+{
+	if (OwnsPlayerInput()) return;
+	// SetInputMode transfers Slate focus asynchronously. Preserve physical state
+	// briefly across our own transfer; permission stays denied until focus arrives.
+	if (bApplicationInputActive && GFrameCounter <= InternalFocusTransitionUntil) return;
+	HeldKeyValues.Reset(); HeldInputModifiers.Reset(); ConsumedInventoryKeys.Reset();
+	VirtualCursorAxis = ScanRightCursorAxis = FVector2D::ZeroVector;
+	if (auto* ControlledPawn = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledPawn->ClearMovementInput();
 }

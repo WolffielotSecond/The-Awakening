@@ -141,7 +141,7 @@ void UTAPathPuzzleWidget::ReleaseInput()
 	if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
 	{
 		PC->SetPuzzleScopeWidget(nullptr);
-		PC->EndUIInputMode();
+		PC->EndUIInputMode(this);
 	}
 }
 

@@ -492,6 +492,7 @@ void AThe_AwakeningCharacter::MouseLook(const FInputActionValue& Value)
 
 void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 {
+	if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController()); PC && !PC->AllowsInput(ETAInputCapability::Gameplay)) return;
 	if (IsUIInputActive() || UTAFreezeComponent::IsActorFrozen(this))
 	{
 		return;
@@ -563,6 +564,7 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 
 void AThe_AwakeningCharacter::DoLook(float Yaw, float Pitch)
 {
+	if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController()); PC && !PC->AllowsInput(ETAInputCapability::Look)) return;
 	if (IsUIInputActive())
 	{
 		return;
@@ -861,10 +863,9 @@ void AThe_AwakeningCharacter::ToggleInventory()
 
 	if (InventoryPanelInstance && InventoryPanelInstance->IsInViewport())
 	{
+		PC->EndUIInputMode(InventoryPanelInstance);
 		InventoryPanelInstance->RemoveFromParent();
 		InventoryPanelInstance = nullptr;
-
-		PC->EndUIInputMode();
 		return;
 	}
 

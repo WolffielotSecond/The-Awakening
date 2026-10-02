@@ -812,7 +812,7 @@ bool UTAScanningComponent::StartScan()
 		return false;
 	}
 	if (const AThe_AwakeningPlayerController* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController);
-		TAController && TAController->IsUIInputModeActive())
+		TAController && !TAController->AllowsInput(ETAInputCapability::Scan))
 	{
 		return false;
 	}
