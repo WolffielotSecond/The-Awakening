@@ -8,6 +8,8 @@
 #include "Components/OverlaySlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 
 void UTAPathPuzzleNodeWidget::NativeOnInitialized()
 {
@@ -40,14 +42,29 @@ void UTAPathPuzzleNodeWidget::EnsureNativeWidgetTree()
 		Layers->AddChildToOverlay(Image_Node)->SetHorizontalAlignment(HAlign_Fill);
 		CastChecked<UOverlaySlot>(Image_Node->Slot)->SetVerticalAlignment(VAlign_Fill);
 		UVerticalBox* Texts = WidgetTree->ConstructWidget<UVerticalBox>();
-		UOverlaySlot* TextSlot = Layers->AddChildToOverlay(Texts);
-		TextSlot->SetHorizontalAlignment(HAlign_Center); TextSlot->SetVerticalAlignment(VAlign_Center);
+		// AutoSize gives the large glyphs their full layout width, even when wider
+		// than the node. Matching center alignment/pivot keeps render scaling centered.
+		// Do not use ScaleBox: its layout scale reduces the glyph rasterization size.
+		UCanvasPanel* TextCanvas = WidgetTree->ConstructWidget<UCanvasPanel>();
+		UOverlaySlot* TextSlot = Layers->AddChildToOverlay(TextCanvas);
+		TextSlot->SetHorizontalAlignment(HAlign_Fill); TextSlot->SetVerticalAlignment(VAlign_Fill);
+		UCanvasPanelSlot* CenterSlot = TextCanvas->AddChildToCanvas(Texts);
+		CenterSlot->SetAnchors(FAnchors(.5f));
+		CenterSlot->SetAlignment(FVector2D(.5f));
+		CenterSlot->SetPosition(FVector2D::ZeroVector);
+		CenterSlot->SetAutoSize(true);
+		Texts->SetRenderTransformPivot(FVector2D(.5f));
+		Texts->SetRenderScale(FVector2D(.25f));
 		Text_Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Label"));
 		Text_Effect = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Effect"));
 		Texts->AddChildToVerticalBox(Text_Label)->SetHorizontalAlignment(HAlign_Center);
 		Texts->AddChildToVerticalBox(Text_Effect)->SetHorizontalAlignment(HAlign_Center);
-		FSlateFontInfo Font = Text_Label->GetFont(); Font.Size = 14; Text_Label->SetFont(Font);
-		Font.Size = 9; Text_Effect->SetFont(Font);
+		// Rasterize both lines at 4x resolution, then shrink their shared centered
+		// container. The board magnification no longer stretches 9px glyphs.
+		FSlateFontInfo Font = Text_Label->GetFont(); Font.Size = 56; Text_Label->SetFont(Font);
+		Font.Size = 36; Text_Effect->SetFont(Font);
+		Text_Label->SetJustification(ETextJustify::Center);
+		Text_Effect->SetJustification(ETextJustify::Center);
 		Text_Label->SetColorAndOpacity(FLinearColor::Black); Text_Effect->SetColorAndOpacity(FLinearColor::Black);
 		Image_Node->SetVisibility(ESlateVisibility::HitTestInvisible);
 		Texts->SetVisibility(ESlateVisibility::HitTestInvisible);

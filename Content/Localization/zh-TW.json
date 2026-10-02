@@ -1,5 +1,11 @@
 ﻿{
 	"Char_Alice_Name": "愛麗絲",
+	"Puzzle_Select": "選擇",
+	"Puzzle_MoveView": "視角移動",
+	"Puzzle_Undo": "撤銷",
+	"Puzzle_UndoCount": "撤銷（{0}）",
+	"Puzzle_Energy": "能量",
+	"Puzzle_TimeRemaining": "剩餘時間",
 	"Char_Bob_Name": "鮑勃",
 	"Common_UnavailableInThisVersion": "目前版本中無法使用",
 	"Interact_Default": "互動",

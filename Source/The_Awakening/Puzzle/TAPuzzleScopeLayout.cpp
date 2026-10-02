@@ -6,6 +6,8 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Materials/MaterialInterface.h"
 #include "Brushes/SlateColorBrush.h"
 
@@ -74,4 +76,40 @@ void TAPuzzleScopeLayout::Build(UWidgetTree* Tree, const FTAPuzzleAppearance& Ap
 	Crosshair->SetVisibility(ESlateVisibility::HitTestInvisible);
 	Place(Crosshair, Image(TEXT("CrosshairHorizontal"), FLinearColor::White), FVector2D(0,10), FVector2D(22,2), 0);
 	Place(Crosshair, Image(TEXT("CrosshairVertical"), FLinearColor::White), FVector2D(10,0), FVector2D(2,22), 0);
+	AddLocalizedPrompts(Tree);
+}
+
+void TAPuzzleScopeLayout::AddLocalizedPrompts(UWidgetTree* Tree)
+{
+	auto* Root = Cast<UCanvasPanel>(Tree->RootWidget);
+	auto* Instruments = Cast<UCanvasPanel>(Tree->FindWidget(TEXT("ScopeInstruments")));
+	if (!Root || !Instruments) return;
+	for (int32 Row = 0; Row < 3; ++Row)
+	{
+		const FString Name = FString::Printf(TEXT("PromptRow_%d"), Row);
+		if (Tree->FindWidget(FName(*Name))) continue;
+		auto* Box = Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*Name));
+		Box->SetVisibility(ESlateVisibility::HitTestInvisible);
+		auto* Slot = Root->AddChildToCanvas(Box);
+		Slot->SetAnchors(FAnchors(1,1)); Slot->SetAlignment(FVector2D(1,1));
+		Slot->SetPosition(FVector2D(-35,-35-(2-Row)*48)); Slot->SetSize(FVector2D(390,40)); Slot->SetZOrder(5);
+		for (int32 I = 0; I < (Row == 1 ? 4 : 1); ++I)
+		{
+			auto* Icon = Tree->ConstructWidget<UImage>(UImage::StaticClass(), FName(*FString::Printf(TEXT("PromptIcon_%d_%d"), Row,I)));
+			Box->AddChildToHorizontalBox(Icon)->SetPadding(FMargin(0,0,6,0));
+		}
+		auto* Text = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), FName(*FString::Printf(TEXT("PromptText_%d"),Row)));
+		Box->AddChildToHorizontalBox(Text)->SetVerticalAlignment(VAlign_Center);
+	}
+	for (int32 Side=0; Side<2; ++Side)
+	{
+		const FName Name = Side==0 ? TEXT("Text_EnergyLabel") : TEXT("Text_TimeLabel");
+		if (Tree->FindWidget(Name)) continue;
+		auto* Text = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),Name);
+		Text->SetJustification(ETextJustify::Center);
+		FSlateFontInfo Font=Text->GetFont(); Font.Size=16; Text->SetFont(Font);
+		Text->SetVisibility(ESlateVisibility::HitTestInvisible);
+		auto* Slot=Instruments->AddChildToCanvas(Text);
+		Slot->SetPosition(FVector2D(Side==0 ? 115 : 315,452)); Slot->SetSize(FVector2D(170,30)); Slot->SetZOrder(2);
+	}
 }

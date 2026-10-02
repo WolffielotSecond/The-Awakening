@@ -74,6 +74,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="1")) float AimRadius = 30.f;
 	/** When enabled, W/S pan the board down/up and A/D pan it right/left. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope") bool bInversePanInput = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="0.1", ClampMax="1.0")) float ScopeHeightFraction = .8f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="0")) float EnergyBlendSpeed = 14.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle", meta=(ExposeOnSpawn="true")) FTAPuzzleSettings PuzzleSettings;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle", meta=(ExposeOnSpawn="true")) int32 PuzzleSeed = -1;
@@ -94,6 +96,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void NativeConstruct() override;
+	virtual FCursorReply NativeOnCursorQuery(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
@@ -124,6 +127,10 @@ private:
 		UObject* RewardReceiver, int32 Seed);
 	void BuildFallback();
 	void RefreshChrome();
+	UFUNCTION() void RefreshLocalizedPrompts();
+	void RefreshUndoPrompt();
+	float DisplayEnergyFill = -1.f;
+	float ScopeDisplayScale = 1.f;
 	void ReleaseInput();
 	void UpdateScope(float DeltaSeconds);
 	FVector2D GetNodePosition(int32 Index) const;

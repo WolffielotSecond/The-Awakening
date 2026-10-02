@@ -99,6 +99,20 @@ int32 UTAPuzzleLayoutCommandlet::Main(const FString& Params)
     UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, AssetPath);
     if (!Blueprint || !Blueprint->GeneratedClass || !Blueprint->GeneratedClass->IsChildOf(UTAPathPuzzleWidget::StaticClass())) return 1;
     UWidgetTree* WidgetTree = Blueprint->WidgetTree;
+    if (Params.Contains(TEXT("AddPrompts")))
+    {
+        TAPuzzleScopeLayout::AddLocalizedPrompts(WidgetTree);
+        WidgetTree->ForEachWidget([Blueprint](UWidget* Widget) {
+            if (!Blueprint->WidgetVariableNameToGuidMap.Contains(Widget->GetFName()))
+                Blueprint->WidgetVariableNameToGuidMap.Add(Widget->GetFName(), FGuid::NewGuid());
+        });
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+        FKismetEditorUtilities::CompileBlueprint(Blueprint);
+        if (Blueprint->Status == BS_Error) return 15;
+        FSavePackageArgs Args; Args.TopLevelFlags = RF_Public | RF_Standalone;
+        const FString File = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+        return UPackage::SavePackage(Blueprint->GetOutermost(),Blueprint,*File,Args) ? 0 : 16;
+    }
     if (Params.Contains(TEXT("TuneScope")))
     {
         if (!WidgetTree) return 10;

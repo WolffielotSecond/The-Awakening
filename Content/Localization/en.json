@@ -1,5 +1,11 @@
 ﻿{
 	"Char_Alice_Name": "Alice",
+	"Puzzle_Select": "Select",
+	"Puzzle_MoveView": "Move View",
+	"Puzzle_Undo": "Undo",
+	"Puzzle_UndoCount": "Undo ({0})",
+	"Puzzle_Energy": "Energy",
+	"Puzzle_TimeRemaining": "Time Remaining",
 	"Char_Bob_Name": "Bob",
 	"Common_UnavailableInThisVersion": "Unavailable in this version",
 	"Interact_Default": "Interact",

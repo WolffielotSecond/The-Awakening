@@ -15,11 +15,16 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
 #include "Brushes/SlateColorBrush.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
+#include "Core/TAInputIconSubsystem.h"
+#include "Core/TALocalizeSubsystem.h"
+#include "UI/TAPromptWidgetUtils.h"
+#include "Engine/GameInstance.h"
 
 FTAPuzzleAppearance::FTAPuzzleAppearance()
 {
@@ -63,6 +68,23 @@ void UTAPathPuzzleWidget::NativeOnInitialized()
 	Super::NativeOnInitialized();
 	SetIsFocusable(true);
 	BuildFallback();
+	// These labels sit under the magnified instrument canvas. Supersample once
+	// per instance, preserving the Designer font, position, alignment and bounds.
+	for (const FName Name : {FName(TEXT("Text_EnergyLabel")), FName(TEXT("Text_TimeLabel"))})
+	{
+		if (auto* Label = Cast<UTextBlock>(GetWidgetFromName(Name)))
+			if (auto* LabelSlot = Cast<UCanvasPanelSlot>(Label->Slot))
+			{
+				if (LabelSlot->GetAnchors().Minimum != LabelSlot->GetAnchors().Maximum) continue;
+				const FVector2D OldSize = LabelSlot->GetSize();
+				const FVector2D Alignment = LabelSlot->GetAlignment();
+				const FVector2D Pivot = Label->GetRenderTransformPivot();
+				FSlateFontInfo Font = Label->GetFont(); Font.Size *= 4; Label->SetFont(Font);
+				LabelSlot->SetSize(OldSize * 4);
+				LabelSlot->SetPosition(LabelSlot->GetPosition() + (Alignment - Pivot) * OldSize * 3);
+				Label->SetRenderScale(Label->GetRenderTransform().Scale * .25f);
+			}
+	}
 	if (Button_Undo) Button_Undo->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleWidget::Undo);
 	// Retry/reset is intentionally disabled for the microscope version for now.
 }
@@ -79,6 +101,16 @@ FReply UTAPathPuzzleWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, 
 void UTAPathPuzzleWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (auto* GI = GetGameInstance())
+	{
+		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputDeviceChanged.AddUniqueDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
+		GI->GetSubsystem<UTALocalizeSubsystem>()->OnLanguageChanged.AddUniqueDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
+	}
+	RefreshLocalizedPrompts();
+	// SelfHitTestInvisible skips this screen in Slate's cursor query. Make the
+	// fullscreen widget a hit target so UI input mode cannot fall back to Arrow.
+	SetVisibility(ESlateVisibility::Visible);
+	SetCursor(EMouseCursor::None);
 	if (bAutoStart && !Session) StartPuzzle();
 	// Freeze registered gameplay actors, not world time or the UMG countdown.
 	// Keep the freeze through settlement until this screen is removed.
@@ -97,6 +129,11 @@ void UTAPathPuzzleWidget::NativeConstruct()
 	RefreshChrome();
 }
 
+FCursorReply UTAPathPuzzleWidget::NativeOnCursorQuery(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	return FCursorReply::Cursor(EMouseCursor::None);
+}
+
 void UTAPathPuzzleWidget::ReleaseInput()
 {
 	if (!bOwnsInputMode) return;
@@ -110,6 +147,11 @@ void UTAPathPuzzleWidget::ReleaseInput()
 
 void UTAPathPuzzleWidget::NativeDestruct()
 {
+	if (auto* GI = GetGameInstance())
+	{
+		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputDeviceChanged.RemoveDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
+		GI->GetSubsystem<UTALocalizeSubsystem>()->OnLanguageChanged.RemoveDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
+	}
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(SettlementCloseTimer);
@@ -132,6 +174,12 @@ void UTAPathPuzzleWidget::NativeTick(const FGeometry& Geometry, float DeltaSecon
 {
 	Super::NativeTick(Geometry, DeltaSeconds);
 	if (Session) Session->AdvanceTime(DeltaSeconds);
+	if (Session)
+	{
+		const auto& P = Session->Progress;
+		const float Target = P.MaxEnergy > 0 ? FMath::Clamp(float(P.MaxEnergy - P.EnergyUsed) / P.MaxEnergy, 0.f, 1.f) : 0.f;
+		DisplayEnergyFill = DisplayEnergyFill < 0.f ? Target : FMath::FInterpTo(DisplayEnergyFill, Target, DeltaSeconds, EnergyBlendSpeed);
+	}
 	UpdateScope(DeltaSeconds);
 	RefreshChrome();
 }
@@ -240,7 +288,10 @@ void UTAPathPuzzleWidget::RefreshBoard()
 		FString Text = FString::FromInt(E.Energy);
 		if (E.Effect.Type != ETAPuzzleEffectType::None && (E.Effect.IsMainGame() ? Session->Settings.bEnableMainGameEffects : Session->Settings.bEnableMinigameEffects)) Text += TEXT("\n") + E.Effect.GetLabel().ToString();
 		Label->SetText(FText::FromString(Text));
-		FSlateFontInfo Font = Label->GetFont(); Font.Size = 11; Label->SetFont(Font);
+		// Rasterize at a larger font size before the board render transform magnifies it.
+		FSlateFontInfo Font = Label->GetFont(); Font.Size = 44; Label->SetFont(Font);
+		Label->SetRenderTransformPivot(FVector2D::ZeroVector);
+		Label->SetRenderScale(FVector2D(.25f));
 		Label->SetVisibility(ESlateVisibility::HitTestInvisible);
 		UCanvasPanelSlot* LabelSlot = PuzzleCanvas->AddChildToCanvas(Label);
 		LabelSlot->SetPosition(A + Delta * .4f + FVector2D(0, -22)); LabelSlot->SetAutoSize(true);
@@ -265,6 +316,7 @@ void UTAPathPuzzleWidget::RefreshBoard()
 
 void UTAPathPuzzleWidget::RefreshChrome()
 {
+	RefreshUndoPrompt();
 	if (Text_Status) Text_Status->SetVisibility(ESlateVisibility::Collapsed);
 	if (!Session) return;
 	const auto& P = Session->Progress;
@@ -272,8 +324,12 @@ void UTAPathPuzzleWidget::RefreshChrome()
 	if (Text_Time) Text_Time->SetText(FText::AsNumber(FMath::Max(0, FMath::CeilToInt(Session->TimeRemaining))));
 	const int32 RemainingEnergy = FMath::Max(0, P.MaxEnergy - P.EnergyUsed);
 	if (Text_Energy) Text_Energy->SetText(FText::AsNumber(RemainingEnergy));
+	if (DisplayEnergyFill < 0.f) DisplayEnergyFill = P.MaxEnergy > 0 ? FMath::Clamp(float(RemainingEnergy) / P.MaxEnergy, 0.f, 1.f) : 0.f;
+	// Flip only the gauge artwork: its remaining bright section now drains from top to bottom.
+	if (Image_EnergyArc) Image_EnergyArc->SetRenderScale(FVector2D(1,-1));
+	if (Image_TimeArc) Image_TimeArc->SetRenderScale(FVector2D(1,-1));
 	if (Image_EnergyArc)
-		if (auto* Material = Image_EnergyArc->GetDynamicMaterial()) Material->SetScalarParameterValue(TEXT("Fill"), P.MaxEnergy > 0 ? FMath::Clamp(float(RemainingEnergy) / P.MaxEnergy, 0.f, 1.f) : 0.f);
+		if (auto* Material = Image_EnergyArc->GetDynamicMaterial()) Material->SetScalarParameterValue(TEXT("Fill"), DisplayEnergyFill);
 	if (Image_TimeArc)
 		if (auto* Material = Image_TimeArc->GetDynamicMaterial()) Material->SetScalarParameterValue(TEXT("Fill"), Session->Definition.TimeLimit > 0 ? FMath::Clamp(Session->TimeRemaining / Session->Definition.TimeLimit, 0.f, 1.f) : 0.f);
 	if (Text_Stats) Text_Stats->SetText(FText::FromString(FString::Printf(TEXT("Energy: %d / %d\nUnits: %d / %d"), P.EnergyUsed, P.MaxEnergy, P.UnitsUsed, P.MaxUnits)));
@@ -295,6 +351,50 @@ void UTAPathPuzzleWidget::RefreshChrome()
 	if (Text_Retry) Text_Retry->SetText(FText::FromString(FString::Printf(TEXT("Retry (%d)"), Session->GetRetryRemaining())));
 }
 
+void UTAPathPuzzleWidget::RefreshLocalizedPrompts()
+{
+	auto* GI = GetGameInstance();
+	if (!GI) return;
+	auto* Icons = GI->GetSubsystem<UTAInputIconSubsystem>();
+	auto* Loc = GI->GetSubsystem<UTALocalizeSubsystem>();
+	if (!Icons || !Loc) return;
+	const bool Gamepad = Icons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
+	const TCHAR* TextNames[] = {TEXT("PromptText_0"),TEXT("PromptText_1"),TEXT("PromptText_2"),TEXT("Text_EnergyLabel"),TEXT("Text_TimeLabel")};
+	const TCHAR* TextIds[] = {TEXT("Puzzle_Select"),TEXT("Puzzle_MoveView"),TEXT("Puzzle_Undo"),TEXT("Puzzle_Energy"),TEXT("Puzzle_TimeRemaining")};
+	for (int32 I=0; I<5; ++I)
+		if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(TextNames[I]))) Text->SetText(Loc->GetText(TextIds[I]));
+	const FKey Keys[] = {EKeys::W,EKeys::A,EKeys::S,EKeys::D};
+	for (int32 Row=0; Row<3; ++Row)
+		for (int32 I=0; I<(Row==1 ? 4 : 1); ++I)
+			if (auto* Icon=Cast<UImage>(GetWidgetFromName(FName(*FString::Printf(TEXT("PromptIcon_%d_%d"),Row,I)))))
+			{
+				if (Gamepad && Row==1 && I>0) { Icon->SetVisibility(ESlateVisibility::Collapsed); continue; }
+				const FKey Key = Row==0 ? (Gamepad ? EKeys::Gamepad_FaceButton_Bottom : EKeys::LeftMouseButton) : Row==2 ? (Gamepad ? EKeys::Gamepad_FaceButton_Right : EKeys::RightMouseButton) : (Gamepad ? EKeys::Gamepad_LeftThumbstick : Keys[I]);
+				FTAPromptWidgetUtils::ApplyKeyIcon(Icon,Icons->GetIconForKey(Key),32.f);
+				// Auto width plus centered height keeps the brush aspect ratio instead
+				// of stretching a 32px icon to the full 40px row height.
+				if (auto* IconSlot = Cast<UHorizontalBoxSlot>(Icon->Slot))
+				{
+					IconSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+					IconSlot->SetHorizontalAlignment(HAlign_Center);
+					IconSlot->SetVerticalAlignment(VAlign_Center);
+				}
+			}
+	RefreshUndoPrompt();
+}
+
+void UTAPathPuzzleWidget::RefreshUndoPrompt()
+{
+	if (auto* Row = GetWidgetFromName(TEXT("PromptRow_2")))
+		Row->SetRenderOpacity(Session && Session->CanUndo() ? 1.f : .6f);
+	auto* GI = GetGameInstance();
+	auto* Loc = GI ? GI->GetSubsystem<UTALocalizeSubsystem>() : nullptr;
+	if (Loc)
+		if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(TEXT("PromptText_2"))))
+			Text->SetText(FText::Format(Loc->GetText(TEXT("Puzzle_UndoCount")),
+				FText::AsNumber(Session ? Session->GetUndoRemaining() : 0)));
+}
+
 FVector2D UTAPathPuzzleWidget::GetNodePosition(int32 Index) const
 {
     if (!Session || !Session->Definition.Nodes.IsValidIndex(Index)) return FVector2D::ZeroVector;
@@ -304,7 +404,17 @@ FVector2D UTAPathPuzzleWidget::GetNodePosition(int32 Index) const
 void UTAPathPuzzleWidget::UpdateScope(float DeltaSeconds)
 {
     if (!Session || !PuzzleCanvas || !ScopeFrame || !ScopeInstruments || !Crosshair) return;
-    const float Zoom = FMath::Max(.1f, BoardZoom);
+    const FVector2D ScreenSize = GetCachedGeometry().GetLocalSize();
+    const FVector2D InstrumentSize = ScopeInstruments->GetCachedGeometry().GetLocalSize();
+    if (ScreenSize.Y > 1 && InstrumentSize.Y > 1)
+    {
+        ScopeDisplayScale = ScreenSize.Y * ScopeHeightFraction / InstrumentSize.Y;
+        ScopeInstruments->SetRenderTransformPivot(FVector2D(.5f));
+        ScopeInstruments->SetRenderScale(FVector2D(ScopeDisplayScale));
+    }
+    SetCursor(EMouseCursor::None);
+    if (auto* PC = GetOwningPlayer()) PC->SetShowMouseCursor(false);
+    const float Zoom = FMath::Max(.1f, BoardZoom) * ScopeDisplayScale;
     if (!Session->IsTerminal())
         if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
             PanBoard(PC->GetPuzzlePanInput(), DeltaSeconds);

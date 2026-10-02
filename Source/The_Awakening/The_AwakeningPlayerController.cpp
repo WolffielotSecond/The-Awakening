@@ -96,6 +96,7 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
 		if (Owner->HandlePuzzleConfirm(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex())) return true;
+		if (Owner->HandlePuzzleUndo(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex())) return true;
 	}
 	return false;
 }
@@ -656,7 +657,7 @@ bool AThe_AwakeningPlayerController::HandlePuzzleUndo(FKey Key, bool bRepeat, in
 {
 	if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
 		UserIndex != GetLocalPlayer()->GetControllerId() ||
-		(Key != EKeys::Z && Key != EKeys::Gamepad_FaceButton_Left)) return false;
+		(Key != EKeys::RightMouseButton && Key != EKeys::Gamepad_FaceButton_Right)) return false;
 	if (!bRepeat) PuzzleScopeWidget->Undo();
 	return true;
 }
