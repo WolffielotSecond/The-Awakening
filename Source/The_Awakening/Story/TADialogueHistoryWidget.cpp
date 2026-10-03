@@ -1,5 +1,6 @@
 // Source/The_Awakening/Story/TADialogueHistoryWidget.cpp
 #include "Story/TADialogueHistoryWidget.h"
+#include "The_AwakeningPlayerController.h"
 #include "UI/TAPromptWidgetUtils.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
@@ -70,10 +71,27 @@ void UTADialogueHistoryWidget::NativeConstruct()
 		InputIconSubsystem->OnInputDeviceChanged.AddDynamic(this, &UTADialogueHistoryWidget::HandleInputDeviceChanged);
 	}
 	RefreshClosePrompt();
+
+	SetIsFocusable(true);
+	if (!InputRequestHandle)
+		if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
+		{
+			FTAInputRequest Request;
+			Request.Owner = this;
+			Request.Priority = 250;
+			Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm, ETAInputCapability::Close};
+			Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+			Request.Presentation.bShowCursor = true;
+			Request.Presentation.Focus = ETAInputFocusRequirement::Target;
+			Request.Presentation.FocusTarget = Button_Close ? static_cast<UWidget*>(Button_Close.Get()) : this;
+			InputRequestController = PC;
+			InputRequestHandle = PC->AcquireInputRequest(Request);
+		}
 }
 
 void UTADialogueHistoryWidget::NativeDestruct()
 {
+	ReleaseInput();
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.RemoveDynamic(this, &UTADialogueHistoryWidget::HandleCloseClicked);
@@ -99,6 +117,7 @@ void UTADialogueHistoryWidget::SetupClosePrompt(UInputAction* InCloseAction)
 
 void UTADialogueHistoryWidget::HandleCloseClicked()
 {
+	if (!AllowsPlayerInput(ETAInputCapability::Close)) return;
 	OnCloseRequested.Broadcast();
 }
 
@@ -192,4 +211,38 @@ FText UTADialogueHistoryWidget::ResolveText(const FString& TextId) const
 	}
 
 	return FText::FromString(TextId);
+}
+
+void UTADialogueHistoryWidget::ReleaseInput()
+{
+	const auto Handle = InputRequestHandle;
+	InputRequestHandle = 0;
+	const auto Issuer = InputRequestController;
+	InputRequestController.Reset();
+	if (Handle)
+		if (auto* PC = Issuer.Get()) PC->ReleaseInputRequest(Handle);
+}
+
+void UTADialogueHistoryWidget::RemoveFromParent()
+{
+	ReleaseInput();
+	Super::RemoveFromParent();
+}
+
+bool UTADialogueHistoryWidget::AllowsPlayerInput(ETAInputCapability Capability) const
+{
+	const auto* PC = InputRequestController.Get();
+	return PC && PC->AllowsInputFor(InputRequestHandle, this, Capability);
+}
+
+TOptional<ETAInputCapability> UTADialogueHistoryWidget::ResolvePlayerInput(FKey Key) const
+{
+	const auto* PC = InputRequestController.Get();
+	if (PC && PC->IsKeyMappedToAction(Key, CloseHistoryAction)) return ETAInputCapability::Close;
+	return {};
+}
+
+void UTADialogueHistoryWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
+{
+	if (Capability == ETAInputCapability::Close) HandleCloseClicked();
 }

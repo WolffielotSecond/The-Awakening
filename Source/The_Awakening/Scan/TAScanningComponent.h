@@ -4,6 +4,7 @@
 
 #include "Materials/MaterialParameterCollection.h"
 #include "CoreMinimal.h"
+#include "Core/TAInputRouter.h"
 #include "TimerManager.h"
 #include "Components/ActorComponent.h"
 #include "Scan/TAScanTypes.h"
@@ -175,6 +176,16 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTAExternalInputOwnershipTest;
+#endif
+	FTAInputRouter::FHandle InputRequestHandle = 0;
+	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
+	FDelegateHandle InputOwnerChangedHandle;
+	FDelegateHandle PlayerInputOwnershipLostHandle;
+	void ReleaseInput();
+	void HandleInputOwnerChanged();
+	void HandlePlayerInputOwnershipLost();
 	/** Configure initial permission here; use SetScanEnabled for runtime changes. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Scan|Permission", meta = (AllowPrivateAccess = "true"))
 	bool bScanEnabled = true;

@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/TAInputRouter.h"
+#include "Core/TAPlayerInputReceiver.h"
 #include "Blueprint/UserWidget.h"
 #include "Story/TADialogueTypes.h"
 #include "TADialogueHistoryWidget.generated.h"
@@ -26,11 +28,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDialogueHistoryCloseRequested);
  * 只回看（不可点击跳转），自动滚到底部；切换语言后整体重建。
  */
 UCLASS(Blueprintable)
-class THE_AWAKENING_API UTADialogueHistoryWidget : public UUserWidget
+class THE_AWAKENING_API UTADialogueHistoryWidget : public UUserWidget, public ITAPlayerInputReceiver
 {
 	GENERATED_BODY()
+	friend class FTAUIPlayerIngressTest;
 
 public:
+	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
+	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
+	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	bool AllowsPlayerInput(ETAInputCapability Capability) const;
+	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -89,4 +97,9 @@ protected:
 	TObjectPtr<UTAInputIconSubsystem> InputIconSubsystem;
 
 	TArray<FTAStoryHistoryEntry> History;
+private:
+	FTAInputRouter::FHandle InputRequestHandle = 0;
+	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
+	void ReleaseInput();
+
 };

@@ -35,21 +35,14 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Framework/Application/SlateApplication.h"
 
-FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
-	// Prevent OS/gamepad key repeat from reaching Blueprint close handlers after opening the panel.
-	if (InKeyEvent.IsRepeat() && (InKeyEvent.GetKey() == EKeys::Tab || InKeyEvent.GetKey() == EKeys::Gamepad_Special_Left))
+	// Covered owners must not receive stale focus input through Blueprint handlers.
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return FReply::Handled();
+	if (Event.IsRepeat() && (Event.GetKey() == EKeys::Tab || Event.GetKey() == EKeys::Gamepad_Special_Left))
 		return FReply::Handled();
-	if (InKeyEvent.GetKey() != EKeys::Gamepad_FaceButton_Bottom)
-		return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
-	if (!InKeyEvent.IsRepeat() && LastConfirmClickFrame != GFrameCounter)
-	{
-		HandleConfirmPressed();
-	}
-	// Treat gamepad confirm as the same pointer click used by keyboard/mouse UI.
-	return FReply::Handled();
+	return Super::NativeOnPreviewKeyDown(Geometry, Event);
 }
-
 
 void UTAInventoryPanelWidget::NativeConstruct()
 {
@@ -84,7 +77,6 @@ void UTAInventoryPanelWidget::NativeConstruct()
 	}
 	EnsureInventoryInputActions();
 	PushInventoryMappingContext();
-	BindInventoryInputActions();
 	BuildActionPromptBar();
 
 	if (UGameInstance* GI = GetGameInstance())
@@ -111,10 +103,28 @@ void UTAInventoryPanelWidget::NativeConstruct()
 		}
 	}
 
+
+	SetIsFocusable(true);
+	if (!InputRequestHandle)
+		if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
+		{
+			FTAInputRequest Request;
+			Request.Owner = this;
+			Request.Priority = 200;
+			Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm,
+				ETAInputCapability::InventoryToggle, ETAInputCapability::Close, ETAInputCapability::ToggleDrag};
+			Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+			Request.Presentation.bShowCursor = true;
+			Request.Presentation.Focus = ETAInputFocusRequirement::Target;
+			Request.Presentation.FocusTarget = this;
+			InputRequestController = PC;
+			InputRequestHandle = PC->AcquireInputRequest(Request);
+		}
 }
 
 void UTAInventoryPanelWidget::NativeDestruct()
 {
+	ReleaseInput();
 	CancelGamepadDragMode();
 	if (ItemInfoWidget)
 	{
@@ -123,7 +133,6 @@ void UTAInventoryPanelWidget::NativeDestruct()
 	}
 	HoveredItemSlot.Reset();
 	PopInventoryMappingContext();
-	UnbindInventoryInputActions();
 	if (InputIconSubsystem)
 	{
 		InputIconSubsystem->OnInputDeviceChanged.RemoveDynamic(this, &UTAInventoryPanelWidget::HandleInputDeviceChanged);
@@ -242,8 +251,9 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 	}
 }
 
-void UTAInventoryPanelWidget::Init(UTAInventoryComponent* InInventory)
+void UTAInventoryPanelWidget::Init(UTAInventoryComponent* InInventory, UInputAction* InCloseAction)
 {
+	CloseAction = InCloseAction;
 	if (Inventory)
 	{
 		Inventory->OnInventoryUpdated.RemoveDynamic(this, &UTAInventoryPanelWidget::HandleInventoryUpdated);
@@ -286,6 +296,7 @@ void UTAInventoryPanelWidget::HandleInventoryUpdated()
 
 void UTAInventoryPanelWidget::OnClickInventoryTab()
 {
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
 	CancelGamepadDragMode();
 	HideItemInfo(HoveredItemSlot.Get());
 	if (WidgetSwitcher)
@@ -296,6 +307,7 @@ void UTAInventoryPanelWidget::OnClickInventoryTab()
 
 void UTAInventoryPanelWidget::OnClickSkillsTab()
 {
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
 	CancelGamepadDragMode();
 	HideItemInfo(HoveredItemSlot.Get());
 	if (WidgetSwitcher)
@@ -403,57 +415,9 @@ void UTAInventoryPanelWidget::PopInventoryMappingContext()
 	bInventoryMappingPushed = false;
 }
 
-void UTAInventoryPanelWidget::BindInventoryInputActions()
-{
-	APlayerController* PC = GetOwningPlayer();
-	UEnhancedInputComponent* EIC = PC ? Cast<UEnhancedInputComponent>(PC->InputComponent) : nullptr;
-	if (!EIC)
-	{
-		return;
-	}
-	if (PreviousPageAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(PreviousPageAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::PreviousPage).GetHandle());
-	}
-	if (NextPageAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(NextPageAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::NextPage).GetHandle());
-	}
-	if (ConfirmAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(ConfirmAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::ConfirmPageAction).GetHandle());
-	}
-	if (GamepadDragModeAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(GamepadDragModeAction, ETriggerEvent::Started, this, &UTAInventoryPanelWidget::ToggleGamepadDragMode).GetHandle());
-	}
-}
-
-void UTAInventoryPanelWidget::UnbindInventoryInputActions()
-{
-	APlayerController* PC = GetOwningPlayer();
-	if (UEnhancedInputComponent* EIC = PC ? Cast<UEnhancedInputComponent>(PC->InputComponent) : nullptr)
-	{
-		for (const uint32 Handle : InputBindingHandles)
-		{
-			EIC->RemoveBindingByHandle(Handle);
-		}
-	}
-	InputBindingHandles.Reset();
-}
-
-void UTAInventoryPanelWidget::PreviousPage(const FInputActionValue& Value)
-{
-	ChangePage(-1);
-}
-
-void UTAInventoryPanelWidget::NextPage(const FInputActionValue& Value)
-{
-	ChangePage(1);
-}
-
 void UTAInventoryPanelWidget::ChangePage(int32 Direction)
 {
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
 	if (!WidgetSwitcher || WidgetSwitcher->GetChildrenCount() < 2)
 	{
 		return;
@@ -468,13 +432,9 @@ void UTAInventoryPanelWidget::ChangePage(int32 Direction)
 	WidgetSwitcher->SetActiveWidgetIndex(NextPageIndex);
 }
 
-void UTAInventoryPanelWidget::ConfirmPageAction(const FInputActionValue& Value)
-{
-	HandleConfirmPressed();
-}
-
 void UTAInventoryPanelWidget::ToggleGamepadDragMode(const FInputActionValue& Value)
 {
+	if (!AllowsPlayerInput(ETAInputCapability::ToggleDrag)) return;
 	if (InputIconSubsystem && InputIconSubsystem->GetCurrentDeviceType() == EInputDeviceType::KeyboardMouse)
 	{
 		return;
@@ -490,11 +450,9 @@ void UTAInventoryPanelWidget::ToggleGamepadDragMode(const FInputActionValue& Val
 
 void UTAInventoryPanelWidget::HandleConfirmPressed()
 {
-	if (LastConfirmClickFrame == GFrameCounter)
-	{
-		return;
-	}
-	LastConfirmClickFrame = GFrameCounter;
+	if (!AllowsPlayerInput(ETAInputCapability::Confirm)) return;
+	// A synthetic click can hit this very prompt; reuse pointer synthesis's reentrancy boundary.
+	if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()); PC && PC->IsSimulatingSyntheticLeftMouseClick()) return;
 	if (bGamepadDragModeActive)
 	{
 		CommitGamepadDragMode();
@@ -512,12 +470,14 @@ void UTAInventoryPanelWidget::BindSlotHoverEvents(UTAInventorySlotWidget* Invent
 		return;
 	}
 	InventorySlot->SetInventoryComponent(Inventory);
+	InventorySlot->SetInputOwner(this);
 	InventorySlot->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotHovered);
 	InventorySlot->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotUnhovered);
 }
 
 void UTAInventoryPanelWidget::HandleInventorySlotHovered(UTAInventorySlotWidget* HoveredSlot, UTAItemDefinition* ItemDef)
 {
+	if (!AllowsPlayerInput(ETAInputCapability::Cursor)) return;
 	CurrentHoveredInventorySlot = HoveredSlot;
 	ShowItemInfo(HoveredSlot, ItemDef);
 }
@@ -617,7 +577,7 @@ void UTAInventoryPanelWidget::UpdateGamepadDragVisualPosition()
 	float CursorY = 0.0f;
 	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PC);
 	const bool bHasCursorPosition = CursorController
-		? CursorController->GetScanCursorPosition(CursorX, CursorY)
+		? CursorController->GetPlayerCursorPosition(CursorX, CursorY)
 		: PC->GetMousePosition(CursorX, CursorY);
 	if (!bHasCursorPosition)
 	{
@@ -703,7 +663,7 @@ void UTAInventoryPanelWidget::UpdateItemInfoWidgetPosition()
 	int32 ViewportY = 0;
 	PC->GetViewportSize(ViewportX, ViewportY);
 	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PC);
-	if (!(CursorController ? CursorController->GetScanCursorPosition(CursorX, CursorY) : PC->GetMousePosition(CursorX, CursorY)))
+	if (!(CursorController ? CursorController->GetPlayerCursorPosition(CursorX, CursorY) : PC->GetMousePosition(CursorX, CursorY)))
 	{
 		CursorX = ViewportX * 0.5f;
 		CursorY = ViewportY * 0.5f;
@@ -955,4 +915,50 @@ void UTAInventoryPanelWidget::HandleLanguageChanged()
 {
 	RefreshLocalizedChrome();
 	RefreshAll();
+}
+
+void UTAInventoryPanelWidget::ReleaseInput()
+{
+	const auto Handle = InputRequestHandle;
+	InputRequestHandle = 0;
+	const auto Issuer = InputRequestController;
+	InputRequestController.Reset();
+	if (Handle)
+		if (auto* PC = Issuer.Get()) PC->ReleaseInputRequest(Handle);
+}
+
+void UTAInventoryPanelWidget::RemoveFromParent()
+{
+	ReleaseInput();
+	Super::RemoveFromParent();
+}
+
+bool UTAInventoryPanelWidget::AllowsPlayerInput(ETAInputCapability Capability) const
+{
+	const auto* PC = InputRequestController.Get();
+	return PC && PC->AllowsInputFor(InputRequestHandle, this, Capability);
+}
+
+TOptional<ETAInputCapability> UTAInventoryPanelWidget::ResolvePlayerInput(FKey Key) const
+{
+	const auto* PC = InputRequestController.Get();
+	if (!PC) return {};
+	if (PC->IsKeyMappedToAction(Key, CloseAction)) return ETAInputCapability::InventoryToggle;
+	if (PC->IsKeyMappedToAction(Key, PreviousPageAction) || PC->IsKeyMappedToAction(Key, NextPageAction)) return ETAInputCapability::Navigate;
+	if (PC->IsKeyMappedToAction(Key, ConfirmAction)) return ETAInputCapability::Confirm;
+	if (PC->IsKeyMappedToAction(Key, GamepadDragModeAction)) return ETAInputCapability::ToggleDrag;
+	return {};
+}
+
+void UTAInventoryPanelWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
+{
+	if (!AllowsPlayerInput(Capability)) return;
+	const auto* PC = InputRequestController.Get();
+	if (Capability == ETAInputCapability::InventoryToggle)
+	{
+		if (InputRequestController->ConsumeInventoryTogglePress(CloseAction)) RemoveFromParent();
+	}
+	else if (Capability == ETAInputCapability::Navigate) ChangePage(PC->IsKeyMappedToAction(Key, PreviousPageAction) ? -1 : 1);
+	else if (Capability == ETAInputCapability::Confirm) HandleConfirmPressed();
+	else if (Capability == ETAInputCapability::ToggleDrag) ToggleGamepadDragMode(FInputActionValue(true));
 }

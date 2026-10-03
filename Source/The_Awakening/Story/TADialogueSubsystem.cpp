@@ -708,6 +708,9 @@ bool UTADialogueSubsystem::StartDialogueFromData(const FTAStoryData& Story, UObj
 	}
 
 	ActiveController = Controller;
+	// Successful normal dialogue entry explicitly stops movement. UI reconstruction,
+	// history and input permission changes must never perform this gameplay action.
+	PlayerCharacter->StopCurrentMovement();
 	ActiveWidget = Widget;
 	ActivePortraitLayer = PortraitLayer;
 	Widget->Setup(this, Controller, PortraitLayer);

@@ -8,13 +8,12 @@
 #include "EnhancedPlayerInput.h"
 #include "Core/TAPlayerInput.h"
 #include "Core/TAInputOwnershipAdapter.h"
-#include "Puzzle/TAPathPuzzleWidget.h"
+#include "Core/TAPlayerInputReceiver.h"
 #include "InputAction.h"
 #include "InputModifiers.h"
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
 #include "Blueprint/UserWidget.h"
 #include "The_Awakening.h"
-#include "Widgets/Input/SVirtualJoystick.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "InputKeyEventArgs.h"
@@ -36,13 +35,15 @@ AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
 
 bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, const FKeyEvent& InKeyEvent)
 {
-	if (!Owner || !Owner->OwnsPlayerInput()) return false;
+	if (!Owner || !Owner->OwnsPlayerInput())
+	{
+		return false;
+	}
 	if (Owner)
 	{
 		Owner->NotifyRawInputKey(InKeyEvent.GetKey());
 		Owner->RecordHeldInput(InKeyEvent.GetKey(), 1.f, InKeyEvent.GetUserIndex());
-		if (Owner->HandlePuzzleConfirm(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex()) ||
-			Owner->HandlePuzzleUndo(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex()))
+		if (Owner->RoutePlayerInputKey(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex()))
 		{ ConsumedPresses.Add(InKeyEvent.GetKey()); return true; }
 	}
 	return false;
@@ -69,18 +70,18 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 	}
 	Owner->NotifyRawInputKey(Key);
 	Owner->RecordHeldInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex());
-	if ((!Owner->IsUIInputModeActive() && !Owner->IsScanCursorModeActive()) || !Key.IsGamepadKey())
+	if ((!Owner->AllowsInput(ETAInputCapability::Cursor) && !Owner->AllowsInput(ETAInputCapability::Pan)) || !Key.IsGamepadKey())
 	{
 		return false;
 	}
 
 	if (Key == EKeys::Gamepad_LeftX || Key == EKeys::Gamepad_LeftY ||
-		(Owner->IsScanCursorModeActive() && (Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY)))
+		(Owner->UsesCursorLook() && (Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY)))
 	{
 		if (!Owner->GetLocalPlayer() || InAnalogInputEvent.GetUserIndex() != Owner->GetLocalPlayer()->GetControllerId()) return false;
 		Owner->SetVirtualCursorAxis(Key, InAnalogInputEvent.GetAnalogValue());
 		// Scan keeps Enhanced Input's axis state current; the character suppresses its scan Look callback.
-		return Owner->IsUIInputModeActive();
+		return !Owner->AllowsInput(ETAInputCapability::Look);
 	}
 	return false;
 }
@@ -106,8 +107,7 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 	{
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
-		if (Owner->HandlePuzzleConfirm(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()) ||
-			Owner->HandlePuzzleUndo(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()))
+		if (Owner->RoutePlayerInputKey(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()))
 		{ ConsumedPresses.Add(MouseEvent.GetEffectingButton()); return true; }
 	}
 	return false;
@@ -151,7 +151,7 @@ void AThe_AwakeningPlayerController::BeginPlay()
 						if (It.Key().IsGamepadKey()) It.RemoveCurrent();
 					for (auto It = ConsumedInventoryKeys.CreateIterator(); It; ++It)
 						if (It->IsGamepadKey()) It.RemoveCurrent();
-					VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
+					VirtualCursorAxis = FVector2D::ZeroVector; RightCursorAxis = FVector2D::ZeroVector;
 				}
 			});
 		if (FSlateApplication::IsInitialized())
@@ -174,18 +174,6 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 		// 手柄摇杆
 		NavigationConfig->bAnalogNavigation = false;
-	}
-	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController())
-	{
-		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);
-		if (MobileControlsWidget)
-		{
-			MobileControlsWidget->AddToPlayerScreen(0);
-		}
-		else
-		{
-			UE_LOG(LogThe_Awakening, Error, TEXT("Could not spawn mobile controls widget."));
-		}
 	}
 }
 
@@ -279,7 +267,7 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 	if (!Action) return FInputActionValue();
 	FInputActionValue Result(Action->ValueType, FVector::ZeroVector);
 	const UTAPlayerInput* Enhanced = Cast<UTAPlayerInput>(PlayerInput);
-	if (!Enhanced || !AllowsInput(ETAInputCapability::Gameplay)) return Result;
+	if (!Enhanced) return Result;
 	// UI -> game focus may take a frame to settle. Suppress gameplay while unfocused,
 	// but preserve held keys so a keyboard does not need a second key-down to resume.
 	// Key-up events still update the cache; actual application deactivation clears it.
@@ -314,60 +302,6 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 	return Modify(Action->Modifiers, Result);
 }
 
-void AThe_AwakeningPlayerController::SetDialogueModeActive(bool bActive, UUserWidget* FocusWidget)
-{
-	if (!IsLocalPlayerController())
-	{
-		return;
-	}
-
-	if (bDialogueModeActive == bActive)
-	{
-		return;
-	}
-	bDialogueModeActive = bActive;
-	if (bActive)
-	{
-		BeginUIInputMode(FocusWidget);
-		DialogueInputOwner = FocusWidget;
-	}
-	else
-	{
-		EndUIInputMode(DialogueInputOwner.Get());
-		DialogueInputOwner.Reset();
-	}
-
-	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-	{
-		if (bActive)
-		{
-			// 对话期间移除默认映射（移动/交互等），由对话 UI 的高优先级上下文接管
-			for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
-			{
-				Subsystem->RemoveMappingContext(CurrentContext);
-			}
-			for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
-			{
-				Subsystem->RemoveMappingContext(CurrentContext);
-			}
-		}
-		else
-		{
-			for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
-			{
-				Subsystem->AddMappingContext(CurrentContext, 0);
-			}
-			if (!SVirtualJoystick::ShouldDisplayTouchInterface())
-			{
-				for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
-				{
-					Subsystem->AddMappingContext(CurrentContext, 0);
-				}
-			}
-		}
-	}
-}
-
 void AThe_AwakeningPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -381,84 +315,14 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 				Subsystem->AddMappingContext(CurrentContext, 0);
 			}
 
-			if (!SVirtualJoystick::ShouldDisplayTouchInterface())
+			// The legacy property contains desktop mouse mappings, not touch controls.
+			// Keep its serialized name so existing Blueprint defaults remain valid.
+			for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
 			{
-				for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
-				{
-					Subsystem->AddMappingContext(CurrentContext, 0);
-				}
+				Subsystem->AddMappingContext(CurrentContext, 0);
 			}
 		}
 	}
-}
-
-void AThe_AwakeningPlayerController::BeginUIInputMode(UUserWidget* FocusWidget)
-{
-	InternalFocusTransitionUntil = GFrameCounter + 2;
-	if (!IsLocalPlayerController())
-	{
-		return;
-	}
-
-	if (ScanningComponent && ScanningComponent->IsScanning())
-	{
-		ScanningComponent->CancelScan(ETAScanEndReason::UIInterrupted, true);
-	}
-
-	++ActiveUIModeCount;
-	MenuInputOwners.Add(FocusWidget);
-	MenuInputHandles.Add(InputRouter.Acquire(FocusWidget ? static_cast<UObject*>(FocusWidget) : this, 200,
-		{ETAInputCapability::Menu, ETAInputCapability::Cursor}));
-	if (ActiveUIModeCount > 1)
-	{
-		if (FocusWidget) FocusWidget->SetUserFocus(this);
-		return;
-	}
-
-	bUIInputModeActive = true;
-	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
-	if (AThe_AwakeningCharacter* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn()))
-	{
-		ControlledCharacter->ClearMovementInput();
-	}
-	// Preserve the state from before scanning. Otherwise opening inventory during
-	// a scan would remember the scan cursor and restore it after both modes end.
-	bPreviousShowMouseCursor = bScanCursorModeActive ? bMouseCursorBeforeScan : bShowMouseCursor;
-	SetShowMouseCursor(true);
-	FInputModeGameAndUI InputMode;
-	if (FocusWidget)
-	{
-		InputMode.SetWidgetToFocus(FocusWidget->TakeWidget());
-	}
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
-	SetInputMode(InputMode);
-	SetUIFocusWidget(FocusWidget);
-}
-
-void AThe_AwakeningPlayerController::EndUIInputMode(UUserWidget* RequestOwner)
-{
-	InternalFocusTransitionUntil = GFrameCounter + 2;
-	if (!IsLocalPlayerController() || ActiveUIModeCount <= 0)
-	{
-		return;
-	}
-
-	const int32 Index = RequestOwner ? MenuInputOwners.IndexOfByPredicate([RequestOwner](const auto& Owner) { return Owner.Get() == RequestOwner; }) : MenuInputHandles.Num()-1;
-	if (!MenuInputHandles.IsValidIndex(Index)) return;
-	InputRouter.Release(MenuInputHandles[Index]);
-	MenuInputHandles.RemoveAt(Index); MenuInputOwners.RemoveAt(Index);
-	ActiveUIModeCount = MenuInputHandles.Num();
-	if (ActiveUIModeCount > 0)
-	{
-		if (auto* Focus = MenuInputOwners.Last().Get()) Focus->SetUserFocus(this);
-		return;
-	}
-
-	bUIInputModeActive = false;
-	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
-	SetShowMouseCursor(bScanCursorModeActive ? true : bPreviousShowMouseCursor);
-	SetInputMode(FInputModeGameOnly());
 }
 
 void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIsActive)
@@ -469,90 +333,13 @@ void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIs
 		HeldKeyValues.Reset();
 		ConsumedInventoryKeys.Reset();
 		HeldInputModifiers.Reset();
-		VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
+		VirtualCursorAxis = FVector2D::ZeroVector; RightCursorAxis = FVector2D::ZeroVector;
 		if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
 	}
-	if (!ScanningComponent)
-	{
-		return;
-	}
-	if (!bIsActive)
-	{
-		ScanningComponent->CancelScan(ETAScanEndReason::Canceled, true);
-	}
-	else
-	{
-		// The release may have occurred while the application was unfocused.
-		ScanningComponent->NotifyScanInputReleased(true);
-	}
-}
-
-void AThe_AwakeningPlayerController::BeginScanCursorMode()
-{
-	if (!IsLocalPlayerController() || bScanCursorModeActive)
-	{
-		return;
-	}
-
-	bScanCursorModeActive = true;
-	ScanInputHandle = InputRouter.Acquire(this, 100, {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor});
-	SetVirtualCursorAxis(EKeys::Gamepad_LeftX, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).X);
-	SetVirtualCursorAxis(EKeys::Gamepad_LeftY, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).Y);
-	SetVirtualCursorAxis(EKeys::Gamepad_RightX, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).X);
-	SetVirtualCursorAxis(EKeys::Gamepad_RightY, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).Y);
-	bMouseCursorBeforeScan = bUIInputModeActive ? bPreviousShowMouseCursor : bShowMouseCursor;
-	SetShowMouseCursor(true);
-}
-
-void AThe_AwakeningPlayerController::EndScanCursorMode()
-{
-	if (!IsLocalPlayerController() || !bScanCursorModeActive)
-	{
-		return;
-	}
-
-	bScanCursorModeActive = false;
-	InputRouter.Release(ScanInputHandle); ScanInputHandle = 0;
-	VirtualCursorAxis = FVector2D::ZeroVector; ScanRightCursorAxis = FVector2D::ZeroVector;
-	if (bUIInputModeActive)
-	{
-		SetShowMouseCursor(true);
-		return;
-	}
-
-	SetShowMouseCursor(bMouseCursorBeforeScan);
-	SetInputMode(FInputModeGameOnly());
-}
-
-void AThe_AwakeningPlayerController::SetUIFocusWidget(UUserWidget* FocusWidget)
-{
-	if (!bUIInputModeActive || !IsValid(FocusWidget))
-	{
-		return;
-	}
-
-	UButton* FirstFocusableButton = nullptr;
-	if (FocusWidget->WidgetTree)
-	{
-		FocusWidget->WidgetTree->ForEachWidgetAndDescendants([&FirstFocusableButton](UWidget* Widget)
-		{
-			UButton* Button = Cast<UButton>(Widget);
-			if (!FirstFocusableButton && Button && Button->GetIsFocusable() &&
-				Button->GetVisibility() == ESlateVisibility::Visible && Button->GetIsEnabled())
-			{
-				FirstFocusableButton = Button;
-			}
-		});
-	}
-
-	if (FirstFocusableButton)
-	{
-		FirstFocusableButton->SetUserFocus(this);
-	}
-	else
-	{
-		FocusWidget->SetUserFocus(this);
-	}
+	// Activation can precede Slate's updated focus state. Inactivity is definitive;
+	// activation only requests a fresh observation, never synthesizes a key release.
+	ObservePlayerInputOwnership(bIsActive ? TAInputOwnershipAdapter::GetState(this)
+		: TAInputOwnershipAdapter::EState::Lost);
 }
 
 void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, float Value)
@@ -568,16 +355,15 @@ void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, f
 	{
 		VirtualCursorAxis.Y = Remapped;
 	}
-	else if (AxisKey == EKeys::Gamepad_RightX) ScanRightCursorAxis.X = Remapped;
-	else if (AxisKey == EKeys::Gamepad_RightY) ScanRightCursorAxis.Y = Remapped;
+	else if (AxisKey == EKeys::Gamepad_RightX) RightCursorAxis.X = Remapped;
+	else if (AxisKey == EKeys::Gamepad_RightY) RightCursorAxis.Y = Remapped;
 }
 
 void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 {
 	if (!AllowsInput(ETAInputCapability::Cursor)) return;
-	if (PuzzleScopeWidget.IsValid()) return;
-	const FVector2D CursorAxis = (VirtualCursorAxis + (bScanCursorModeActive && !bUIInputModeActive ? ScanRightCursorAxis : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
-	if ((!bUIInputModeActive && !bScanCursorModeActive) || !bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
+	const FVector2D CursorAxis = (VirtualCursorAxis + (UsesCursorLook() ? RightCursorAxis : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
+	if (!bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
 	{
 		return;
 	}
@@ -607,13 +393,13 @@ void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 	SlateApp.SetCursorPos(CursorPosition);
 	// Slate time keeps both controls responsive while the character is frozen.
 	// The character suppresses the normal gamepad Look callback during scanning.
-	if (IsScanStickCursorActive() && PlayerCharacter)
+	if (IsCursorStickLookActive() && PlayerCharacter)
 	{
-		PlayerCharacter->DoLook(CursorAxis.X * DeltaTime * 60.f, -CursorAxis.Y * DeltaTime * 60.f);
+		PlayerCharacter->SubmitPlayerLook(CursorAxis.X * DeltaTime * 60.f, -CursorAxis.Y * DeltaTime * 60.f);
 	}
 }
 
-bool AThe_AwakeningPlayerController::GetScanCursorPosition(float& X, float& Y) const
+bool AThe_AwakeningPlayerController::GetPlayerCursorPosition(float& X, float& Y) const
 {
 	// SetCursorPos can move the OS cursor without updating SceneViewport's cached mouse position.
 	// Read the same Slate position used to draw/move it, converting desktop units to viewport pixels.
@@ -646,52 +432,17 @@ bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 	return Super::InputKey(Params);
 }
 
-void AThe_AwakeningPlayerController::SetPuzzleScopeWidget(UTAPathPuzzleWidget* Widget)
+bool AThe_AwakeningPlayerController::RoutePlayerInputKey(FKey Key, bool bRepeat, int32 UserIndex)
 {
-	InputRouter.Release(PuzzleInputHandle); PuzzleInputHandle = 0;
-	if (Widget) PuzzleInputHandle = InputRouter.Acquire(Widget, 300, {ETAInputCapability::Puzzle});
-    PuzzleScopeWidget = Widget;
-    VirtualCursorAxis = ScanRightCursorAxis = FVector2D::ZeroVector;
-    if (Widget)
-    {
-        SetShowMouseCursor(false);
-        Widget->SetUserFocus(this);
-    }
-    else if (bUIInputModeActive) SetShowMouseCursor(true);
-}
-
-FVector2D AThe_AwakeningPlayerController::GetPuzzlePanInput() const
-{
-	if (!AllowsInput(ETAInputCapability::Puzzle)) return FVector2D::ZeroVector;
-    if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid()) return FVector2D::ZeroVector;
-    auto Down = [this](FKey Key) { return HeldKeyValues.FindRef(Key).X != 0.f ? 1.f : 0.f; };
-	FVector2D Keyboard(Down(EKeys::A) - Down(EKeys::D), Down(EKeys::W) - Down(EKeys::S));
-	if (!PuzzleScopeWidget->bInversePanInput) Keyboard *= -1.f;
-    if (!Keyboard.IsNearlyZero()) return Keyboard.GetClampedToMaxSize(1.f);
-    const FVector Stick = HeldKeyValues.FindRef(EKeys::Gamepad_Left2D);
-    FVector2D Axis(-Stick.X, Stick.Y);
-	if (!PuzzleScopeWidget->bInversePanInput) Axis *= -1.f;
-    const float Magnitude = Axis.Size();
-    return Magnitude > .18f ? Axis.GetSafeNormal() * FMath::Clamp((Magnitude - .18f) / .82f, 0.f, 1.f) : FVector2D::ZeroVector;
-}
-
-bool AThe_AwakeningPlayerController::HandlePuzzleConfirm(FKey Key, bool bRepeat, int32 UserIndex)
-{
-	if (!AllowsInput(ETAInputCapability::Puzzle)) return false;
-    if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
-        UserIndex != GetLocalPlayer()->GetControllerId() ||
-        (Key != EKeys::LeftMouseButton && Key != EKeys::Gamepad_FaceButton_Bottom)) return false;
-    if (!bRepeat) PuzzleScopeWidget->ConfirmScopeNode();
-	return true;
-}
-
-bool AThe_AwakeningPlayerController::HandlePuzzleUndo(FKey Key, bool bRepeat, int32 UserIndex)
-{
-	if (!AllowsInput(ETAInputCapability::Puzzle)) return false;
-	if (!bApplicationInputActive || !PuzzleScopeWidget.IsValid() || !GetLocalPlayer() ||
-		UserIndex != GetLocalPlayer()->GetControllerId() ||
-		(Key != EKeys::RightMouseButton && Key != EKeys::Gamepad_FaceButton_Right)) return false;
-	if (!bRepeat) PuzzleScopeWidget->Undo();
+	if (!GetLocalPlayer() || UserIndex != GetLocalPlayer()->GetControllerId()) return false;
+	const auto Winner = GetInputWinner();
+	auto* Receiver = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
+	if (!Receiver) return false;
+	const auto Action = Receiver->ResolvePlayerInput(Key);
+	if (!Action.IsSet() || !AllowsInputFor(Receiver->GetPlayerInputRequestHandle(),
+		Winner.Request.Owner.Get(), Action.GetValue())) return false;
+	// Consume repeats and matching releases without executing a second command.
+	if (!bRepeat) Receiver->ExecutePlayerInput(Key, Action.GetValue());
 	return true;
 }
 
@@ -707,11 +458,126 @@ bool AThe_AwakeningPlayerController::AllowsInput(ETAInputCapability Capability) 
 
 void AThe_AwakeningPlayerController::RefreshInputOwnership()
 {
+	ObservePlayerInputOwnership(bApplicationInputActive ? TAInputOwnershipAdapter::GetState(this)
+		: TAInputOwnershipAdapter::EState::Lost);
+	SynchronizeInputPresentation();
 	if (OwnsPlayerInput()) return;
 	// SetInputMode transfers Slate focus asynchronously. Preserve physical state
 	// briefly across our own transfer; permission stays denied until focus arrives.
 	if (bApplicationInputActive && GFrameCounter <= InternalFocusTransitionUntil) return;
 	HeldKeyValues.Reset(); HeldInputModifiers.Reset(); ConsumedInventoryKeys.Reset();
-	VirtualCursorAxis = ScanRightCursorAxis = FVector2D::ZeroVector;
+	VirtualCursorAxis = RightCursorAxis = FVector2D::ZeroVector;
 	if (auto* ControlledPawn = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledPawn->ClearMovementInput();
+}
+
+bool AThe_AwakeningPlayerController::AllowsInputFor(FTAInputRouter::FHandle Handle, const UObject* RequestOwner, ETAInputCapability Capability) const
+{
+	return OwnsPlayerInput() && InputRouter.AllowsFor(Handle, RequestOwner, Capability);
+}
+
+void AThe_AwakeningPlayerController::ObservePlayerInputOwnership(TAInputOwnershipAdapter::EState State)
+{
+	using TAInputOwnershipAdapter::EState;
+	if (State == EState::Transition) return; // Unknown focus gap is neither a grant nor a loss.
+	const bool bLost = State == EState::Lost && LastDefinitiveInputOwnership == EState::Owned;
+	LastDefinitiveInputOwnership = State; // Commit before callbacks can release requests/re-enter.
+	if (bLost) OnPlayerInputOwnershipLost.Broadcast();
+}
+
+FTAInputRouter::FHandle AThe_AwakeningPlayerController::AcquireInputRequest(const FTAInputRequest& Request)
+{
+	if (!IsLocalPlayerController()) return 0;
+	ObservePlayerInputOwnership(bApplicationInputActive ? TAInputOwnershipAdapter::GetState(this)
+		: TAInputOwnershipAdapter::EState::Lost);
+	const auto Handle = InputRouter.Acquire(Request);
+	SynchronizeInputPresentation();
+	return Handle;
+}
+
+void AThe_AwakeningPlayerController::ReleaseInputRequest(FTAInputRouter::FHandle Handle)
+{
+	InputRouter.Release(Handle);
+	SynchronizeInputPresentation();
+}
+
+FTAInputRouter::FWinner AThe_AwakeningPlayerController::GetInputWinner() const
+{
+	return InputRouter.GetWinner();
+}
+
+bool AThe_AwakeningPlayerController::UsesCursorLook() const
+{
+	const auto Winner = GetInputWinner();
+	return Winner.Request.Allowed.Contains(ETAInputCapability::Look) && Winner.Request.Allowed.Contains(ETAInputCapability::Cursor);
+}
+
+void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
+{
+	if (!IsLocalPlayerController()) return;
+	auto Winner = GetInputWinner();
+	if (!ObservedWinnerHandle.IsSet() || ObservedWinnerHandle.GetValue() != Winner.Handle)
+	{
+		ObservedWinnerHandle = Winner.Handle;
+		SetVirtualCursorAxis(EKeys::Gamepad_LeftX, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).X);
+		SetVirtualCursorAxis(EKeys::Gamepad_LeftY, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).Y);
+		SetVirtualCursorAxis(EKeys::Gamepad_RightX, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).X);
+		SetVirtualCursorAxis(EKeys::Gamepad_RightY, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).Y);
+		OnInputOwnerChanged.Broadcast();
+		// A listener may release its request. Never apply a stale winner after callbacks.
+		Winner = GetInputWinner();
+	}
+	const auto& Presentation = Winner.Request.Presentation;
+	UWidget* CursorOwner = Cast<UWidget>(Winner.Request.Owner.Get());
+	if (PresentedCursorOwner != CursorOwner || bShowMouseCursor != Presentation.bShowCursor)
+	{
+		if (PresentedCursorOwner != CursorOwner)
+			if (auto* Old = PresentedCursorOwner.Get()) Old->ResetCursor();
+		PresentedCursorOwner = CursorOwner;
+		SetShowMouseCursor(Presentation.bShowCursor);
+		// Slate queries UMG before the controller; both use the same winning policy.
+		if (CursorOwner) CursorOwner->SetCursor(Presentation.bShowCursor ? EMouseCursor::Default : EMouseCursor::None);
+	}
+
+	auto* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	const auto Viewport = Client ? Client->GetGameViewportWidget() : TSharedPtr<SViewport>();
+	UWidget* Focus = Presentation.Focus == ETAInputFocusRequirement::Target ? Presentation.FocusTarget.Get() : nullptr;
+	// A live UObject without a usable Slate surface also falls back to the viewport.
+	if (Focus && (!Focus->GetCachedWidget().IsValid() || !Focus->GetIsEnabled() || !Focus->IsVisible())) Focus = nullptr;
+	if (PresentedRequestHandle.IsSet() && PresentedRequestHandle.GetValue() == Winner.Handle &&
+		PresentedFocusTarget == Focus && PresentedViewport.Pin() == Viewport) return;
+	if (!Viewport.IsValid() || !TAInputOwnershipAdapter::CanApplyPresentation(this)) return;
+	const TSharedPtr<SWidget> FocusWidget = Focus ? Focus->GetCachedWidget() : Viewport;
+	InternalFocusTransitionUntil = GFrameCounter + 2; // Existing held-cache transition grace; unchanged in this stage.
+	switch (Presentation.InputMode)
+	{
+	case ETAInputModeRequirement::GameOnly:
+		SetInputMode(FInputModeGameOnly());
+		break;
+	case ETAInputModeRequirement::GameAndUI:
+	{
+		FInputModeGameAndUI Mode;
+		Mode.SetWidgetToFocus(FocusWidget).SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock).SetHideCursorDuringCapture(false);
+		SetInputMode(Mode);
+		break;
+	}
+	case ETAInputModeRequirement::UIOnly:
+	{
+		FInputModeUIOnly Mode;
+		Mode.SetWidgetToFocus(FocusWidget).SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(Mode);
+		break;
+	}
+	}
+	PresentedRequestHandle = Winner.Handle;
+	PresentedFocusTarget = Focus;
+	PresentedViewport = Viewport;
+}
+
+bool AThe_AwakeningPlayerController::IsKeyMappedToAction(FKey Key, const UInputAction* Action) const
+{
+	const auto* Input = Cast<UTAPlayerInput>(PlayerInput);
+	if (!Input || !Action) return false;
+	for (const auto& Mapping : Input->GetHeldActionMappings())
+		if (Mapping.Action == Action && Mapping.Key == Key) return true;
+	return false;
 }

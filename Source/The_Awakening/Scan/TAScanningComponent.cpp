@@ -78,6 +78,11 @@ void UTAScanningComponent::BeginPlay()
 	Super::BeginPlay();
 
 	PlayerController = Cast<APlayerController>(GetOwner());
+	if (auto* PC = Cast<AThe_AwakeningPlayerController>(PlayerController))
+	{
+		InputOwnerChangedHandle = PC->OnInputOwnerChanged.AddUObject(this, &UTAScanningComponent::HandleInputOwnerChanged);
+		PlayerInputOwnershipLostHandle = PC->OnPlayerInputOwnershipLost.AddUObject(this, &UTAScanningComponent::HandlePlayerInputOwnershipLost);
+	}
 
 	if (PlayerController)
 	{
@@ -114,6 +119,12 @@ void UTAScanningComponent::BeginPlay()
 
 void UTAScanningComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (auto* PC = Cast<AThe_AwakeningPlayerController>(PlayerController))
+	{
+		PC->OnInputOwnerChanged.Remove(InputOwnerChangedHandle);
+		PC->OnPlayerInputOwnershipLost.Remove(PlayerInputOwnershipLostHandle);
+	}
+	ReleaseInput();
 	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
 	{
 		Freeze->ReleaseFreeze(this);
@@ -338,6 +349,12 @@ void UTAScanningComponent::UpdateTimeFreezeBlend()
 {
 	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
 	{
+		// Request lifetime spans FadeIn (even at zero) through FadeOut completion.
+		if (ScanState == ETAScanState::FadedOut || ScanState == ETAScanState::Invalid)
+		{
+			Freeze->ReleaseFreeze(this);
+			return;
+		}
 		// Use the same progress in both directions so quick release/repress never jumps.
 		// Pin endpoints so a hand-edited curve cannot leave residual slowdown or prevent full freeze.
 		const float Progress = FMath::Clamp(ScanNormalizedTime, 0.f, 1.f);
@@ -831,11 +848,13 @@ bool UTAScanningComponent::StartScan()
 
 			if (AThe_AwakeningPlayerController* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController))
 			{
-				TAController->BeginScanCursorMode();
-			}
-			else
-			{
-				PlayerController->SetShowMouseCursor(true);
+				FTAInputRequest Request;
+				Request.Owner = this;
+				Request.Priority = 100;
+				Request.Allowed = {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor, ETAInputCapability::OpenDebugUI};
+				Request.Presentation.bShowCursor = true;
+				InputRequestController = TAController;
+				InputRequestHandle = TAController->AcquireInputRequest(Request);
 			}
 
 			ScanRemainingTime = FMath::Max(MaxScanDuration, 0.1f);
@@ -920,14 +939,7 @@ void UTAScanningComponent::StopScan(ETAScanEndReason Reason, bool bRequireInputR
 		StartHighlightHideTimer();
 	}
 
-	if (AThe_AwakeningPlayerController* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController))
-	{
-		TAController->EndScanCursorMode();
-	}
-	else if (PlayerController)
-	{
-		PlayerController->SetShowMouseCursor(false);
-	}
+	ReleaseInput();
 
 	ClearHighlightedTargets();
 	SetHoveredTarget(nullptr);
@@ -1056,7 +1068,7 @@ void UTAScanningComponent::UpdateHoveredTarget()
 	float CursorX = 0.0f;
 	float CursorY = 0.0f;
 	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PlayerController);
-	if (!(CursorController ? CursorController->GetScanCursorPosition(CursorX, CursorY) : PlayerController->GetMousePosition(CursorX, CursorY)))
+	if (!(CursorController ? CursorController->GetPlayerCursorPosition(CursorX, CursorY) : PlayerController->GetMousePosition(CursorX, CursorY)))
 	{
 		int32 SizeX = 0;
 		int32 SizeY = 0;
@@ -1147,7 +1159,7 @@ void UTAScanningComponent::UpdateScanInfoWidgetPosition()
 	int32 ViewportY = 0;
 	PlayerController->GetViewportSize(ViewportX, ViewportY);
 	const auto* CursorController = Cast<AThe_AwakeningPlayerController>(PlayerController);
-	if (!(CursorController ? CursorController->GetScanCursorPosition(CursorX, CursorY) : PlayerController->GetMousePosition(CursorX, CursorY)))
+	if (!(CursorController ? CursorController->GetPlayerCursorPosition(CursorX, CursorY) : PlayerController->GetMousePosition(CursorX, CursorY)))
 	{
 		CursorX = ViewportX * 0.5f;
 		CursorY = ViewportY * 0.5f;
@@ -1185,4 +1197,31 @@ void UTAScanningComponent::UpgradeHighlight()
 			1.0f
 		);
 	}
+}
+
+void UTAScanningComponent::ReleaseInput()
+{
+	const auto Handle = InputRequestHandle;
+	InputRequestHandle = 0;
+	const auto Issuer = InputRequestController;
+	InputRequestController.Reset();
+	if (Handle)
+		if (auto* PC = Issuer.Get()) PC->ReleaseInputRequest(Handle);
+}
+
+void UTAScanningComponent::HandleInputOwnerChanged()
+{
+	// Router arbitration only: another request has superseded scan permission.
+	// The controller broadcasts policy changes without knowing scanning behavior.
+	if (IsScanning())
+		if (auto* PC = Cast<AThe_AwakeningPlayerController>(PlayerController))
+			if (!PC->GetInputWinner().Request.Allowed.Contains(ETAInputCapability::Scan))
+				CancelScan(ETAScanEndReason::UIInterrupted, true);
+}
+
+void UTAScanningComponent::HandlePlayerInputOwnershipLost()
+{
+	// Hold-to-maintain behavior ends on external ownership loss. Persistent UI does
+	// not subscribe. Recovery is not a physical release and cannot restart this scan.
+	CancelScan(ETAScanEndReason::Canceled, true);
 }

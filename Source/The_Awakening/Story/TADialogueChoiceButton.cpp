@@ -63,14 +63,6 @@ void UTADialogueChoiceButton::SetHighlighted(bool bHighlighted)
 	}
 }
 
-void UTADialogueChoiceButton::FocusChoice()
-{
-	if (Button_Choice)
-	{
-		Button_Choice->SetUserFocus(GetOwningPlayer());
-	}
-}
-
 void UTADialogueChoiceButton::HandleButtonClicked()
 {
 	OnClickedIndex.Broadcast(Index);

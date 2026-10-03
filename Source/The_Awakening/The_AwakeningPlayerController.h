@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Framework/Application/IInputProcessor.h"
 #include "Core/TAInputRouter.h"
+#include "Core/TAInputOwnershipAdapter.h"
 #include "The_AwakeningPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -50,83 +51,76 @@ public:
 	AThe_AwakeningPlayerController();
 	bool OwnsPlayerInput(const FVector2D* Pointer = nullptr) const;
 	bool AllowsInput(ETAInputCapability Capability) const;
+	bool AllowsInputFor(FTAInputRouter::FHandle Handle, const UObject* RequestOwner, ETAInputCapability Capability) const;
 	void RefreshInputOwnership();
+	/** Explicit ownership; presentation is derived from the winning request. */
+	FTAInputRouter::FHandle AcquireInputRequest(const FTAInputRequest& Request);
+	void ReleaseInputRequest(FTAInputRouter::FHandle Handle);
+	FTAInputRouter::FWinner GetInputWinner() const;
 	void NotifyRawInputKey(const FKey& Key);
 	/** Observe held inputs before UI consumes them, separately from gameplay permission. */
 	void RecordHeldInput(FKey Key, float Value, int32 UserIndex);
 	FInputActionValue ReadHeldAction(const UInputAction* Action);
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
-	/** 进入/退出对话输入模式（移除/恢复默认移动等映射，供剧情系统调用） */
-	void SetDialogueModeActive(bool bActive, UUserWidget* FocusWidget = nullptr);
-
-	/** 所有可交互 UI 共用的输入模式。调用需成对，支持多个 UI 同时打开。 */
-	void BeginUIInputMode(UUserWidget* FocusWidget = nullptr);
-	void EndUIInputMode(UUserWidget* RequestOwner = nullptr);
-	void SetUIFocusWidget(UUserWidget* FocusWidget);
-	bool IsUIInputModeActive() const { return bUIInputModeActive; }
+	bool IsKeyMappedToAction(FKey Key, const UInputAction* Action) const;
+	FSimpleMulticastDelegate OnInputOwnerChanged;
+	// External ownership lifecycle, independent of Router winner changes.
+	FSimpleMulticastDelegate OnPlayerInputOwnershipLost;
+	void SynchronizeInputPresentation();
 	/** Route a virtual/gamepad confirmation through Slate as a left click without changing input device state. */
 	void SimulateSyntheticLeftMouseClick();
 	bool IsSimulatingSyntheticLeftMouseClick() const { return bSimulatingSyntheticLeftMouseClick; }
 	void SetVirtualCursorAxis(const FKey& AxisKey, float Value);
 	bool ConsumeInventoryTogglePress(const UInputAction* Action);
 	void TickVirtualCursor(float DeltaTime);
-	void SetPuzzleScopeWidget(class UTAPathPuzzleWidget* Widget);
-	FVector2D GetPuzzlePanInput() const;
-	bool HandlePuzzleConfirm(FKey Key, bool bRepeat, int32 UserIndex);
-	bool HandlePuzzleUndo(FKey Key, bool bRepeat, int32 UserIndex);
+	bool RoutePlayerInputKey(FKey Key, bool bRepeat, int32 UserIndex);
+	FVector ReadHeldKey(FKey Key) const { return HeldKeyValues.FindRef(Key); }
 	void NotifyApplicationActivationChanged(bool bIsActive);
 
-	/** Scan only requests cursor visibility; it does not enter menu input mode. */
-	void BeginScanCursorMode();
-	void EndScanCursorMode();
-	bool IsScanCursorModeActive() const { return bScanCursorModeActive; }
-	bool IsScanStickCursorActive() const { return bScanCursorModeActive && !bUIInputModeActive && (!VirtualCursorAxis.IsNearlyZero() || !ScanRightCursorAxis.IsNearlyZero()); }
-	bool GetScanCursorPosition(float& X, float& Y) const;
+	bool UsesCursorLook() const;
+	bool IsCursorStickLookActive() const { return UsesCursorLook() && (!VirtualCursorAxis.IsNearlyZero() || !RightCursorAxis.IsNearlyZero()); }
+	bool GetPlayerCursorPosition(float& X, float& Y) const;
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
 	TArray<UInputMappingContext*> DefaultMappingContexts;
 
-	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
+	// Serialized template name retained for existing desktop IMC_MouseLook defaults.
+	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings", meta = (DisplayName = "Additional Input Mapping Contexts"))
 	TArray<UInputMappingContext*> MobileExcludedMappingContexts;
-
-	UPROPERTY(EditAnywhere, Category = "Input|Touch Controls")
-	TSubclassOf<UUserWidget> MobileControlsWidgetClass;
-
-	TObjectPtr<UUserWidget> MobileControlsWidget;
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
 	FDelegateHandle ApplicationActivationHandle;
 	FDelegateHandle DeviceConnectionHandle;
 	TMap<FKey, FVector> HeldKeyValues;
 	FTAInputRouter InputRouter;
-	TArray<FTAInputRouter::FHandle> MenuInputHandles;
-	TArray<TWeakObjectPtr<UUserWidget>> MenuInputOwners;
-	TWeakObjectPtr<UUserWidget> DialogueInputOwner;
-	FTAInputRouter::FHandle ScanInputHandle = 0;
-	FTAInputRouter::FHandle PuzzleInputHandle = 0;
+	// Output deduplication only. Never used to restore policy or grant permission.
+	TOptional<FTAInputRouter::FHandle> ObservedWinnerHandle;
+	TOptional<FTAInputRouter::FHandle> PresentedRequestHandle;
+	TWeakObjectPtr<UWidget> PresentedFocusTarget;
+	TWeakObjectPtr<UWidget> PresentedCursorOwner;
+	TWeakPtr<class SViewport> PresentedViewport;
 	uint64 InternalFocusTransitionUntil = 0;
 	TSet<FKey> ConsumedInventoryKeys;
 	bool bApplicationInputActive = true;
 	UPROPERTY(Transient)
 	TMap<TObjectPtr<UInputModifier>, TObjectPtr<UInputModifier>> HeldInputModifiers;
-	int32 ActiveUIModeCount = 0;
-	bool bUIInputModeActive = false;
-	TWeakObjectPtr<class UTAPathPuzzleWidget> PuzzleScopeWidget;
-	bool bDialogueModeActive = false;
-	bool bPreviousShowMouseCursor = false;
-	bool bMouseCursorBeforeScan = false;
-	bool bScanCursorModeActive = false;
 	bool bSimulatingSyntheticLeftMouseClick = false;
 	FVector2D VirtualCursorAxis = FVector2D::ZeroVector;
-	FVector2D ScanRightCursorAxis = FVector2D::ZeroVector;
+	FVector2D RightCursorAxis = FVector2D::ZeroVector;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
 
 private:
+	void ObservePlayerInputOwnership(TAInputOwnershipAdapter::EState State);
+	// Notification edge memory only; never queried to grant permission or restore modes.
+	TOptional<TAInputOwnershipAdapter::EState> LastDefinitiveInputOwnership;
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTAExternalInputOwnershipTest;
+#endif
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Scan", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UTAScanningComponent> ScanningComponent;

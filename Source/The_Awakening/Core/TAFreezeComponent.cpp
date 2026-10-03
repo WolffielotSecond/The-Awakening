@@ -31,6 +31,13 @@ void UTAFreezeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+bool UTAFreezeComponent::HasFreezeRequest() const
+{
+	const UWorld* World = GetWorld();
+	const UTAFreezeSubsystem* Registry = World ? World->GetSubsystem<UTAFreezeSubsystem>() : nullptr;
+	return Registry && Registry->HasFreezeRequestFor(this);
+}
+
 bool UTAFreezeComponent::IsActorFrozen(const AActor* Actor)
 {
 	const UTAFreezeComponent* Component = Actor ? Actor->FindComponentByClass<UTAFreezeComponent>() : nullptr;

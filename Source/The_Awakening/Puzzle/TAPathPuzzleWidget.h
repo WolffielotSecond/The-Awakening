@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/TAInputRouter.h"
+#include "Core/TAPlayerInputReceiver.h"
 #include "Blueprint/UserWidget.h"
 #include "Styling/SlateBrush.h"
 #include "TimerManager.h"
@@ -38,10 +40,16 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTAOnPuzzleRewardApplied, const FTA
 
 /** Inherit in a Widget Blueprint. All generated visuals are children of the independent PuzzleCanvas. */
 UCLASS()
-class THE_AWAKENING_API UTAPathPuzzleWidget : public UUserWidget
+class THE_AWAKENING_API UTAPathPuzzleWidget : public UUserWidget, public ITAPlayerInputReceiver
 {
 	GENERATED_BODY()
 public:
+	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
+	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
+	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	bool AllowsPlayerInput(ETAInputCapability Capability) const;
+	FVector2D GetPlayerPanInput() const;
+	virtual void RemoveFromParent() override;
 	/** Creates the selected WBP class, binds its configured defaults, and adds it to the viewport. */
 	UFUNCTION(BlueprintCallable, Category="Puzzle", meta=(DefaultToSelf="Player"))
 	static UTAPathPuzzleWidget* OpenPuzzle(APlayerController* Player, TSubclassOf<UTAPathPuzzleWidget> WidgetClass,
@@ -53,6 +61,12 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="Puzzle", meta=(DefaultToSelf="Player", AdvancedDisplay="RewardReceiver,Seed"))
 	static UTAPathPuzzleWidget* OpenPuzzleWithSettings(APlayerController* Player,
+		TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings& Settings,
+		UObject* RewardReceiver = nullptr, int32 Seed = -1);
+
+	/** Debug/player input entry. Scripted gameplay should use OpenPuzzleWithSettings instead. */
+	UFUNCTION(BlueprintCallable, Category="Puzzle|Input", meta=(DefaultToSelf="Player", AdvancedDisplay="RewardReceiver,Seed"))
+	static UTAPathPuzzleWidget* OpenPuzzleWithSettingsFromPlayerInput(APlayerController* Player,
 		TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings& Settings,
 		UObject* RewardReceiver = nullptr, int32 Seed = -1);
 
@@ -94,9 +108,10 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
-	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	UFUNCTION() void HandlePlayerUndo();
+	UFUNCTION() void HandlePlayerSelectNode(int32 Index);
+	friend class FTAPuzzleScopeTest;
 	virtual void NativeConstruct() override;
-	virtual FCursorReply NativeOnCursorQuery(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
@@ -138,7 +153,10 @@ private:
 	int32 AimedNode = INDEX_NONE;
 	UFUNCTION() void HandleChanged();
 	UFUNCTION() void HandleSettled(const FTAPuzzleResult& Result);
-	bool bOwnsInputMode = false;
 	bool bSettlementDelivered = false;
 	UPROPERTY() TObjectPtr<UObject> SessionRewardReceiver;
+private:
+	FTAInputRouter::FHandle InputRequestHandle = 0;
+	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
+
 };

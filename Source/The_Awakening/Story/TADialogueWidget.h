@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/TAInputRouter.h"
+#include "Core/TAPlayerInputReceiver.h"
 #include "Blueprint/UserWidget.h"
 #include "Story/TADialogueTypes.h"
 #include "TADialogueWidget.generated.h"
@@ -43,14 +45,21 @@ class UPanelWidget;
  *   Image_HistoryIcon  UImage       历史键图标（热切换显示）
  */
 UCLASS(Blueprintable)
-class THE_AWAKENING_API UTADialogueWidget : public UUserWidget
+class THE_AWAKENING_API UTADialogueWidget : public UUserWidget, public ITAPlayerInputReceiver
 {
 	GENERATED_BODY()
+	friend class FTAUIPlayerIngressTest;
 
 public:
+	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
+	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
+	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	bool AllowsPlayerInput(ETAInputCapability Capability) const;
+	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 
 	/** 由子系统调用：绑定会话和独立立绘层 */
 	void Setup(UTADialogueSubsystem* InSubsystem, UTADialogueController* InController, UTADialoguePortraitLayerWidget* InPortraitLayer = nullptr);
@@ -116,8 +125,6 @@ protected:
 	void CloseHistoryOverlay();
 
 	// ==================== 输入管理 ====================
-	void BindInputActions();
-	void UnbindInputActions();
 	void PushDialogueMappingContext();
 	void PopDialogueMappingContext();
 
@@ -228,11 +235,8 @@ protected:
 	TObjectPtr<UTAInputIconSubsystem> InputIconSubsystem;
 
 	/** 输入绑定句柄（解绑用） */
-	TArray<uint32> InputBindingHandles;
 	/** 防止同一物理按键同时映射到 AdvanceAction 和 HistoryAction 时打开历史。 */
-	uint64 AdvancePressedFrame = MAX_uint64;
 	/** 防止同一物理按键同时映射到 AdvanceAction 和 ChoiceConfirmAction 时重复选择。 */
-	uint64 ChoiceConfirmPressedFrame = MAX_uint64;
 	FVector2D LastChoiceMousePosition = FVector2D::ZeroVector;
 	bool bHasLastChoiceMousePosition = false;
 	bool bRefreshIconsOnNextTick = false;
@@ -240,7 +244,12 @@ protected:
 	ESlateVisibility HistoryButtonVisibilityBeforeHistory = ESlateVisibility::Visible;
 	bool bContinueButtonWasEnabledBeforeHistory = true;
 
-	bool bHistoryOpen = false;
+	bool IsHistoryOpen() const;
 	bool bPreviewMode = false;
 	bool bMappingPushed = false;
+private:
+	FTAInputRouter::FHandle InputRequestHandle = 0;
+	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
+	void ReleaseInput();
+
 };

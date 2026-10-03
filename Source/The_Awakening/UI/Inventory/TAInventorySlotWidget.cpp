@@ -1,4 +1,5 @@
 #include "UI/Inventory/TAInventorySlotWidget.h"
+#include "UI/Inventory/TAInventoryPanelWidget.h"
 #include "Inventory/TAItemDefinition.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Components/Image.h"
@@ -18,6 +19,7 @@ void UTAInventorySlotWidget::NativeConstruct()
 
 FReply UTAInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (!AllowsPlayerDrag()) return FReply::Handled();
 	if (!IsEmpty() && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
@@ -42,6 +44,7 @@ void UTAInventorySlotWidget::NativeOnDragDetected(
 	const FPointerEvent& InMouseEvent,
 	UDragDropOperation*& OutOperation)
 {
+	if (!AllowsPlayerDrag()) return;
 	Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
 	if (IsEmpty() || !Inventory)
 	{
@@ -86,6 +89,8 @@ bool UTAInventorySlotWidget::NativeOnDrop(
 	UDragDropOperation* InOperation)
 {
 	UTAInventorySlotWidget* SourceSlot = InOperation ? Cast<UTAInventorySlotWidget>(InOperation->Payload) : nullptr;
+	if (SourceSlot) SourceSlot->SetDraggingVisual(false); // cleanup is never permission-gated
+	if (!AllowsPlayerDrag() || !SourceSlot || !SourceSlot->AllowsPlayerDrag()) return false;
 	if (!SourceSlot || SourceSlot == this || !Inventory || SourceSlot->Inventory != Inventory)
 	{
 		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
@@ -94,6 +99,16 @@ bool UTAInventorySlotWidget::NativeOnDrop(
 	SourceSlot->SetDraggingVisual(false);
 	const bool bMoved = Inventory->MoveItemBetweenSlots(SourceSlot->FlatIndex, FlatIndex);
 	return bMoved || Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+}
+
+void UTAInventorySlotWidget::SetInputOwner(UTAInventoryPanelWidget* InOwner)
+{
+	InputOwner = InOwner;
+}
+
+bool UTAInventorySlotWidget::AllowsPlayerDrag() const
+{
+	return InputOwner.IsValid() && InputOwner->AllowsPlayerInput(ETAInputCapability::ToggleDrag);
 }
 
 void UTAInventorySlotWidget::SetSlotData(const FTAInventorySlot& SlotData, int32 InFlatIndex)

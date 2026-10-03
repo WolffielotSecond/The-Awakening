@@ -24,6 +24,10 @@ bool FTAFreezeBlendTest::RunTest(const FString& Parameters)
 	UObject* Scan = Movement;
 	UObject* Puzzle = Actor;
 
+	Registry->RequestFreeze(Scan, 0.f);
+	TestTrue(TEXT("Zero-strength request is active for participants"), Freeze->HasFreezeRequest());
+	TestEqual(TEXT("Zero strength preserves original dilation"), Actor->CustomTimeDilation, .8f);
+	TestFalse(TEXT("Zero-strength request does not suspend ticks"), Freeze->IsFrozen());
 	Registry->RequestFreeze(Scan, .5f);
 	TestEqual(TEXT("Blend scales original actor dilation"), Actor->CustomTimeDilation, .4f);
 	TestFalse(TEXT("Transition does not suspend ticks"), Freeze->IsFrozen());
@@ -45,13 +49,24 @@ bool FTAFreezeBlendTest::RunTest(const FString& Parameters)
 	Registry->RequestFreeze(Scan, .75f);
 	TestTrue(TEXT("Reversing direction preserves original baseline"), FMath::IsNearlyEqual(Actor->CustomTimeDilation, .2f));
 	Registry->ReleaseFreeze(Scan);
+	TestFalse(TEXT("Last explicit release ends request lifetime"), Freeze->HasFreezeRequest());
 	TestEqual(TEXT("Final release restores prior dilation, not one"), Actor->CustomTimeDilation, .8f);
 	Registry->RequestFreeze(Scan, 2.f);
 	TestTrue(TEXT("Curve overshoot clamps to full freeze"), Freeze->IsFrozen());
 	Registry->RequestFreeze(Scan, -1.f);
 	TestFalse(TEXT("Zero strength releases freeze"), Registry->IsFrozen());
 	TestEqual(TEXT("Negative curve value restores baseline"), Actor->CustomTimeDilation, .8f);
+	TestTrue(TEXT("Clamped strength zero is not request release"), Freeze->HasFreezeRequest());
 	Registry->UnregisterParticipant(Freeze);
+	TestFalse(TEXT("Unregistered component cannot retain request participation"), Freeze->HasFreezeRequest());
+	Registry->RegisterParticipant(Freeze);
+	Registry->ReleaseFreeze(Scan);
+	UObject* ExpiringSource = NewObject<USceneComponent>();
+	Registry->RequestFreeze(ExpiringSource, 0.f);
+	TestTrue(TEXT("Live source activates zero-strength request"), Freeze->HasFreezeRequest());
+	ExpiringSource->MarkAsGarbage();
+	TestFalse(TEXT("Invalid source is not an active request before pruning"), Freeze->HasFreezeRequest());
+	Registry->ReleaseFreeze(ExpiringSource);
 	World->DestroyWorld(false);
 	return true;
 }

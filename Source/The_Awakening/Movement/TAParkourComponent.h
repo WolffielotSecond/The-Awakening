@@ -33,6 +33,7 @@ public:
 	/** Shared by execution and landing previews. Includes overlap and held-marker rearm rules. */
 	UFUNCTION(BlueprintPure, Category = "Parkour")
 	bool CanParkourToMarker(ATAParkourMarker* Marker) const;
+	bool CanPlayerParkourToMarker(ATAParkourMarker* Marker) const;
 
 	/** 设计开关：默认允许静止时背向起跳并自动转向；不想保留此行为时关闭即可。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Facing")

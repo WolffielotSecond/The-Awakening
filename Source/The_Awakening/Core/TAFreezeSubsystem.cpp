@@ -23,13 +23,25 @@ float UTAFreezeSubsystem::GetFreezeStrength() const
 	return Strength;
 }
 
+bool UTAFreezeSubsystem::HasFreezeRequestFor(const UTAFreezeComponent* Participant) const
+{
+	if (!IsValid(Participant)) return false;
+	// Derive from the existing participant/source registry; no second lifecycle state.
+	for (const auto& Entry : Participants)
+	{
+		if (Entry.Get() != Participant) continue;
+		for (const auto& Source : Sources) if (Source.Key.IsValid()) return true;
+		return false;
+	}
+	return false;
+}
+
 void UTAFreezeSubsystem::RequestFreeze(UObject* Source, float Strength)
 {
 	if (IsValid(Source))
 	{
 		Strength = FMath::IsFinite(Strength) ? FMath::Clamp(Strength, 0.f, 1.f) : 0.f;
-		if (Strength > 0.f) Sources.Add(Source, Strength);
-		else Sources.Remove(Source);
+		Sources.Add(Source, Strength);
 		ApplyState();
 	}
 }

@@ -55,17 +55,21 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 	PC->PlayerInput = NewObject<UTAPlayerInput>(PC);
 	PC->Possess(Pawn);
 	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 1.f, Local->GetControllerId());
-	PC->BeginScanCursorMode();
-	TestTrue(TEXT("Scan seeds already-held stick cursor without menu mode"), PC->IsScanStickCursorActive() && !PC->IsUIInputModeActive());
+	FTAInputRequest ScanRequest;
+	ScanRequest.Owner = PC; ScanRequest.Priority = 100;
+	ScanRequest.Allowed = {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor};
+	ScanRequest.Presentation.bShowCursor = true;
+	const auto ScanHandle = PC->AcquireInputRequest(ScanRequest);
+	TestTrue(TEXT("Scan seeds already-held stick cursor without menu mode"), PC->IsCursorStickLookActive() && PC->GetInputWinner().Request.Presentation.InputMode == ETAInputModeRequirement::GameOnly);
 	PC->SetVirtualCursorAxis(EKeys::Gamepad_LeftX, 0.f);
-	TestFalse(TEXT("Centered scan stick stops cursor and explicit camera input"), PC->IsScanStickCursorActive());
+	TestFalse(TEXT("Centered scan stick stops cursor and explicit camera input"), PC->IsCursorStickLookActive());
 	PC->SetVirtualCursorAxis(EKeys::Gamepad_RightY, 1.f);
-	TestTrue(TEXT("Right stick also drives scan cursor and camera"), PC->IsScanStickCursorActive());
+	TestTrue(TEXT("Right stick also drives scan cursor and camera"), PC->IsCursorStickLookActive());
 	PC->SetVirtualCursorAxis(EKeys::Gamepad_RightY, 0.f);
-	TestFalse(TEXT("Right stick center stops scan cursor"), PC->IsScanStickCursorActive());
+	TestFalse(TEXT("Right stick center stops scan cursor"), PC->IsCursorStickLookActive());
 	PC->SetVirtualCursorAxis(EKeys::Gamepad_LeftY, 1.f);
-	PC->EndScanCursorMode();
-	TestFalse(TEXT("Scan exit clears stick cursor"), PC->IsScanStickCursorActive());
+	PC->ReleaseInputRequest(ScanHandle);
+	TestFalse(TEXT("Scan exit clears stick cursor"), PC->IsCursorStickLookActive());
 	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, Local->GetControllerId());
 	// Input test has no level floor; bypass the unrelated ledge-safety traces.
 	Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
@@ -90,36 +94,55 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 	{
 		World->DestroyWorld(false); return false;
 	}
+	FTAInputRequest MenuRequest;
+	MenuRequest.Owner = Pawn; MenuRequest.Priority = 200;
+	MenuRequest.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor};
+	MenuRequest.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+	MenuRequest.Presentation.bShowCursor = true;
+	FTAInputRouter::FHandle MenuHandle = 0;
 	if (TestNotNull(TEXT("Inventory action mapping"), InventoryAction))
 	{
 		for (const FKey Key : {EKeys::Tab, EKeys::Gamepad_Special_Left})
 		{
 			PC->RecordHeldInput(Key, 1.f, User);
 			TestTrue(TEXT("First inventory press accepted"), PC->ConsumeInventoryTogglePress(InventoryAction));
-			PC->BeginUIInputMode();
+			MenuHandle = PC->AcquireInputRequest(MenuRequest);
 			PC->RecordHeldInput(Key, 1.f, User);
 			TestFalse(TEXT("Hold cannot close newly opened inventory"), PC->ConsumeInventoryTogglePress(InventoryAction));
 			PC->RecordHeldInput(Key, 0.f, User);
 			PC->RecordHeldInput(Key, 1.f, User);
 			TestTrue(TEXT("New press can close inventory"), PC->ConsumeInventoryTogglePress(InventoryAction));
-			PC->EndUIInputMode();
+			PC->ReleaseInputRequest(MenuHandle);
 			TestFalse(TEXT("Same closing press cannot reopen inventory"), PC->ConsumeInventoryTogglePress(InventoryAction));
 			PC->RecordHeldInput(Key, 0.f, User);
 		}
 	}
 	PC->RecordHeldInput(EKeys::W, 1.f, User);
-	PC->BeginUIInputMode();
+	// Permission loss must not rewrite accepted motion, speed, or pending input.
+	Pawn->GetCharacterMovement()->Velocity = FVector(500, 0, 0);
+	Pawn->GetCharacterMovement()->MaxWalkSpeed = 750.f;
+	Pawn->AddMovementInput(FVector::ForwardVector, 1.f, true);
+	const FVector PendingBeforeDenial = Pawn->GetPendingMovementInputVector();
+	MenuHandle = PC->AcquireInputRequest(MenuRequest);
+	static_cast<AActor*>(Pawn)->Tick(.016f);
+	TestEqual(TEXT("Gate preserves velocity"), Pawn->GetCharacterMovement()->Velocity, FVector(500, 0, 0));
+	TestEqual(TEXT("Gate preserves configured speed"), Pawn->GetCharacterMovement()->MaxWalkSpeed, 750.f);
+	TestEqual(TEXT("Gate does not consume pending movement"), Pawn->GetPendingMovementInputVector(), PendingBeforeDenial);
+	TestTrue(TEXT("Held observation is independent of permission"), PC->ReadHeldAction(Forward).IsNonZero());
+	Pawn->ConsumeMovementInputVector();
+	PC->ReleaseInputRequest(MenuHandle);
+	MenuHandle = PC->AcquireInputRequest(MenuRequest);
 	static_cast<AActor*>(Pawn)->Tick(.016f);
 	TestTrue(TEXT("Menu prevents movement"), Pawn->GetPendingMovementInputVector().IsNearlyZero());
-	PC->EndUIInputMode();
+	PC->ReleaseInputRequest(MenuHandle);
 	static_cast<AActor*>(Pawn)->Tick(.016f);
 	TestFalse(TEXT("Still held keyboard resumes without new key-down"), Pawn->ConsumeMovementInputVector().IsNearlyZero());
-	PC->BeginUIInputMode();
+	MenuHandle = PC->AcquireInputRequest(MenuRequest);
 	PC->RecordHeldInput(EKeys::W, 0.f, User);
-	PC->EndUIInputMode(); static_cast<AActor*>(Pawn)->Tick(.016f);
+	PC->ReleaseInputRequest(MenuHandle); static_cast<AActor*>(Pawn)->Tick(.016f);
 	TestTrue(TEXT("Released in menu does not stick"), Pawn->ConsumeMovementInputVector().IsNearlyZero());
 	PC->RecordHeldInput(EKeys::Gamepad_LeftX, .4f, User);
-	PC->BeginUIInputMode(); PC->EndUIInputMode(); static_cast<AActor*>(Pawn)->Tick(.016f);
+	MenuHandle = PC->AcquireInputRequest(MenuRequest); PC->ReleaseInputRequest(MenuHandle); static_cast<AActor*>(Pawn)->Tick(.016f);
 	TestFalse(TEXT("Held stick resumes"), Pawn->ConsumeMovementInputVector().IsNearlyZero());
 	TestEqual(TEXT("Partial stick walk speed"), Pawn->GetCharacterMovement()->MaxWalkSpeed, 500.f);
 	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 1.f, User); static_cast<AActor*>(Pawn)->Tick(.016f);
@@ -139,6 +162,42 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Releasing L3 restores walk speed"), Pawn->GetCharacterMovement()->MaxWalkSpeed, 500.f);
 	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, User); Pawn->ConsumeMovementInputVector(); static_cast<AActor*>(Pawn)->Tick(.016f);
 	TestTrue(TEXT("Centered stick stops"), Pawn->ConsumeMovementInputVector().IsNearlyZero());
+	// Accepted locomotion continues through any Freeze blend, without accepting
+	// a new direction/sprint command or borrowing the camera's changing yaw.
+	PC->SetControlRotation(FRotator::ZeroRotator);
+	PC->RecordHeldInput(EKeys::W, 1.f, User);
+	PC->RecordHeldInput(EKeys::Gamepad_LeftThumbstick, 1.f, User);
+	static_cast<AActor*>(Pawn)->Tick(.016f);
+	const FVector AcceptedDirection = Pawn->ConsumeMovementInputVector();
+	auto* Participant = Pawn->FindComponentByClass<UTAFreezeComponent>();
+	auto* FreezeRegistry = World->GetSubsystem<UTAFreezeSubsystem>();
+	FreezeRegistry->RegisterParticipant(Participant);
+	const auto FreezeInputHandle = PC->AcquireInputRequest(ScanRequest);
+	PC->RecordHeldInput(EKeys::W, 0.f, User);
+	PC->RecordHeldInput(EKeys::D, 1.f, User);
+	PC->RecordHeldInput(EKeys::Gamepad_LeftThumbstick, 0.f, User);
+	PC->SetControlRotation(FRotator(0, 90, 0));
+	for (float Strength : {0.f, 0.f, .1f, .5f, .9f, .5f, .1f, 0.f})
+	{
+		FreezeRegistry->RequestFreeze(PC, Strength);
+		TestTrue(TEXT("Freeze request remains live at the zero endpoint"), Participant->HasFreezeRequest());
+		TestFalse(TEXT("Move is prohibited throughout the command preservation test"), PC->AllowsInput(ETAInputCapability::Move));
+		static_cast<AActor*>(Pawn)->Tick(.016f);
+		TestTrue(TEXT("Freeze advances the accepted world direction"), Pawn->ConsumeMovementInputVector().Equals(AcceptedDirection));
+		TestEqual(TEXT("Denied sprint changes do not rewrite command speed"), Pawn->GetCharacterMovement()->MaxWalkSpeed, 750.f);
+	}
+	FreezeRegistry->RequestFreeze(PC, 1.f);
+	static_cast<AActor*>(Pawn)->Tick(.016f);
+	TestTrue(TEXT("Full Freeze stops command advancement"), Pawn->ConsumeMovementInputVector().IsNearlyZero());
+	FreezeRegistry->ReleaseFreeze(PC);
+	TestFalse(TEXT("Explicit release ends Freeze request"), Participant->HasFreezeRequest());
+	static_cast<AActor*>(Pawn)->Tick(.016f);
+	TestTrue(TEXT("Denied Move without Freeze cannot keep submitting old command"), Pawn->ConsumeMovementInputVector().IsNearlyZero());
+	PC->ReleaseInputRequest(FreezeInputHandle);
+	static_cast<AActor*>(Pawn)->Tick(.016f);
+	TestTrue(TEXT("Thaw accepts the currently held direction"), Pawn->ConsumeMovementInputVector().Equals(FVector(-1, 0, 0), .001f));
+	TestEqual(TEXT("Thaw accepts current sprint release"), Pawn->GetCharacterMovement()->MaxWalkSpeed, 500.f);
+	PC->RecordHeldInput(EKeys::D, 0.f, User);
 	PC->RecordHeldInput(EKeys::W, 1.f, User);
 	Mappings.RemoveMappingContext(Context, Options);
 	TestFalse(TEXT("Removed mappings disable held actions"), PC->ReadHeldAction(Forward).IsNonZero());
@@ -333,6 +392,7 @@ bool FTAPuzzleScopeTest::RunTest(const FString& Parameters)
 	auto* PC = ControllerClass ? World->SpawnActor<AThe_AwakeningPlayerController>(ControllerClass) : nullptr;
 	if (!TestNotNull(TEXT("Scope controller"), PC)) { World->DestroyWorld(false); return false; }
 	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
+	World->AddController(PC);
 	UClass* WidgetClass = LoadClass<UTAPathPuzzleWidget>(nullptr, TEXT("/Game/UI/Minigame/WBP_TestPuzzle.WBP_TestPuzzle_C"));
 	if (!TestNotNull(TEXT("Scope WBP"), WidgetClass)) { World->DestroyWorld(false); return false; }
 	for (ETAPuzzleDifficulty Difficulty : {ETAPuzzleDifficulty::Easy, ETAPuzzleDifficulty::Medium, ETAPuzzleDifficulty::Hard})
@@ -342,23 +402,30 @@ bool FTAPuzzleScopeTest::RunTest(const FString& Parameters)
 		Widget->PuzzleSettings.bEnableMainGameEffects = false;
 		TestTrue(TEXT("Scope starts all difficulty levels"), Widget->StartPuzzle());
 		if (!Widget->Session) continue;
-		PC->BeginUIInputMode(); PC->SetPuzzleScopeWidget(Widget);
+		Widget->NativeConstruct();
 		TestFalse(TEXT("Scope hides cursor"), PC->bShowMouseCursor);
 		const int32 User = Local->GetControllerId();
 		for (const auto Key : {EKeys::W, EKeys::S, EKeys::A, EKeys::D})
 		{
 			PC->RecordHeldInput(Key, 1.f, User);
 			const FVector2D Expected = Key == EKeys::W ? FVector2D(0,1) : Key == EKeys::S ? FVector2D(0,-1) : Key == EKeys::A ? FVector2D(1,0) : FVector2D(-1,0);
-			TestTrue(TEXT("WASD moves board in specified inverse direction"), PC->GetPuzzlePanInput().Equals(Expected));
+			TestTrue(TEXT("WASD moves board in specified inverse direction"), Widget->GetPlayerPanInput().Equals(Expected));
 			PC->RecordHeldInput(Key, 0.f, User);
 		}
 		PC->RecordHeldInput(EKeys::Gamepad_LeftX, 1.f, User);
-		TestTrue(TEXT("LS right moves board left"), PC->GetPuzzlePanInput().Equals(FVector2D(-1,0)));
+		TestTrue(TEXT("LS right moves board left"), Widget->GetPlayerPanInput().Equals(FVector2D(-1,0)));
 		PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, User);
 		const FVector2D Start = Widget->GetBoardViewCenter();
-		TestTrue(TEXT("Repeat confirmation consumed"), PC->HandlePuzzleConfirm(EKeys::Gamepad_FaceButton_Bottom, true, User));
+		TestTrue(TEXT("Repeat confirmation consumed"), PC->RoutePlayerInputKey(EKeys::Gamepad_FaceButton_Bottom, true, User));
 		TestEqual(TEXT("Repeat does not select"), Widget->Session->Progress.Path.Num(), 0);
-		PC->HandlePuzzleConfirm(EKeys::LeftMouseButton, false, User);
+		FTAInputRequest Cover;
+		Cover.Owner = PC; Cover.Priority = 400;
+		Cover.Allowed = {ETAInputCapability::Confirm, ETAInputCapability::Undo, ETAInputCapability::Pan};
+		const auto CoverHandle = PC->AcquireInputRequest(Cover);
+		Widget->ExecutePlayerInput(EKeys::LeftMouseButton, ETAInputCapability::Confirm);
+		TestEqual(TEXT("Covered puzzle cannot borrow another winner's Confirm"), Widget->Session->Progress.Path.Num(), 0);
+		PC->ReleaseInputRequest(CoverHandle);
+		PC->RoutePlayerInputKey(EKeys::LeftMouseButton, false, User);
 		TestEqual(TEXT("Reticle confirms initial start node"), Widget->Session->Progress.Path.Num(), 1);
 		TestTrue(TEXT("Selection rebuild keeps view center"), Widget->GetBoardViewCenter().Equals(Start));
 		const float Time = Widget->Session->TimeRemaining;
@@ -371,8 +438,9 @@ bool FTAPuzzleScopeTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Timer remains active"), Widget->Session->TimeRemaining < Time);
 		Widget->PanBoard(FVector2D(-1,-1), 1000.f);
 		TestTrue(TEXT("Board movement bounded"), Widget->GetBoardViewCenter().X <= Widget->Appearance.BoardSize.X && Widget->GetBoardViewCenter().Y <= Widget->Appearance.BoardSize.Y);
-		PC->SetPuzzleScopeWidget(nullptr); PC->EndUIInputMode();
-		TestTrue(TEXT("Scope input released"), PC->GetPuzzlePanInput().IsNearlyZero());
+		Widget->RemoveFromParent();
+		Widget->NativeDestruct();
+		TestTrue(TEXT("Scope input released"), Widget->GetPlayerPanInput().IsNearlyZero());
 	}
 	World->DestroyWorld(false); return true;
 }

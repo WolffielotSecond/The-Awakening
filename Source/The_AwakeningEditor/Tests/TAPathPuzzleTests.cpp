@@ -97,6 +97,41 @@ bool FTAPuzzleSessionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAPuzzleRealtimeTimerTest, "TheAwakening.Puzzle.RealtimeTimer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTAPuzzleRealtimeTimerTest::RunTest(const FString& Parameters)
+{
+	FTAPuzzleSettings Settings; Settings.bEnableRetry = true; Settings.RetryAllowance = 1;
+	auto* S = NewSession(Fixture(), Settings);
+	S->UpdateTimerAt(1000.0);
+	S->UpdateTimerAt(1100.0);
+	TestEqual(TEXT("Ready time is not charged"), S->TimeRemaining, 20.f);
+	S->SelectNode(0);
+	const double Start = S->LastTimerUpdateSeconds;
+	// Four update opportunities separated by 1/3 real second. Slate's .125 clamp
+	// is deliberately absent from the timer interface.
+	for (int32 I = 1; I <= 4; ++I) S->UpdateTimerAt(Start + I / 3.0);
+	TestTrue(TEXT("Background consumes real elapsed, not four clamped deltas"),
+		FMath::IsNearlyEqual(S->TimeRemaining, 20.f - 4.f / 3.f, .0001f));
+	const float Remaining = S->TimeRemaining;
+	S->UpdateTimerAt(Start + 4.0 / 3.0);
+	S->UpdateTimerAt(Start + 1.0);
+	TestEqual(TEXT("Duplicate or stale samples cannot charge time twice"), S->TimeRemaining, Remaining);
+	S->Retry(); S->SelectNode(0);
+	TestEqual(TEXT("Retry/reselect do not reset consumed clock position"), S->LastTimerUpdateSeconds, Start + 4.0 / 3.0);
+	S->UpdateTimerAt(Start + 2.0);
+	TestTrue(TEXT("Retry retains continuous countdown"), FMath::IsNearlyEqual(S->TimeRemaining, 18.f, .0001f));
+	S->UpdateTimerAt(Start + 30.0);
+	TestEqual(TEXT("Long tick gap settles timeout"), S->Result.Failure, ETAPuzzleFailure::TimeExpired);
+	S->UpdateTimerAt(Start + 60.0);
+	TestEqual(TEXT("Terminal session never deducts again"), S->TimeRemaining, 0.f);
+	S = NewSession(Fixture(), Settings); S->SelectNode(0);
+	S->Abort(); const float AbortedRemaining = S->TimeRemaining;
+	S->UpdateTimerAt(S->LastTimerUpdateSeconds + 100.0);
+	TestEqual(TEXT("Aborted session is not charged"), S->TimeRemaining, AbortedRemaining);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAPuzzleLimitsTest, "TheAwakening.Puzzle.Limits",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FTAPuzzleLimitsTest::RunTest(const FString& Parameters)

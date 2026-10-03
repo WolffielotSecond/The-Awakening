@@ -19,7 +19,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Puzzle") bool Undo();
 	UFUNCTION(BlueprintCallable, Category="Puzzle") bool Retry();
 	UFUNCTION(BlueprintCallable, Category="Puzzle") void Abort();
-	/** Called by the owning widget, not by both widget and a world timer. */
+	/** Widget supplies update opportunities; the session consumes monotonic real time. */
+	void UpdateTimer();
+	/** Explicit elapsed-time advancement for deterministic simulation/tests. Do not also drive a live timer with it. */
 	void AdvanceTime(float DeltaSeconds);
 
 	/** Updates total allowances, preserving already-spent uses. Also enables/disables each action. */
@@ -44,6 +46,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Puzzle") FTAOnPuzzleSettled OnSettled;
 
 private:
+	friend class FTAPuzzleRealtimeTimerTest;
+	void UpdateTimerAt(double NowSeconds);
+	double LastTimerUpdateSeconds = 0.0;
 	void ResetProgress();
 	void Settle(ETAPuzzleFailure Failure);
 	UPROPERTY() TArray<FTAPuzzleProgress> History;

@@ -146,8 +146,8 @@ void AThe_AwakeningCharacter::Tick(float DeltaTime)
 void AThe_AwakeningCharacter::DebugOpenPathPuzzle()
 {
 #if !UE_BUILD_SHIPPING
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC || !PC->IsLocalController() || IsUIInputActive()) return;
+	auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (!PC || !PC->AllowsInput(ETAInputCapability::OpenDebugUI)) return;
 
 	// 临时测试入口，正式交互时可以直接调用 OpenPuzzle 并传入对应 WBP。
 	UClass* PuzzleClass = LoadClass<UTAPathPuzzleWidget>(nullptr,
@@ -174,59 +174,7 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
 
-		// 手柄摇杆移动
-		if (MoveAction)
-		{
-			EnhancedInputComponent->BindAction(
-				MoveAction, ETriggerEvent::Triggered,
-				this, &AThe_AwakeningCharacter::Move);
-
-			EnhancedInputComponent->BindAction(
-				MoveAction, ETriggerEvent::Completed,
-				this, &AThe_AwakeningCharacter::OnMoveStopped);
-
-			EnhancedInputComponent->BindAction(
-				MoveAction, ETriggerEvent::Canceled,
-				this, &AThe_AwakeningCharacter::OnMoveStopped);
-		}
-		//疾跑
-		if (SprintAction)
-		{
-			EnhancedInputComponent->BindAction(
-				SprintAction, ETriggerEvent::Started,
-				this, &AThe_AwakeningCharacter::OnSprintStarted);
-
-			EnhancedInputComponent->BindAction(
-				SprintAction, ETriggerEvent::Completed,
-				this, &AThe_AwakeningCharacter::OnSprintEnded);
-
-			EnhancedInputComponent->BindAction(
-				SprintAction, ETriggerEvent::Canceled,
-				this, &AThe_AwakeningCharacter::OnSprintEnded);
-		}
-
-		// 键盘四方向
-		if (MoveForwardAction)
-		{
-			EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::OnMoveForward);
-			EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Completed, this, &AThe_AwakeningCharacter::OnMoveForwardReleased);
-		}
-		if (MoveBackwardAction)
-		{
-			EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::OnMoveBackward);
-			EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Completed, this, &AThe_AwakeningCharacter::OnMoveBackwardReleased);
-		}
-		if (MoveLeftAction)
-		{
-			EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::OnMoveLeft);
-			EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Completed, this, &AThe_AwakeningCharacter::OnMoveLeftReleased);
-		}
-		if (MoveRightAction)
-		{
-			EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::OnMoveRight);
-			EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Completed, this, &AThe_AwakeningCharacter::OnMoveRightReleased);
-		}
-
+		// Movement intent has one writer: the authorized held-input consumer.
 		// Look
 		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::MouseLook);
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AThe_AwakeningCharacter::Look);
@@ -234,7 +182,7 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 		// Interact
 		if (InteractAction)
 		{
-			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::TryInteract);
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::TryPlayerInteract);
 		}
 
 		// Parkour uses held action values in UpdateHeldGameplayInput, not a one-shot Started event.
@@ -278,10 +226,6 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 //IA Scan的started
 void AThe_AwakeningCharacter::OnScanStarted(const FInputActionValue& Value)
 {
-	if (IsUIInputActive())
-	{
-		return;
-	}
 	AController* CharacterController = GetController();
 	if (!CharacterController)
 	{
@@ -329,101 +273,34 @@ void AThe_AwakeningCharacter::OnScanCanceled(const FInputActionValue& Value)
 	}
 }
 
-void AThe_AwakeningCharacter::Move(const FInputActionValue& Value)
-{
-	StickInput = IsUIInputActive()
-		? FVector2D::ZeroVector
-		: Value.Get<FVector2D>();
-}
-
-void AThe_AwakeningCharacter::OnMoveStopped(const FInputActionValue& Value)
-{
-	StickInput = FVector2D::ZeroVector;
-}
-
-void AThe_AwakeningCharacter::OnSprintStarted(const FInputActionValue& Value)
-{
-	if (IsUIInputActive())
-	{
-		return;
-	}
-
-	bSprintHeld = true;
-	GetCharacterMovement()->MaxWalkSpeed = SprintSpeed;
-}
-
-void AThe_AwakeningCharacter::OnSprintEnded(const FInputActionValue& Value)
-{
-	bSprintHeld = false;
-	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
-}
-
-void AThe_AwakeningCharacter::OnMoveForward(const FInputActionValue& Value)
-{
-	if (IsUIInputActive()) return;
-	bMoveForward = true;
-}
-
-void AThe_AwakeningCharacter::OnMoveBackward(const FInputActionValue& Value)
-{
-	if (IsUIInputActive()) return;
-	bMoveBackward = true;
-}
-
-void AThe_AwakeningCharacter::OnMoveLeft(const FInputActionValue& Value)
-{
-	if (IsUIInputActive()) return;
-	bMoveLeft = true;
-}
-
-void AThe_AwakeningCharacter::OnMoveRight(const FInputActionValue& Value)
-{
-	if (IsUIInputActive()) return;
-	bMoveRight = true;
-}
-
-void AThe_AwakeningCharacter::OnMoveForwardReleased(const FInputActionValue& Value)
-{
-	bMoveForward = false;
-}
-
-void AThe_AwakeningCharacter::OnMoveBackwardReleased(const FInputActionValue& Value)
-{
-	bMoveBackward = false;
-}
-
-void AThe_AwakeningCharacter::OnMoveLeftReleased(const FInputActionValue& Value)
-{
-	bMoveLeft = false;
-}
-
-void AThe_AwakeningCharacter::OnMoveRightReleased(const FInputActionValue& Value)
-{
-	bMoveRight = false;
-}
-
 void AThe_AwakeningCharacter::UpdateHeldGameplayInput()
 {
 	AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetController());
 	if (!PC || !PC->IsLocalController()) return;
-	bMoveForward = PC->ReadHeldAction(MoveForwardAction).IsNonZero();
-	bMoveBackward = PC->ReadHeldAction(MoveBackwardAction).IsNonZero();
-	bMoveLeft = PC->ReadHeldAction(MoveLeftAction).IsNonZero();
-	bMoveRight = PC->ReadHeldAction(MoveRightAction).IsNonZero();
-	bSprintHeld = PC->ReadHeldAction(SprintAction).IsNonZero();
-	const FInputActionValue MoveValue = PC->ReadHeldAction(MoveAction);
-	StickInput = FVector2D(MoveValue[0], MoveValue[1]);
+	if (PC->AllowsInput(ETAInputCapability::Move))
+	{
+		bMoveForward = PC->ReadHeldAction(MoveForwardAction).IsNonZero();
+		bMoveBackward = PC->ReadHeldAction(MoveBackwardAction).IsNonZero();
+		bMoveLeft = PC->ReadHeldAction(MoveLeftAction).IsNonZero();
+		bMoveRight = PC->ReadHeldAction(MoveRightAction).IsNonZero();
+		bSprintHeld = PC->ReadHeldAction(SprintAction).IsNonZero();
+		const FInputActionValue MoveValue = PC->ReadHeldAction(MoveAction);
+		StickInput = FVector2D(MoveValue[0], MoveValue[1]);
+		MovementCommandYaw = GetController()->GetControlRotation().Yaw;
+	}
+	// Physical release must rearm held parkour even when starting is unauthorized.
 	bParkourJumpHeld = PC->ReadHeldAction(ParkourJumpAction).IsNonZero();
 	bParkourDropHeld = PC->ReadHeldAction(ParkourDropAction).IsNonZero();
 }
 
 void AThe_AwakeningCharacter::UpdateMovementInput()
 {
-	if (IsUIInputActive())
-	{
-		ClearMovementInput();
-		return;
-	}
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (!PC) return;
+	// Permission gates command changes, not the advancement of an accepted command
+	// during Freeze. Non-freezing UI leaves existing velocity to normal movement rules.
+	if (!PC->AllowsInput(ETAInputCapability::Move) &&
+		(!FreezeComponent || !FreezeComponent->HasFreezeRequest())) return;
 
 	// 跑酷期间不覆盖跑酷组件的移动设置
 	if (ParkourComponent && ParkourComponent->IsParkouring())
@@ -467,33 +344,37 @@ void AThe_AwakeningCharacter::UpdateMovementInput()
 	{
 		// 只保留方向，消除摇杆幅度对移动速度的连续缩放
 		MoveInput.Normalize();
-		DoMove(MoveInput.X, MoveInput.Y);
+		ExecuteMovementCommand(MoveInput.X, MoveInput.Y, MovementCommandYaw);
 	}
 }
 
 void AThe_AwakeningCharacter::Look(const FInputActionValue& Value)
 {
 	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
-	if (PC && PC->IsScanCursorModeActive()) return;
+	if (PC && PC->UsesCursorLook()) return;
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
-	DoLook(LookAxisVector.X, LookAxisVector.Y);
+	SubmitPlayerLook(LookAxisVector.X, LookAxisVector.Y);
 }
 
 void AThe_AwakeningCharacter::MouseLook(const FInputActionValue& Value)
 {
 	// Cursor warping must not add a second camera delta to the scan stick's explicit look.
 	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
-	if (!PC || !PC->IsScanStickCursorActive())
+	if (!PC || !PC->IsCursorStickLookActive())
 	{
 		const FVector2D Axis = Value.Get<FVector2D>();
-		DoLook(Axis.X, Axis.Y);
+		SubmitPlayerLook(Axis.X, Axis.Y);
 	}
 }
 
 void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 {
-	if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController()); PC && !PC->AllowsInput(ETAInputCapability::Gameplay)) return;
-	if (IsUIInputActive() || UTAFreezeComponent::IsActorFrozen(this))
+	if (GetController()) ExecuteMovementCommand(Right, Forward, GetController()->GetControlRotation().Yaw);
+}
+
+void AThe_AwakeningCharacter::ExecuteMovementCommand(float Right, float Forward, float WorldYaw)
+{
+	if (UTAFreezeComponent::IsActorFrozen(this))
 	{
 		return;
 	}
@@ -508,7 +389,7 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 		return;
 	}
 
-	const FRotator YawRotation(0.f, GetController()->GetControlRotation().Yaw, 0.f);
+	const FRotator YawRotation(0.f, WorldYaw, 0.f);
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -562,13 +443,14 @@ void AThe_AwakeningCharacter::DoMove(float Right, float Forward)
 	AddMovementInput(RightDirection, SafeRight);
 }
 
+void AThe_AwakeningCharacter::SubmitPlayerLook(float Yaw, float Pitch)
+{
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (PC && PC->AllowsInput(ETAInputCapability::Look)) DoLook(Yaw, Pitch);
+}
+
 void AThe_AwakeningCharacter::DoLook(float Yaw, float Pitch)
 {
-	if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController()); PC && !PC->AllowsInput(ETAInputCapability::Look)) return;
-	if (IsUIInputActive())
-	{
-		return;
-	}
 	float FinalYaw = bInvertCameraX ? -Yaw : Yaw;
 	float FinalPitch = bInvertCameraY ? Pitch : -Pitch;
 
@@ -672,9 +554,15 @@ void AThe_AwakeningCharacter::InitAbilityActorInfo()
 	}
 }
 
+void AThe_AwakeningCharacter::TryPlayerInteract()
+{
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (PC && PC->AllowsInput(ETAInputCapability::Interact)) TryInteract();
+}
+
 void AThe_AwakeningCharacter::TryInteract()
 {
-	if (IsUIInputActive() || UTAFreezeComponent::IsActorFrozen(this))
+	if (UTAFreezeComponent::IsActorFrozen(this))
 	{
 		return;
 	}
@@ -859,27 +747,19 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	{
 		return;
 	}
+	if (!PC->AllowsInput(ETAInputCapability::InventoryToggle)) return;
+	if (InventoryPanelInstance && InventoryPanelInstance->IsInViewport() &&
+		!InventoryPanelInstance->AllowsPlayerInput(ETAInputCapability::InventoryToggle)) return;
 	if (!PC->ConsumeInventoryTogglePress(ToggleInventoryAction)) return;
 
 	if (InventoryPanelInstance && InventoryPanelInstance->IsInViewport())
 	{
-		PC->EndUIInputMode(InventoryPanelInstance);
 		InventoryPanelInstance->RemoveFromParent();
 		InventoryPanelInstance = nullptr;
 		return;
 	}
 
-	// Block opening only; closing an existing inventory must remain possible.
-	// Minigame / other modal UI owns input; do not stack an inventory over it.
-	if (PC->IsUIInputModeActive() || UTAFreezeComponent::IsActorFrozen(this))
-	{
-		return;
-	}
-	if (const UTAScanningComponent* Scan = PC->FindComponentByClass<UTAScanningComponent>();
-		Scan && Scan->IsScanning())
-	{
-		return;
-	}
+	if (UTAFreezeComponent::IsActorFrozen(this)) return;
 
 	UClass* PanelClass = nullptr;
 	if (InventoryPanelClass)
@@ -905,17 +785,10 @@ void AThe_AwakeningCharacter::ToggleInventory()
 		UE_LOG(LogTemp, Warning, TEXT("InventoryComponent is null"));
 	}
 
-	InventoryPanelInstance->Init(InventoryComponent);
+	InventoryPanelInstance->Init(InventoryComponent, ToggleInventoryAction);
 	InventoryPanelInstance->AddToViewport(50);
 
-	PC->BeginUIInputMode(InventoryPanelInstance);
 	InventoryPanelInstance->RefreshInputPrompts();
-}
-
-bool AThe_AwakeningCharacter::IsUIInputActive() const
-{
-	const AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetController());
-	return PC && PC->IsUIInputModeActive();
 }
 
 void AThe_AwakeningCharacter::ClearMovementInput()
@@ -928,6 +801,19 @@ void AThe_AwakeningCharacter::ClearMovementInput()
 	StickInput = FVector2D::ZeroVector;
 	bSprintHeld = false;
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+}
+
+bool AThe_AwakeningCharacter::CanParticipateInDialogue_Implementation() const
+{
+	return !ParkourComponent || !ParkourComponent->IsParkouring();
+}
+
+void AThe_AwakeningCharacter::StopCurrentMovement()
+{
+	ClearMovementInput();
+	ConsumeMovementInputVector();
+	GetCharacterMovement()->StopMovementImmediately();
+	if (auto* Movement = Cast<UTAMovementComponent>(GetCharacterMovement())) Movement->CancelParkourLanding();
 }
 
 void AThe_AwakeningCharacter::OnPromptRelatedSettingsChanged()

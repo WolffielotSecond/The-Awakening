@@ -1,5 +1,6 @@
 #include "Puzzle/TAPathPuzzleSession.h"
 #include "Puzzle/TAPathPuzzleRules.h"
+#include "HAL/PlatformTime.h"
 
 bool UTAPathPuzzleSession::Initialize(const FTAPuzzleDefinition& D, const FTAPuzzleSettings& S, FString& Error)
 {
@@ -34,6 +35,8 @@ bool UTAPathPuzzleSession::SelectNode(int32 Index)
 			LastMessage = FText::FromString(TEXT("Select Start first.")); OnChanged.Broadcast(); return false;
 		}
 		Progress.Path.Add(Index);
+		// Retry remains Playing: selecting Start again must not discard elapsed time.
+		if (State != ETAPuzzleState::Playing) LastTimerUpdateSeconds = FPlatformTime::Seconds();
 		State = ETAPuzzleState::Playing;
 		LastMessage = FText::GetEmpty(); OnChanged.Broadcast(); return true;
 	}
@@ -91,6 +94,26 @@ bool UTAPathPuzzleSession::Retry()
 	// Keep Playing and TimeRemaining unchanged, even while waiting to select Start again.
 	// Retry does not reset undo usage, retry usage, or apply discarded pending rewards.
 	OnChanged.Broadcast(); return true;
+}
+
+void UTAPathPuzzleSession::UpdateTimer()
+{
+	UpdateTimerAt(FPlatformTime::Seconds());
+}
+
+void UTAPathPuzzleSession::UpdateTimerAt(double NowSeconds)
+{
+	if (!FMath::IsFinite(NowSeconds)) return;
+	if (!bInitialized || State != ETAPuzzleState::Playing)
+	{
+		LastTimerUpdateSeconds = NowSeconds;
+		return;
+	}
+	if (NowSeconds <= LastTimerUpdateSeconds) return;
+	const double Elapsed = NowSeconds - LastTimerUpdateSeconds;
+	// Consume before settlement callbacks, including reentrant update opportunities.
+	LastTimerUpdateSeconds = NowSeconds;
+	AdvanceTime(static_cast<float>(FMath::Min(Elapsed, static_cast<double>(TimeRemaining))));
 }
 
 void UTAPathPuzzleSession::AdvanceTime(float DeltaSeconds)

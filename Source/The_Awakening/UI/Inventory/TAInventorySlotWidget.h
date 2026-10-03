@@ -12,6 +12,7 @@ class USizeBox;
 class UTAItemDefinition;
 class UTAInventoryComponent;
 class UDragDropOperation;
+class UTAInventoryPanelWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTAInventorySlotHovered, class UTAInventorySlotWidget*, Slot, UTAItemDefinition*, ItemDef);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTAInventorySlotUnhovered, class UTAInventorySlotWidget*, Slot);
@@ -37,6 +38,7 @@ public:
 	void SetEmpty();
 
 	void SetInventoryComponent(UTAInventoryComponent* InInventory) { Inventory = InInventory; }
+	void SetInputOwner(UTAInventoryPanelWidget* InOwner);
 	void SetDraggingVisual(bool bDragging);
 
 	UFUNCTION(BlueprintCallable, Category = "InventorySlot")
@@ -58,6 +60,8 @@ public:
 
 protected:
 	void RefreshVisuals();
+	bool AllowsPlayerDrag() const;
+	TWeakObjectPtr<UTAInventoryPanelWidget> InputOwner;
 
 protected:
 	UPROPERTY(meta = (BindWidgetOptional))

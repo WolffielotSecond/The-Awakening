@@ -60,9 +60,7 @@ bool UTAParkourComponent::CanParkourToMarker(ATAParkourMarker* Marker) const
 	{
 		return false;
 	}
-	const auto* PC = Cast<AThe_AwakeningPlayerController>(OwnerCharacter->GetController());
-	if ((PC && PC->IsUIInputModeActive()) ||
-		(OwnerCharacter->GetController() && OwnerCharacter->GetController()->IsMoveInputIgnored()) ||
+	if ((OwnerCharacter->GetController() && OwnerCharacter->GetController()->IsMoveInputIgnored()) ||
 		!OwnerCharacter->GetCharacterMovement() || OwnerCharacter->GetCharacterMovement()->MovementMode == MOVE_None) return false;
 
 	const FVector Direction = (Marker->GetLandingLocation(OwnerCharacter->GetActorLocation()) -
@@ -186,7 +184,7 @@ ATAParkourMarker* UTAParkourComponent::FindCurrentMarkerOfType(ETAParkourMarkerT
 	for (int32 i = OverlappingMarkers.Num() - 1; i >= 0; --i)
 	{
 		ATAParkourMarker* Marker = OverlappingMarkers[i];
-		if (IsValid(Marker) && Marker->MarkerType == Type && CanParkourToMarker(Marker))
+		if (IsValid(Marker) && Marker->MarkerType == Type && CanPlayerParkourToMarker(Marker))
 		{
 			return Marker;
 		}
@@ -254,4 +252,10 @@ bool UTAParkourComponent::GetParkourFacing() const
 {
 	// Fixed at launch; reaching/passing the landing point cannot flip the animation.
 	return bParkourFacingRight;
+}
+
+bool UTAParkourComponent::CanPlayerParkourToMarker(ATAParkourMarker* Marker) const
+{
+	const auto* PC = OwnerCharacter.IsValid() ? Cast<AThe_AwakeningPlayerController>(OwnerCharacter->GetController()) : nullptr;
+	return (!PC || PC->AllowsInput(ETAInputCapability::Parkour)) && CanParkourToMarker(Marker);
 }

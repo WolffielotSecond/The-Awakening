@@ -19,5 +19,5 @@ void ATAParkourMarker::RefreshLandingPreview()
 {
 	const UTAParkourComponent* Parkour = CurrentOverlappingActor.IsValid()
 		? CurrentOverlappingActor->FindComponentByClass<UTAParkourComponent>() : nullptr;
-	SetLandingPreviewVisible(Parkour && Parkour->CanParkourToMarker(this));
+	SetLandingPreviewVisible(Parkour && Parkour->CanPlayerParkourToMarker(this));
 }

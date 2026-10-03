@@ -1,4 +1,5 @@
 #include "UI/Inventory/TAClothingPanelWidget.h"
+#include "UI/Inventory/TAInventoryPanelWidget.h"
 #include "Inventory/TAClothingDefinition.h"
 #include "UI/Inventory/TAInventorySlotWidget.h"
 #include "Components/CanvasPanel.h"
@@ -194,6 +195,8 @@ void UTAClothingPanelWidget::CreateSlotsForPocket(
 			if (UTAInventorySlotWidget* InvSlot = Cast<UTAInventorySlotWidget>(SlotWidget))
 			{
 				InvSlot->SetInventoryComponent(Inventory);
+				// Nested slots belong to this panel's Inventory owner, never the current winner.
+				InvSlot->SetInputOwner(GetTypedOuter<UTAInventoryPanelWidget>());
 				InvSlot->SetSlotData(PocketRuntime.Slots[i], InOutFlatIndex);
 				InvSlot->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAClothingPanelWidget::HandleSlotHovered);
 				InvSlot->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAClothingPanelWidget::HandleSlotUnhovered);

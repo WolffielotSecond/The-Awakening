@@ -63,6 +63,14 @@ UTAPathPuzzleWidget* UTAPathPuzzleWidget::OpenPuzzleInternal(APlayerController* 
 	return Widget;
 }
 
+UTAPathPuzzleWidget* UTAPathPuzzleWidget::OpenPuzzleWithSettingsFromPlayerInput(APlayerController* Player,
+	TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings& Settings, UObject* RewardReceiver, int32 Seed)
+{
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(Player);
+	if (!PC || !PC->AllowsInput(ETAInputCapability::OpenDebugUI)) return nullptr;
+	return OpenPuzzleWithSettings(Player, WidgetClass, Settings, RewardReceiver, Seed);
+}
+
 void UTAPathPuzzleWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -85,19 +93,10 @@ void UTAPathPuzzleWidget::NativeOnInitialized()
 				Label->SetRenderScale(Label->GetRenderTransform().Scale * .25f);
 			}
 	}
-	if (Button_Undo) Button_Undo->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleWidget::Undo);
+	if (Button_Undo) Button_Undo->OnClicked.AddUniqueDynamic(this, &UTAPathPuzzleWidget::HandlePlayerUndo);
 	// Retry/reset is intentionally disabled for the microscope version for now.
 }
 
-FReply UTAPathPuzzleWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
-{
-    if (InKeyEvent.GetKey() == EKeys::Gamepad_FaceButton_Bottom)
-    {
-        if (!InKeyEvent.IsRepeat()) ConfirmScopeNode();
-        return FReply::Handled();
-    }
-    return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
-}
 void UTAPathPuzzleWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -110,7 +109,6 @@ void UTAPathPuzzleWidget::NativeConstruct()
 	// SelfHitTestInvisible skips this screen in Slate's cursor query. Make the
 	// fullscreen widget a hit target so UI input mode cannot fall back to Arrow.
 	SetVisibility(ESlateVisibility::Visible);
-	SetCursor(EMouseCursor::None);
 	if (bAutoStart && !Session) StartPuzzle();
 	// Freeze registered gameplay actors, not world time or the UMG countdown.
 	// Keep the freeze through settlement until this screen is removed.
@@ -119,34 +117,27 @@ void UTAPathPuzzleWidget::NativeConstruct()
 		if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
 			Freeze->RequestFreeze(this);
 	}
-	if (Session && !Session->IsTerminal() && !bOwnsInputMode)
+	if (Session && !Session->IsTerminal() && InputRequestHandle == 0)
 	{
 		if (AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
 		{
-			PC->BeginUIInputMode(this); PC->SetPuzzleScopeWidget(this); bOwnsInputMode = true;
+			FTAInputRequest Request;
+			Request.Owner = this;
+			Request.Priority = 300;
+			Request.Allowed = {ETAInputCapability::Confirm, ETAInputCapability::Undo, ETAInputCapability::Pan};
+			Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+			Request.Presentation.Focus = ETAInputFocusRequirement::Target;
+			Request.Presentation.FocusTarget = this;
+			InputRequestController = PC;
+			InputRequestHandle = PC->AcquireInputRequest(Request);
 		}
 	}
 	RefreshChrome();
 }
 
-FCursorReply UTAPathPuzzleWidget::NativeOnCursorQuery(const FGeometry& Geometry, const FPointerEvent& Event)
-{
-	return FCursorReply::Cursor(EMouseCursor::None);
-}
-
-void UTAPathPuzzleWidget::ReleaseInput()
-{
-	if (!bOwnsInputMode) return;
-	bOwnsInputMode = false;
-	if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
-	{
-		PC->SetPuzzleScopeWidget(nullptr);
-		PC->EndUIInputMode(this);
-	}
-}
-
 void UTAPathPuzzleWidget::NativeDestruct()
 {
+	ReleaseInput();
 	if (auto* GI = GetGameInstance())
 	{
 		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputDeviceChanged.RemoveDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
@@ -165,7 +156,6 @@ void UTAPathPuzzleWidget::NativeDestruct()
 		Session->OnSettled.RemoveDynamic(this, &UTAPathPuzzleWidget::HandleSettled);
 		Session->Abort();
 	}
-	ReleaseInput();
 	if (bAborting) OnAborted.Broadcast();
 	Super::NativeDestruct();
 }
@@ -173,7 +163,7 @@ void UTAPathPuzzleWidget::NativeDestruct()
 void UTAPathPuzzleWidget::NativeTick(const FGeometry& Geometry, float DeltaSeconds)
 {
 	Super::NativeTick(Geometry, DeltaSeconds);
-	if (Session) Session->AdvanceTime(DeltaSeconds);
+	if (Session) Session->UpdateTimer();
 	if (Session)
 	{
 		const auto& P = Session->Progress;
@@ -306,7 +296,7 @@ void UTAPathPuzzleWidget::RefreshBoard()
 		if (!Node) continue;
 		const bool bShowEffect = N.Effect.IsMainGame() ? Session->Settings.bEnableMainGameEffects : Session->Settings.bEnableMinigameEffects;
 		Node->Configure(Index, N.Label, bShowEffect ? N.Effect.GetLabel() : FText::GetEmpty(), Brush, Appearance.bShowNodeLabels);
-		Node->OnNodeClicked.AddDynamic(this, &UTAPathPuzzleWidget::SelectNode);
+		Node->OnNodeClicked.AddDynamic(this, &UTAPathPuzzleWidget::HandlePlayerSelectNode);
 		Node->SetIsEnabled(!Session->IsTerminal());
 		UCanvasPanelSlot* NodeSlot = PuzzleCanvas->AddChildToCanvas(Node);
 		NodeSlot->SetAlignment(FVector2D(.5f, .5f)); NodeSlot->SetPosition(Position(Index)); NodeSlot->SetSize(Appearance.NodeSize); NodeSlot->SetZOrder(1);
@@ -412,12 +402,10 @@ void UTAPathPuzzleWidget::UpdateScope(float DeltaSeconds)
         ScopeInstruments->SetRenderTransformPivot(FVector2D(.5f));
         ScopeInstruments->SetRenderScale(FVector2D(ScopeDisplayScale));
     }
-    SetCursor(EMouseCursor::None);
-    if (auto* PC = GetOwningPlayer()) PC->SetShowMouseCursor(false);
     const float Zoom = FMath::Max(.1f, BoardZoom) * ScopeDisplayScale;
     if (!Session->IsTerminal())
-        if (const auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
-            PanBoard(PC->GetPuzzlePanInput(), DeltaSeconds);
+        if (AllowsPlayerInput(ETAInputCapability::Pan))
+            PanBoard(GetPlayerPanInput(), DeltaSeconds);
     // Every node can reach the reticle, but the board cannot drift indefinitely into empty space.
     ViewCenter.X = FMath::Clamp(ViewCenter.X, 0.0, FMath::Max(0.0, Appearance.BoardSize.X));
     ViewCenter.Y = FMath::Clamp(ViewCenter.Y, 0.0, FMath::Max(0.0, Appearance.BoardSize.Y));
@@ -477,4 +465,65 @@ void UTAPathPuzzleWidget::PanBoard(FVector2D Input, float DeltaSeconds)
 	ViewCenter += Input.GetClampedToMaxSize(1.f) * FMath::Max(0.f, BoardPanSpeed) * FMath::Max(0.f, DeltaSeconds) / FMath::Max(.1f, BoardZoom);
     ViewCenter.X = FMath::Clamp(ViewCenter.X, 0.0, FMath::Max(0.0, Appearance.BoardSize.X));
     ViewCenter.Y = FMath::Clamp(ViewCenter.Y, 0.0, FMath::Max(0.0, Appearance.BoardSize.Y));
+}
+
+void UTAPathPuzzleWidget::ReleaseInput()
+{
+	const auto Handle = InputRequestHandle;
+	InputRequestHandle = 0;
+	const auto Issuer = InputRequestController;
+	InputRequestController.Reset();
+	if (Handle)
+		if (auto* PC = Issuer.Get()) PC->ReleaseInputRequest(Handle);
+}
+
+void UTAPathPuzzleWidget::RemoveFromParent()
+{
+	ReleaseInput();
+	Super::RemoveFromParent();
+}
+
+bool UTAPathPuzzleWidget::AllowsPlayerInput(ETAInputCapability Capability) const
+{
+	const auto* PC = InputRequestController.Get();
+	return PC && PC->AllowsInputFor(InputRequestHandle, this, Capability);
+}
+
+TOptional<ETAInputCapability> UTAPathPuzzleWidget::ResolvePlayerInput(FKey Key) const
+{
+	if (Key == EKeys::LeftMouseButton || Key == EKeys::Gamepad_FaceButton_Bottom) return ETAInputCapability::Confirm;
+	if (Key == EKeys::RightMouseButton || Key == EKeys::Gamepad_FaceButton_Right) return ETAInputCapability::Undo;
+	return {};
+}
+
+void UTAPathPuzzleWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
+{
+	if (!AllowsPlayerInput(Capability)) return;
+	if (Capability == ETAInputCapability::Confirm) ConfirmScopeNode();
+	else if (Capability == ETAInputCapability::Undo) Undo();
+}
+
+void UTAPathPuzzleWidget::HandlePlayerUndo()
+{
+	if (AllowsPlayerInput(ETAInputCapability::Undo)) Undo();
+}
+
+void UTAPathPuzzleWidget::HandlePlayerSelectNode(int32 Index)
+{
+	if (AllowsPlayerInput(ETAInputCapability::Confirm)) SelectNode(Index);
+}
+
+FVector2D UTAPathPuzzleWidget::GetPlayerPanInput() const
+{
+	if (!AllowsPlayerInput(ETAInputCapability::Pan)) return FVector2D::ZeroVector;
+	const auto* PC = InputRequestController.Get();
+	auto Down = [PC](FKey Key) { return PC->ReadHeldKey(Key).X != 0.f ? 1.f : 0.f; };
+	FVector2D Keyboard(Down(EKeys::A) - Down(EKeys::D), Down(EKeys::W) - Down(EKeys::S));
+	if (!bInversePanInput) Keyboard *= -1.f;
+	if (!Keyboard.IsNearlyZero()) return Keyboard.GetClampedToMaxSize(1.f);
+	const FVector Stick = PC->ReadHeldKey(EKeys::Gamepad_Left2D);
+	FVector2D Axis(-Stick.X, Stick.Y);
+	if (!bInversePanInput) Axis *= -1.f;
+	const float Magnitude = Axis.Size();
+	return Magnitude > .18f ? Axis.GetSafeNormal() * FMath::Clamp((Magnitude - .18f) / .82f, 0.f, 1.f) : FVector2D::ZeroVector;
 }

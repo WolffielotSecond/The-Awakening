@@ -22,7 +22,7 @@ void UTAMovementComponent::CalcVelocity(float DeltaTime, float Friction, bool bF
 		return;
 	}
 	const auto* PC = CharacterOwner ? Cast<AThe_AwakeningPlayerController>(CharacterOwner->GetController()) : nullptr;
-	if (PC && (PC->IsUIInputModeActive() || PC->IsMoveInputIgnored()))
+	if (PC && PC->IsMoveInputIgnored())
 	{
 		StopMovementImmediately();
 		CancelParkourLanding();

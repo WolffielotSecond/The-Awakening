@@ -156,7 +156,7 @@ void UTAPromptComponent::CollectParkourCandidates(TArray<FTAPromptCandidate>& Ou
 	// 需要 ParkourComponent 提供 OverlappingMarkers 访问，见下方「配套修改」
 	for (ATAParkourMarker* Marker : Parkour->GetOverlappingMarkers())
 	{
-		if (!Parkour->CanParkourToMarker(Marker))
+		if (!Parkour->CanPlayerParkourToMarker(Marker))
 		{
 			continue;
 		}

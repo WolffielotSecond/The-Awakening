@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/TAInputRouter.h"
+#include "Core/TAPlayerInputReceiver.h"
 #include "Blueprint/UserWidget.h"
 #include "TAInventoryPanelWidget.generated.h"
 
@@ -23,17 +25,23 @@ class UTAScanInfoWidget;
 struct FInputActionValue;
 
 UCLASS()
-class THE_AWAKENING_API UTAInventoryPanelWidget : public UUserWidget
+class THE_AWAKENING_API UTAInventoryPanelWidget : public UUserWidget, public ITAPlayerInputReceiver
 {
 	GENERATED_BODY()
 
 public:
+	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
+	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
+	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	bool AllowsPlayerInput(ETAInputCapability Capability) const;
+	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UFUNCTION(BlueprintCallable, Category = "InventoryUI")
-	void Init(UTAInventoryComponent* InInventory);
+	void Init(UTAInventoryComponent* InInventory, UInputAction* InCloseAction = nullptr);
+	UPROPERTY(Transient) TObjectPtr<UInputAction> CloseAction;
 
 	UFUNCTION(BlueprintCallable, Category = "InventoryUI")
 	void RefreshAll();
@@ -62,16 +70,11 @@ protected:
 	void OnClickSkillsTab();
 
 	void EnsureInventoryInputActions();
-	void BindInventoryInputActions();
-	void UnbindInventoryInputActions();
 	void PushInventoryMappingContext();
 	void PopInventoryMappingContext();
 	void RefreshInputIcons();
 	UFUNCTION()
 	void HandleInputDeviceChanged();
-	void PreviousPage(const FInputActionValue& Value);
-	void NextPage(const FInputActionValue& Value);
-	void ConfirmPageAction(const FInputActionValue& Value);
 	void ToggleGamepadDragMode(const FInputActionValue& Value);
 	void HandleConfirmPressed();
 	void BeginGamepadDragMode(UTAInventorySlotWidget* SourceSlot);
@@ -245,10 +248,13 @@ protected:
 	TWeakObjectPtr<UTAInventorySlotWidget> CurrentHoveredInventorySlot;
 	TWeakObjectPtr<UTAInventorySlotWidget> GamepadDragSourceSlot;
 
-	TArray<uint32> InputBindingHandles;
 	bool bInventoryMappingPushed = false;
 	bool bRefreshInputPromptsNextTick = false;
 	bool bGamepadDragModeActive = false;
 	bool bWasItemDragActive = false;
-	uint64 LastConfirmClickFrame = MAX_uint64;
+private:
+	FTAInputRouter::FHandle InputRequestHandle = 0;
+	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
+	void ReleaseInput();
+
 };

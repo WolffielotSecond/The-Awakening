@@ -6,6 +6,8 @@
 
 组件自动向当前 World 的 `TAFreezeSubsystem` 注册。新加入实体立即应用当前强度。RequestFreeze(Source, Strength) 的 Strength 为 0～1，默认 1；多个来源取最大强度，小游戏仍使用立即完全冻结。释放扫描不会清除小游戏请求。请求者必须在 EndPlay 中释放自己的请求。
 
+请求存在性与强度分开：Strength = 0 仍保留请求，只有 `ReleaseFreeze(Source)` 才结束生命周期。组件的 `HasFreezeRequest()` 从现有注册表查询当前参与资格和有效来源，不维护额外 bool。扫描从 FadeIn 起点（包括 0 强度）到 FadeOut 完成一直保留请求；Character 在 Move 被禁止且请求有效时继续提交已接受的移动命令，避免渐入第一帧丢失输入。
+
 ## 渐变曲线
 
 扫描组件的 `Scan | Settings | Freeze` 中暴露 `TimeFreezeBlendCurve`，默认引用 `/Game/Materials/Scan/Curves/CRV_TimeFreezeBlend`。横轴是 ScanNormalizedTime（0 未扫描，1 完全淡入），纵轴是冻结强度（0 正常，1 停止）。有效速度为冻结前的 CustomTimeDilation × (1 − 强度)，完全恢复时还原原倍率，不强制写成 1。

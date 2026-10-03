@@ -19,6 +19,9 @@ public:
 	bool IsFrozen() const { return bFrozen; }
 	UFUNCTION(BlueprintPure, Category="Freeze")
 	float GetFreezeStrength() const { return FreezeStrength; }
+	/** A participating actor can have a live Freeze request at zero strength. */
+	UFUNCTION(BlueprintPure, Category="Freeze")
+	bool HasFreezeRequest() const;
 
 	/** For external interactions, which still execute even when ticks are disabled. */
 	UFUNCTION(BlueprintPure, Category="Freeze")

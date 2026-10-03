@@ -14,8 +14,10 @@ class THE_AWAKENING_API UTAFreezeSubsystem : public UWorldSubsystem
 public:
 	void RegisterParticipant(UTAFreezeComponent* Component);
 	void UnregisterParticipant(UTAFreezeComponent* Component);
+	/** Establish/update a live request, including strength zero. Only Release ends it. */
 	void RequestFreeze(UObject* Source, float Strength = 1.f);
 	void ReleaseFreeze(UObject* Source);
+	bool HasFreezeRequestFor(const UTAFreezeComponent* Participant) const;
 	bool IsFrozen() const { return GetFreezeStrength() >= 1.f; }
 	float GetFreezeStrength() const;
 

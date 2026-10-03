@@ -1,6 +1,7 @@
 // Source/The_Awakening/Story/ATAStoryTriggerActor.cpp
 #include "Story/ATAStoryTriggerActor.h"
 #include "Story/TADialogueSubsystem.h"
+#include "Interaction/TADialogueParticipant.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/SphereComponent.h"
 #include "Components/WidgetComponent.h"
@@ -33,6 +34,8 @@ ATAStoryTriggerActor::ATAStoryTriggerActor()
 
 void ATAStoryTriggerActor::OnInteract_Implementation(AActor* Interactor)
 {
+	// Re-evaluate the same eligibility used by prompts; no duplicate movement rules.
+	if (!ITAInteractable::Execute_CanInteract(this, Interactor)) return;
 	if (!StoryAsset)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Dialogue] 触发器 %s 未指定 Story Asset"), *GetName());
@@ -64,6 +67,8 @@ void ATAStoryTriggerActor::OnInteract_Implementation(AActor* Interactor)
 
 bool ATAStoryTriggerActor::CanInteract_Implementation(AActor* Interactor) const
 {
+	if (!IsValid(Interactor) || !Interactor->Implements<UTADialogueParticipant>() ||
+		!ITADialogueParticipant::Execute_CanParticipateInDialogue(Interactor)) return false;
 	if (bTriggerOnce && bPlayed)
 	{
 		return false;

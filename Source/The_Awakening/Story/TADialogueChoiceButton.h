@@ -33,7 +33,6 @@ public:
 
 	/** 高亮（当前选中项） */
 	void SetHighlighted(bool bHighlighted);
-	void FocusChoice();
 
 	/** 点击回调（对话 UI 绑定） */
 	UPROPERTY(BlueprintAssignable, Category = "Dialogue")

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "Interaction/TADialogueParticipant.h"
 #include "Logging/LogMacros.h"
 #include "The_AwakeningCharacter.generated.h"
 
@@ -31,7 +32,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class AThe_AwakeningCharacter : public ACharacter, public IAbilitySystemInterface
+class AThe_AwakeningCharacter : public ACharacter, public IAbilitySystemInterface, public ITADialogueParticipant
 {
 	GENERATED_BODY()
 
@@ -213,6 +214,11 @@ public:
 	AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	bool IsLandingMomentumSafe(const FVector& Direction) const { return IsSafeToMoveToward(Direction); }
 	void ClearMovementInput();
+	void SubmitPlayerLook(float Yaw, float Pitch);
+	virtual bool CanParticipateInDialogue_Implementation() const override;
+	/** Explicit gameplay stop for normal movement/landing, never a permission side effect. */
+	UFUNCTION(BlueprintCallable, Category="Movement")
+	void StopCurrentMovement();
 	float GetMenuCursorSpeed() const { return MenuCursorSpeed; }
 
 	// IAbilitySystemInterface
@@ -225,7 +231,6 @@ protected:
 
 	void InitAbilityActorInfo();
 
-	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void MouseLook(const FInputActionValue& Value);
 
@@ -234,21 +239,13 @@ protected:
 	bool bMoveLeft = false;
 	bool bMoveRight = false;
 
-	void OnMoveForward(const FInputActionValue& Value);
-	void OnMoveBackward(const FInputActionValue& Value);
-	void OnMoveLeft(const FInputActionValue& Value);
-	void OnMoveRight(const FInputActionValue& Value);
 
-	void OnMoveForwardReleased(const FInputActionValue& Value);
-	void OnMoveBackwardReleased(const FInputActionValue& Value);
-	void OnMoveLeftReleased(const FInputActionValue& Value);
-	void OnMoveRightReleased(const FInputActionValue& Value);
 
 	void UpdateMovementInput();
 	void UpdateHeldGameplayInput();
 	bool bParkourJumpHeld = false;
 	bool bParkourDropHeld = false;
-	bool IsUIInputActive() const;
+	void TryPlayerInteract();
 
 	void OnScanStarted(const FInputActionValue& Value);
 	void OnScanEnded(const FInputActionValue& Value);
@@ -275,10 +272,10 @@ protected:
 
 	bool bSprintHeld = false;
 	FVector2D StickInput = FVector2D::ZeroVector;
+	// Coordinate basis of the accepted locomotion command, updated only with Move permission.
+	float MovementCommandYaw = 0.f;
+	void ExecuteMovementCommand(float Right, float Forward, float WorldYaw);
 
-	void OnSprintStarted(const FInputActionValue& Value);
-	void OnSprintEnded(const FInputActionValue& Value);
-	void OnMoveStopped(const FInputActionValue& Value);
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Input")

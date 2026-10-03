@@ -83,7 +83,6 @@ void UTADialogueWidget::EnsureBindings()
 	if (!Text_HistoryText) Text_HistoryText = FindDialogueWidget<UTextBlock>(this, TEXT("Text_HistoryText"));
 	if (!HorizontalBox_Controls) HorizontalBox_Controls = FindDialogueWidget<UHorizontalBox>(this, TEXT("HorizontalBox_Controls"));
 
-	bHistoryOpen = false;
 	if (LegacyEmbeddedHistoryWidget)
 	{
 		LegacyEmbeddedHistoryWidget->SetVisibility(ESlateVisibility::Collapsed);
@@ -126,7 +125,6 @@ void UTADialogueWidget::NativeConstruct()
 	}
 
 	// 输入
-	BindInputActions();
 	PushDialogueMappingContext();
 	if (InputIconSubsystem)
 	{
@@ -143,12 +141,29 @@ void UTADialogueWidget::NativeConstruct()
 	RefreshIcons();
 	bRefreshIconsOnNextTick = true;
 	RefreshPromptLabels();
+
+	SetIsFocusable(true);
+	if (!InputRequestHandle)
+		if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer()))
+		{
+			FTAInputRequest Request;
+			Request.Owner = this;
+			Request.Priority = 200;
+			Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm,
+				ETAInputCapability::Advance, ETAInputCapability::ToggleHistory, ETAInputCapability::Close};
+			Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+			Request.Presentation.bShowCursor = true;
+			Request.Presentation.Focus = ETAInputFocusRequirement::Target;
+			Request.Presentation.FocusTarget = this;
+			InputRequestController = PC;
+			InputRequestHandle = PC->AcquireInputRequest(Request);
+		}
 }
 
 void UTADialogueWidget::NativeDestruct()
 {
+	ReleaseInput();
 	PopDialogueMappingContext();
-	UnbindInputActions();
 	if (ActiveHistoryWidget)
 	{
 		ActiveHistoryWidget->RemoveFromParent();
@@ -212,43 +227,6 @@ void UTADialogueWidget::CloseDialogue()
 // 输入
 // ------------------------------------------------------------
 
-void UTADialogueWidget::BindInputActions()
-{
-	APlayerController* PC = GetOwningPlayer();
-	if (!PC || !PC->InputComponent)
-	{
-		return;
-	}
-
-	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PC->InputComponent);
-	if (!EIC)
-	{
-		return;
-	}
-
-	if (AdvanceAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(AdvanceAction, ETriggerEvent::Started, this, &UTADialogueWidget::OnAdvancePressed).GetHandle());
-	}
-	if (HistoryAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(HistoryAction, ETriggerEvent::Started, this, &UTADialogueWidget::ToggleHistory).GetHandle());
-	}
-	if (ChoicePreviousAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(ChoicePreviousAction, ETriggerEvent::Started, this, &UTADialogueWidget::OnChoicePreviousPressed).GetHandle());
-	}
-	if (ChoiceNextAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(ChoiceNextAction, ETriggerEvent::Started, this, &UTADialogueWidget::OnChoiceNextPressed).GetHandle());
-	}
-	if (ChoiceConfirmAction)
-	{
-		InputBindingHandles.Add(EIC->BindAction(ChoiceConfirmAction, ETriggerEvent::Started, this, &UTADialogueWidget::OnChoiceConfirmPressed).GetHandle());
-	}
-
-}
-
 void UTADialogueWidget::EnsureChoiceInputActions()
 {
 	if (!ChoicePreviousAction)
@@ -292,7 +270,8 @@ void UTADialogueWidget::EnsureChoiceInputActions()
 
 void UTADialogueWidget::OnChoicePreviousPressed()
 {
-	if (Controller && !bHistoryOpen && Controller->IsChoiceNode())
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
+	if (Controller && Controller->IsChoiceNode())
 	{
 		Controller->MoveSelection(-1);
 		UpdateChoiceHighlights();
@@ -301,7 +280,8 @@ void UTADialogueWidget::OnChoicePreviousPressed()
 
 void UTADialogueWidget::OnChoiceNextPressed()
 {
-	if (Controller && !bHistoryOpen && Controller->IsChoiceNode())
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
+	if (Controller && Controller->IsChoiceNode())
 	{
 		Controller->MoveSelection(1);
 		UpdateChoiceHighlights();
@@ -310,16 +290,12 @@ void UTADialogueWidget::OnChoiceNextPressed()
 
 void UTADialogueWidget::OnChoiceConfirmPressed()
 {
-	if (!Controller || bHistoryOpen || !Controller->IsChoiceNode())
+	if (!AllowsPlayerInput(ETAInputCapability::Confirm)) return;
+	if (!Controller || !Controller->IsChoiceNode())
 	{
 		return;
 	}
 
-	if (ChoiceConfirmPressedFrame == GFrameCounter)
-	{
-		return;
-	}
-	ChoiceConfirmPressedFrame = GFrameCounter;
 	Controller->SelectChoice(Controller->GetSelectedChoiceIndex());
 }
 
@@ -360,25 +336,6 @@ void UTADialogueWidget::OnActionPromptClicked(UTAActionPromptWidget* Prompt)
 	}
 }
 
-void UTADialogueWidget::UnbindInputActions()
-{
-	APlayerController* PC = GetOwningPlayer();
-	if (!PC || !PC->InputComponent)
-	{
-		InputBindingHandles.Reset();
-		return;
-	}
-
-	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PC->InputComponent))
-	{
-		for (uint32 Handle : InputBindingHandles)
-		{
-			EIC->RemoveBindingByHandle(Handle);
-		}
-	}
-	InputBindingHandles.Reset();
-}
-
 void UTADialogueWidget::PushDialogueMappingContext()
 {
 	if (bMappingPushed)
@@ -411,15 +368,6 @@ void UTADialogueWidget::PushDialogueMappingContext()
 		}
 	}
 
-	// 移除默认移动等映射（PlayerController 统一处理；编辑器预览无 PC 时跳过）
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (AThe_AwakeningPlayerController* TAPC = Cast<AThe_AwakeningPlayerController>(PC))
-		{
-			TAPC->SetDialogueModeActive(true);
-		}
-	}
-
 	bMappingPushed = true;
 }
 
@@ -430,14 +378,6 @@ void UTADialogueWidget::PopDialogueMappingContext()
 		return;
 	}
 	bMappingPushed = false;
-
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (AThe_AwakeningPlayerController* TAPC = Cast<AThe_AwakeningPlayerController>(PC))
-		{
-			TAPC->SetDialogueModeActive(false);
-		}
-	}
 
 	if (DialogueMappingContext)
 	{
@@ -463,51 +403,14 @@ void UTADialogueWidget::PopDialogueMappingContext()
 
 void UTADialogueWidget::OnAdvancePressed()
 {
-	AdvancePressedFrame = GFrameCounter;
-	// Choice confirmation may already have entered the next dialogue node earlier
-	// in this frame. Do not let the same physical press immediately advance or
-	// complete that newly displayed line.
-	if (ChoiceConfirmPressedFrame == GFrameCounter)
-	{
-		return;
-	}
-
-	if (Controller && !bHistoryOpen)
-	{
-		// Projects may bind the established Advance action to the same confirm
-		// button used by dialogue choices. In a choice node, activate the current
-		// highlighted choice instead of forwarding an Advance that the controller
-		// intentionally ignores for branches.
-		if (Controller->IsChoiceNode())
-		{
-			// Mouse clicks are handled by the specific choice button's OnClicked
-			// callback, which carries that button's index. Do not also treat the
-			// left mouse button as confirmation of the keyboard/gamepad selection.
-			if (FSlateApplication::IsInitialized() && FSlateApplication::Get().GetPressedMouseButtons().Contains(EKeys::LeftMouseButton))
-			{
-				return;
-			}
-			OnChoiceConfirmPressed();
-			return;
-		}
-		Controller->Advance();
-	}
+	if (!AllowsPlayerInput(ETAInputCapability::Advance) || !Controller) return;
+	if (Controller->IsChoiceNode()) OnChoiceConfirmPressed();
+	else Controller->Advance();
 }
 
 void UTADialogueWidget::ToggleHistory()
 {
-	// If the same physical key is mapped to both actions, Advance takes precedence.
-	// This also prevents a focused history button from reopening the overlay on that press.
-	if (AdvancePressedFrame == GFrameCounter)
-	{
-		return;
-	}
-
-	if (ActiveHistoryWidget && ActiveHistoryWidget->IsInViewport())
-	{
-		CloseHistoryOverlay();
-		return;
-	}
+	if (!AllowsPlayerInput(ETAInputCapability::ToggleHistory)) return;
 
 	APlayerController* PC = GetOwningPlayer();
 	AThe_AwakeningCharacter* PlayerCharacter = PC ? Cast<AThe_AwakeningCharacter>(PC->GetPawn()) : nullptr;
@@ -525,17 +428,12 @@ void UTADialogueWidget::ToggleHistory()
 		return;
 	}
 
-	bHistoryOpen = true;
 	ActiveHistoryWidget->SetupClosePrompt(HistoryAction);
 	ActiveHistoryWidget->OnCloseRequested.AddDynamic(this, &UTADialogueWidget::CloseHistoryOverlay);
 	ActiveHistoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	ActiveHistoryWidget->SetHistory(Controller ? Controller->GetHistory() : TArray<FTAStoryHistoryEntry>());
 	ActiveHistoryWidget->AddToViewport(200);
 	RefreshActionPromptBar();
-	if (AThe_AwakeningPlayerController* TAPC = Cast<AThe_AwakeningPlayerController>(PC))
-	{
-		TAPC->SetUIFocusWidget(ActiveHistoryWidget);
-	}
 	if (Button_Continue)
 	{
 		ContinueButtonVisibilityBeforeHistory = Button_Continue->GetVisibility();
@@ -557,7 +455,6 @@ void UTADialogueWidget::CloseHistoryOverlay()
 		ActiveHistoryWidget->RemoveFromParent();
 		ActiveHistoryWidget = nullptr;
 	}
-	bHistoryOpen = false;
 	if (Button_Continue)
 	{
 		Button_Continue->SetIsEnabled(bContinueButtonWasEnabledBeforeHistory);
@@ -572,6 +469,7 @@ void UTADialogueWidget::CloseHistoryOverlay()
 
 void UTADialogueWidget::OnChoiceClicked(int32 Index)
 {
+	if (!AllowsPlayerInput(ETAInputCapability::Confirm)) return;
 	if (Controller)
 	{
 		Controller->SelectChoice(Index);
@@ -753,7 +651,7 @@ void UTADialogueWidget::UpdateTalkingFlags()
 
 void UTADialogueWidget::RefreshHistory()
 {
-	if (ActiveHistoryWidget && bHistoryOpen && Controller)
+	if (ActiveHistoryWidget && IsHistoryOpen() && Controller)
 	{
 		ActiveHistoryWidget->SetHistory(Controller->GetHistory());
 	}
@@ -831,7 +729,7 @@ void UTADialogueWidget::RefreshActionPromptBar()
 	{
 		return;
 	}
-	const bool bHasDialogue = Controller && !bHistoryOpen;
+	const bool bHasDialogue = Controller && !IsHistoryOpen();
 	const bool bShowChoicePrompts = bHasDialogue && Controller->IsChoiceNode();
 	const bool bShowBasePrompts = bHasDialogue && !Controller->IsChoiceNode();
 	HorizontalBox_Controls->SetVisibility(bHasDialogue ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -873,7 +771,8 @@ void UTADialogueWidget::UpdateChoiceHighlights()
 
 void UTADialogueWidget::UpdateChoiceSelectionFromMouse()
 {
-	if (!Controller || !Controller->IsChoiceNode() || bHistoryOpen || !FSlateApplication::IsInitialized())
+	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
+	if (!Controller || !Controller->IsChoiceNode() || !FSlateApplication::IsInitialized())
 	{
 		return;
 	}
@@ -924,7 +823,7 @@ void UTADialogueWidget::HandleChoicesChanged()
 
 void UTADialogueWidget::OnChoiceFocused(int32 Index)
 {
-	if (Controller && Controller->IsChoiceNode() && !bHistoryOpen)
+	if (Controller && Controller->IsChoiceNode() && !IsHistoryOpen())
 	{
 		Controller->SetSelectedChoiceIndex(Index);
 		UpdateChoiceHighlights();
@@ -967,4 +866,75 @@ void UTADialogueWidget::HandleLanguageChanged()
 void UTADialogueWidget::HandleInputDeviceChanged()
 {
 	RefreshIcons();
+}
+
+void UTADialogueWidget::ReleaseInput()
+{
+	const auto Handle = InputRequestHandle;
+	InputRequestHandle = 0;
+	const auto Issuer = InputRequestController;
+	InputRequestController.Reset();
+	if (Handle)
+		if (auto* PC = Issuer.Get()) PC->ReleaseInputRequest(Handle);
+}
+
+void UTADialogueWidget::RemoveFromParent()
+{
+	ReleaseInput();
+	Super::RemoveFromParent();
+}
+
+bool UTADialogueWidget::IsHistoryOpen() const
+{
+	return IsValid(ActiveHistoryWidget) && ActiveHistoryWidget->IsInViewport();
+}
+
+bool UTADialogueWidget::AllowsPlayerInput(ETAInputCapability Capability) const
+{
+	const auto* PC = InputRequestController.Get();
+	return PC && PC->AllowsInputFor(InputRequestHandle, this, Capability);
+}
+
+TOptional<ETAInputCapability> UTADialogueWidget::ResolvePlayerInput(FKey Key) const
+{
+	const auto* PC = InputRequestController.Get();
+	if (!PC) return {};
+	// UMG hit testing owns pointer commands: a button must not become a background Advance.
+	if (Key.IsMouseButton()) return {};
+	// Choose one command before executing it: confirmation may change the current story node.
+	if (Controller && Controller->IsChoiceNode())
+	{
+		// Pointer choices carry their own index through the UMG button callback.
+		if (PC->IsKeyMappedToAction(Key, ChoiceConfirmAction) || PC->IsKeyMappedToAction(Key, AdvanceAction)) return ETAInputCapability::Confirm;
+		if (PC->IsKeyMappedToAction(Key, ChoicePreviousAction) || PC->IsKeyMappedToAction(Key, ChoiceNextAction)) return ETAInputCapability::Navigate;
+	}
+	else if (PC->IsKeyMappedToAction(Key, AdvanceAction)) return ETAInputCapability::Advance;
+	if (PC->IsKeyMappedToAction(Key, HistoryAction)) return ETAInputCapability::ToggleHistory;
+	return {};
+}
+
+FReply UTADialogueWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	const auto* PC = InputRequestController.Get();
+	if (PC && Controller && !Controller->IsChoiceNode() &&
+		PC->IsKeyMappedToAction(Event.GetEffectingButton(), AdvanceAction))
+	{
+		// Buttons handle their own pointer events first; only unhandled background clicks bubble here.
+		if (AllowsPlayerInput(ETAInputCapability::Advance)) OnAdvancePressed();
+		return FReply::Handled();
+	}
+	return Super::NativeOnMouseButtonDown(Geometry, Event);
+}
+
+void UTADialogueWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
+{
+	if (!AllowsPlayerInput(Capability)) return;
+	if (Capability == ETAInputCapability::Confirm) OnChoiceConfirmPressed();
+	else if (Capability == ETAInputCapability::Advance) OnAdvancePressed();
+	else if (Capability == ETAInputCapability::ToggleHistory) ToggleHistory();
+	else if (Capability == ETAInputCapability::Navigate)
+	{
+		if (InputRequestController->IsKeyMappedToAction(Key, ChoicePreviousAction)) OnChoicePreviousPressed();
+		else OnChoiceNextPressed();
+	}
 }
