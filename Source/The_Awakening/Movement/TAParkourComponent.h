@@ -1,15 +1,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
 #include "Components/ActorComponent.h"
 #include "Movement/TAParkourMarker.h"
 #include "TAParkourComponent.generated.h"
 class UInputAction;
+class AThe_AwakeningPlayerController;
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class THE_AWAKENING_API UTAParkourComponent : public UActorComponent
 {
 	GENERATED_BODY()
+	friend class FTAParkourPhysicalReleaseTest;
 
 public:
 	UTAParkourComponent();
@@ -53,8 +56,8 @@ public:
 
 	void RegisterMarker(ATAParkourMarker* Marker);
 	void UnregisterMarker(ATAParkourMarker* Marker);
-	/** Current held intent; call even while menus block execution so releases can rearm markers. */
-	void UpdateHeldRequests(bool bJumpHeld, bool bDropHeld);
+	/** Rearm from physical source observations even when starting is unauthorized. */
+	void UpdatePlayerHeldRequests(AThe_AwakeningPlayerController* PC, const UInputAction* JumpAction, const UInputAction* DropAction);
 
 protected:
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -65,7 +68,7 @@ protected:
 
 	ATAParkourMarker* FindCurrentMarkerOfType(ETAParkourMarkerType Type) const;
 
-	bool StartParkour(ATAParkourMarker* Marker);
+	bool StartParkour(ATAParkourMarker* Marker, const TArray<FKey>& ConsumptionSources = {});
 	void FinishParkour();
 	bool HasLanded() const;
 
@@ -91,5 +94,7 @@ protected:
 	bool bSavedUseControllerRotationYaw = false;
 
 	TWeakObjectPtr<ACharacter> OwnerCharacter;
-	TSet<TWeakObjectPtr<ATAParkourMarker>> ConsumedHeldMarkers;
+	// Key identities participating at consumption, not cached values or observations.
+	// Consumption belongs to the current overlap; real exit or source release rearms.
+	TMap<TWeakObjectPtr<ATAParkourMarker>, TArray<FKey>> ConsumedHeldMarkers;
 };

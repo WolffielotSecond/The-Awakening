@@ -243,7 +243,8 @@ void ATAParkourMarker::OnEndOverlap(
 	UPrimitiveComponent* OtherComp,
 	int32 OtherBodyIndex)
 {
-	if (!OtherActor)
+	// UE removes the ending pair before notifying; another component still overlapping is not actor exit.
+	if (!OtherActor || (TriggerBox && TriggerBox->IsOverlappingActor(OtherActor)))
 	{
 		return;
 	}

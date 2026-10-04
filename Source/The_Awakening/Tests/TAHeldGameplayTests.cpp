@@ -1,5 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#include "Tests/TAParkourInputTestFixture.h"
 #include "The_AwakeningPlayerController.h"
 #include "The_AwakeningCharacter.h"
 #include "Core/TAPlayerInput.h"
@@ -60,17 +61,19 @@ bool FTAHeldGameplayTest::RunTest(const FString& Parameters)
 	ScanRequest.Allowed = {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor};
 	ScanRequest.Presentation.bShowCursor = true;
 	const auto ScanHandle = PC->AcquireInputRequest(ScanRequest);
-	TestTrue(TEXT("Scan seeds already-held stick cursor without menu mode"), PC->IsCursorStickLookActive() && PC->GetInputWinner().Request.Presentation.InputMode == ETAInputModeRequirement::GameOnly);
-	PC->SetVirtualCursorAxis(EKeys::Gamepad_LeftX, 0.f);
-	TestFalse(TEXT("Centered scan stick stops cursor and explicit camera input"), PC->IsCursorStickLookActive());
-	PC->SetVirtualCursorAxis(EKeys::Gamepad_RightY, 1.f);
-	TestTrue(TEXT("Right stick also drives scan cursor and camera"), PC->IsCursorStickLookActive());
-	PC->SetVirtualCursorAxis(EKeys::Gamepad_RightY, 0.f);
-	TestFalse(TEXT("Right stick center stops scan cursor"), PC->IsCursorStickLookActive());
-	PC->SetVirtualCursorAxis(EKeys::Gamepad_LeftY, 1.f);
-	PC->ReleaseInputRequest(ScanHandle);
-	TestFalse(TEXT("Scan exit clears stick cursor"), PC->IsCursorStickLookActive());
+	TestTrue(TEXT("Scan reads already-held stick cursor without menu mode"), PC->IsCursorStickLookActive() && PC->GetInputWinner().Request.Presentation.InputMode == ETAInputModeRequirement::GameOnly);
 	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, Local->GetControllerId());
+	TestFalse(TEXT("Centered scan stick stops cursor and explicit camera input"), PC->IsCursorStickLookActive());
+	PC->RecordHeldInput(EKeys::Gamepad_RightY, 1.f, Local->GetControllerId());
+	TestTrue(TEXT("Right stick also drives scan cursor and camera"), PC->IsCursorStickLookActive());
+	PC->RecordHeldInput(EKeys::Gamepad_RightY, 0.f, Local->GetControllerId());
+	TestFalse(TEXT("Right stick center stops scan cursor"), PC->IsCursorStickLookActive());
+	PC->RecordHeldInput(EKeys::Gamepad_LeftY, 1.f, Local->GetControllerId());
+	PC->ReleaseInputRequest(ScanHandle);
+	TestFalse(TEXT("Scan exit disables stick cursor look"), PC->IsCursorStickLookActive());
+	TestFalse(TEXT("Scan exit preserves physical stick observation"), PC->ReadHeldKey(EKeys::Gamepad_Left2D).IsNearlyZero());
+	PC->RecordHeldInput(EKeys::Gamepad_LeftX, 0.f, Local->GetControllerId());
+	PC->RecordHeldInput(EKeys::Gamepad_LeftY, 0.f, Local->GetControllerId());
 	// Input test has no level floor; bypass the unrelated ledge-safety traces.
 	Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
 	FHeldTestMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
@@ -219,35 +222,37 @@ bool FTAHeldParkourTest::RunTest(const FString& Parameters)
 	Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	UTAParkourComponent* Parkour = NewObject<UTAParkourComponent>(Pawn);
 	Pawn->AddInstanceComponent(Parkour); Parkour->RegisterComponent(); Parkour->BeginPlay();
-	Parkour->UpdateHeldRequests(true, false);
+	FTAParkourInputTestFixture Held(Pawn, Parkour);
+	if (!TestNotNull(TEXT("Parkour input controller"), Held.PC)) { World->DestroyWorld(false); return false; }
+	Held.Update(true, false);
 	TestFalse(TEXT("Holding before marker waits"), Parkour->IsParkouring());
 	ATAParkourMarker* Marker = World->SpawnActor<ATAParkourMarker>();
 	Parkour->RegisterMarker(Marker);
-	Parkour->UpdateHeldRequests(true, false);
+	Held.Update(true, false);
 	TestTrue(TEXT("Entering while held starts parkour"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
-	Parkour->UpdateHeldRequests(true, false);
+	Held.Update(true, false);
 	TestFalse(TEXT("Same overlap does not loop"), Parkour->IsParkouring());
-	Parkour->UpdateHeldRequests(false, false); Parkour->UpdateHeldRequests(true, false);
+	Held.Update(false, false); Held.Update(true, false);
 	TestTrue(TEXT("Release rearms same marker"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
 	Parkour->UnregisterMarker(Marker); Parkour->RegisterMarker(Marker);
-	Parkour->UpdateHeldRequests(true, false);
-	TestTrue(TEXT("Leaving and reentering rearms"), Parkour->IsParkouring());
+	Held.Update(true, false);
+	TestTrue(TEXT("Real exit and reentry rearms a held request"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
-	Parkour->UpdateHeldRequests(false, false);
+	Held.Update(false, false);
 	UTAFreezeComponent* Freeze = NewObject<UTAFreezeComponent>(Pawn);
 	Pawn->AddInstanceComponent(Freeze); Freeze->RegisterComponent();
 	UTAFreezeSubsystem* Registry = World->GetSubsystem<UTAFreezeSubsystem>();
 	Registry->RegisterParticipant(Freeze); Registry->RequestFreeze(Marker);
-	Parkour->UpdateHeldRequests(true, false);
+	Held.Update(true, false);
 	TestFalse(TEXT("Frozen actor cannot start through component API"), Parkour->IsParkouring());
-	Registry->ReleaseFreeze(Marker); Parkour->UpdateHeldRequests(true, false);
+	Registry->ReleaseFreeze(Marker); Held.Update(true, false);
 	TestTrue(TEXT("Still held request starts after thaw"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
 	ATAParkourMarker* Next = World->SpawnActor<ATAParkourMarker>();
 	Next->MarkerType = ETAParkourMarkerType::DropDown;
-	Parkour->RegisterMarker(Next); Parkour->UpdateHeldRequests(false, true);
+	Parkour->RegisterMarker(Next); Held.Update(false, true);
 	TestTrue(TEXT("Held drop starts at another marker"), Parkour->IsParkouring());
 	World->DestroyWorld(false);
 	return true;
@@ -263,6 +268,8 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	Move->bOrientRotationToMovement = true;
 	UTAParkourComponent* Parkour = NewObject<UTAParkourComponent>(Pawn);
 	Pawn->AddInstanceComponent(Parkour); Parkour->RegisterComponent(); Parkour->BeginPlay();
+	FTAParkourInputTestFixture Held(Pawn, Parkour);
+	if (!TestNotNull(TEXT("Parkour input controller"), Held.PC)) { World->DestroyWorld(false); return false; }
 	ATAParkourMarker* Marker = World->SpawnActor<ATAParkourMarker>();
 	// Exercise the real overlap handler, including the landing preview owner.
 	struct FOverlapArgs
@@ -300,7 +307,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Landing anchor stays hidden when preview allowed"), Marker->LandingTargetComponent->bHiddenInGame);
 	if (AActor* Anchor = Marker->LandingTargetComponent->GetChildActor())
 		TestTrue(TEXT("Landing child actor stays hidden"), Anchor->IsHidden());
-	Parkour->UpdateHeldRequests(true, false);
+	Held.Update(true, false);
 	TestTrue(TEXT("Stationary backward launch starts"), Parkour->IsParkouring());
 	TestTrue(TEXT("Launch faces landing direction"), Pawn->GetActorForwardVector().Equals(FVector(0, 1, 0), .001f));
 	TestFalse(TEXT("Movement auto rotation suspended"), Move->bOrientRotationToMovement);
@@ -313,7 +320,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Original movement rotation restored"), Move->bOrientRotationToMovement);
 	TestTrue(TEXT("Animation facing stays stable at endpoint"), Parkour->GetParkourFacing());
 	TestFalse(TEXT("Consumed marker unavailable to preview and execution"), Parkour->CanParkourToMarker(Marker));
-	Parkour->UpdateHeldRequests(false, false);
+	Held.Update(false, false);
 	Pawn->SetActorLocation(FVector::ZeroVector);
 	Parkour->bAllowStationaryBackFacing = false;
 	Marker->LandingSpline->SetLocationAtSplinePoint(0, FVector(-100, 0, -200), ESplineCoordinateSpace::Local);
@@ -361,13 +368,15 @@ bool FTAParkourMomentumTest::RunTest(const FString& Parameters)
 	// Verify the real parkour lifecycle captures before clearing and restores at completion.
 	UTAParkourComponent* Parkour = NewObject<UTAParkourComponent>(Pawn);
 	Pawn->AddInstanceComponent(Parkour); Parkour->RegisterComponent(); Parkour->BeginPlay();
+	FTAParkourInputTestFixture Held(Pawn, Parkour);
+	if (!TestNotNull(TEXT("Parkour input controller"), Held.PC)) { World->DestroyWorld(false); return false; }
 	Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	Pawn->SetActorRotation(FRotator(0, 90, 0));
 	Pawn->GetCharacterMovement()->Velocity = FVector(0, 750, -200);
 	ATAParkourMarker* Marker = World->SpawnActor<ATAParkourMarker>();
-	Parkour->RegisterMarker(Marker); Parkour->UpdateHeldRequests(true, false);
+	Parkour->RegisterMarker(Marker); Held.Update(true, false);
 	TestTrue(TEXT("Momentum test launches parkour"), Parkour->IsParkouring());
-	Parkour->UpdateHeldRequests(false, false);
+	Held.Update(false, false);
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
 	TestTrue(TEXT("Parkour completion restores takeoff horizontal velocity despite release"),
 		Pawn->GetCharacterMovement()->Velocity.Equals(FVector(0, 750, 0), .1));

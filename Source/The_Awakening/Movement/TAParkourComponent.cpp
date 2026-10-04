@@ -6,6 +6,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Core/TAFreezeComponent.h"
 #include "The_AwakeningPlayerController.h"
+#include "InputActionValue.h"
 
 UTAParkourComponent::UTAParkourComponent()
 {
@@ -73,7 +74,7 @@ bool UTAParkourComponent::CanParkourToMarker(ATAParkourMarker* Marker) const
 	return FVector::DotProduct(OwnerCharacter->GetActorForwardVector().GetSafeNormal2D(), Direction) >= -KINDA_SMALL_NUMBER;
 }
 
-bool UTAParkourComponent::StartParkour(ATAParkourMarker* Marker)
+bool UTAParkourComponent::StartParkour(ATAParkourMarker* Marker, const TArray<FKey>& ConsumptionSources)
 {
 	if (!CanParkourToMarker(Marker)) return false;
 
@@ -81,7 +82,6 @@ bool UTAParkourComponent::StartParkour(ATAParkourMarker* Marker)
 	PreParkourVelocity = OwnerCharacter->GetVelocity();
 	PreParkourVelocity.Z = 0.f;
 	if (auto* Move = Cast<UTAMovementComponent>(OwnerCharacter->GetCharacterMovement())) Move->CancelParkourLanding();
-	//ParkourEnd = Marker->GetLandingLocation();
 	ParkourEnd = Marker->GetLandingLocation(ParkourStart);
 	const FVector Direction = (ParkourEnd - ParkourStart).GetSafeNormal2D();
 	ParkourFacingRotation = Direction.IsNearlyZero() ? OwnerCharacter->GetActorRotation() : Direction.Rotation();
@@ -95,7 +95,7 @@ bool UTAParkourComponent::StartParkour(ATAParkourMarker* Marker)
 	ParkourDuration = FMath::Max(Marker->JumpDuration, 0.05f);
 	ParkourTime = 0.f;
 	bIsParkouring = true;
-	ConsumedHeldMarkers.Add(Marker);
+	ConsumedHeldMarkers.Add(Marker, ConsumptionSources);
 
 	if (UCharacterMovementComponent* Move = OwnerCharacter->GetCharacterMovement())
 	{
@@ -120,9 +120,11 @@ void UTAParkourComponent::FinishParkour()
 	}
 
 	bIsParkouring = false;
-	// Leaving during the jump must not rearm a marker if we land back inside it.
+	// Real exits already end their overlap opportunity. Finish only prunes dead markers.
 	for (auto It = ConsumedHeldMarkers.CreateIterator(); It; ++It)
-		if (!It->IsValid() || !OverlappingMarkers.Contains(It->Get())) It.RemoveCurrent();
+	{
+		if (!It.Key().IsValid()) It.RemoveCurrent();
+	}
 
 	if (!OwnerCharacter.IsValid())
 	{
@@ -227,25 +229,48 @@ void UTAParkourComponent::RegisterMarker(ATAParkourMarker* Marker)
 
 	OverlappingMarkers.Remove(Marker);
 	OverlappingMarkers.Add(Marker);
+	// Repeated registration is not a new entry and must not rearm consumption.
 }
 
 void UTAParkourComponent::UnregisterMarker(ATAParkourMarker* Marker)
 {
-	OverlappingMarkers.Remove(Marker);
-	if (!bIsParkouring) ConsumedHeldMarkers.Remove(Marker);
+	// The marker callback verifies the actor's final component has exited.
+	// Exit ends this overlap opportunity even during an active parkour.
+	if (OverlappingMarkers.Remove(Marker) > 0) ConsumedHeldMarkers.Remove(Marker);
 }
 
-void UTAParkourComponent::UpdateHeldRequests(bool bJumpHeld, bool bDropHeld)
+void UTAParkourComponent::UpdatePlayerHeldRequests(AThe_AwakeningPlayerController* PC,
+	const UInputAction* JumpAction, const UInputAction* DropAction)
 {
+	if (!PC || !PC->IsLocalController() || !OwnerCharacter.IsValid() || OwnerCharacter->GetController() != PC) return;
 	for (auto It = ConsumedHeldMarkers.CreateIterator(); It; ++It)
 	{
-		const ATAParkourMarker* Marker = It->Get();
-		if (!Marker || (Marker->MarkerType == ETAParkourMarkerType::JumpToPoint ? !bJumpHeld : !bDropHeld))
+		if (!It.Key().IsValid())
+		{
+			It.RemoveCurrent(); continue;
+		}
+		bool bAllSourcesReleased = !It.Value().IsEmpty();
+		for (const FKey Key : It.Value())
+		{
+			const auto Observation = PC->FindHeldKeyObservation(Key);
+			if (!Observation.IsSet() || !Observation.GetValue().IsNearlyZero())
+			{ bAllSourcesReleased = false; break; }
+		}
+		if (bAllSourcesReleased)
+		{
 			It.RemoveCurrent();
+		}
 	}
+	auto TryHeld = [&](const UInputAction* Action, ETAParkourMarkerType Type)
+	{
+		if (bIsParkouring || !PC->ReadHeldAction(Action).IsNonZero()) return;
+		const TArray<FKey> Sources = PC->GetObservedHeldKeysForAction(Action);
+		if (Sources.IsEmpty()) return;
+		if (auto* Marker = FindCurrentMarkerOfType(Type)) StartParkour(Marker, Sources);
+	};
 	// Stable priority when both are held: jump first; drop may run if no valid jump starts.
-	if (bJumpHeld) TryParkourJump();
-	if (bDropHeld && !bIsParkouring) TryParkourDrop();
+	TryHeld(JumpAction, ETAParkourMarkerType::JumpToPoint);
+	TryHeld(DropAction, ETAParkourMarkerType::DropDown);
 }
 
 bool UTAParkourComponent::GetParkourFacing() const

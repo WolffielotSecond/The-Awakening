@@ -29,7 +29,7 @@ keyboard/mouse and gamepad paths. Mobile/touch is not a project target; its temp
 widget creation entry point has been removed rather than migrated into ownership.
 Stage-two interactive PIE acceptance is complete. Stage-three Scan/Freeze fixes are
 PIE accepted; final cleanup does not change input consumption or gameplay behavior.
-Stage four physical held/focus reconstruction has not started.
+Stage four (4.1-4.4, including the synthetic click surface fix) is PIE accepted. Final cleanup preserves behavior; stage five is not started.
 
 ## External player input ownership lifecycle
 
@@ -51,13 +51,16 @@ the viewport does not by itself produce a lifecycle loss. Controller polling use
 focus-based state. The application activation callback records definitive inactivity
 immediately; reactivation only samples the adapter and never synthesizes a key release.
 
-Controller LastDefinitiveInputOwnership stores notification edge memory only. Owned ->
+Controller LastDefinitiveInputOwnership stores lifecycle edge memory only. Owned ->
 Lost, including an intervening Transition, broadcasts once; repeated Lost and reentrant
 Release cannot broadcast again because state is committed before callbacks. Initial
 Lost and Owned -> Transition -> Owned produce no loss event. Permissions still query
 the adapter directly, never this memory. Observation occurs before presentation sync
-and request acquisition. No new timers, frame counters or grace periods were added;
-the existing InternalFocusTransitionUntil remains solely in the old held-cache path.
+and request acquisition. Stage 4.2 also uses this existing edge memory for once-only
+physical observation invalidation on entering Lost (including initial Lost, which
+does not broadcast loss). Transition retains the last definitive state. The old
+InternalFocusTransitionUntil/GFrameCounter focus grace has been removed; no timeout
+or replacement state was added.
 
 Scan subscribes in BeginPlay and unsubscribes in EndPlay. It responds with the existing
 CancelScan(Canceled, true): stop active scan/hover and release its exact request now,
@@ -72,9 +75,8 @@ release before a fresh press can start scanning. No held-input reconstruction is
 
 First PIE follow-up: movement clearing on a non-Gameplay winner was removed in stage
 three. Input denial never actively resets existing movement.
-Background Puzzle countdown slowdown is a separate investigation; compare wall time,
-widget tick count/deltas and Session TimeRemaining before deciding its cause. The timer
-is unchanged. Scan -> Puzzle -> Gameplay remains the approved lifecycle.
+Puzzle background countdown uses the accepted monotonic-clock fix described below.
+Scan -> Puzzle -> Gameplay remains the approved lifecycle.
 
 ## Touch template dependency audit
 
@@ -182,9 +184,10 @@ not contain the former menu-opening Scan cancellation branch.
 
 Mapping-pushed flags remain resource guards for each widget's own Enhanced Input
 contexts, not UI ownership. Default contexts are no longer removed/restored by Dialogue.
-Existing HeldKeyValues, virtual cursor axes and consumed-key sets
-and InternalFocusTransitionUntil remain for the later input/held migration. None were
-added to solve stage-two lifecycle problems.
+HeldKeyValues and consumed-key sets retain the distinct stage-four responsibilities
+documented below; none is a second ownership authority.
+Stage 4.2 removed the old focus frame grace; observation now follows adapter lifecycle.
+Stage 4.3 removed separate virtual-axis storage; cursor axes derive from Held.
 
 ## Remaining presentation writers
 
@@ -310,9 +313,7 @@ callbacks were removed; their contexts remain for receiver key lookup and prompt
 Actual UI mappings have no hold/chord triggers/modifiers. Future custom triggers need
 an explicit supported execution design; raw key lookup does not evaluate them.
 
-HeldKeyValues, consumed presses, virtual axes, inventory press latch and
-InternalFocusTransitionUntil/GFrameCounter remain existing delivery/physical state,
-deferred to stage four. Inventory drag visuals are business state. No new registry,
+Stage four removed focus frame grace and separate virtual-axis storage. Held observations, consumed delivery pairing and the Inventory press latch retain distinct responsibilities. Inventory drag visuals are business state. No new registry,
 mode bool, state snapshot, frame/time dedup or grace period was added.
 Removed LastConfirmClickFrame/AdvancePressedFrame/ChoiceConfirmPressedFrame, old UI
 gates, PC Puzzle type/configuration logic, broad Gameplay/Menu capabilities, UI EI
@@ -392,10 +393,7 @@ No diagnostic field remains in Character, PC, Movement, Freeze, Scan or Puzzle.
 UpdateTimerAt and its test friendship remain deterministic regression support, not
 instrumentation; LastTimerUpdateSeconds is the live timer's consumption position.
 
-Stage four is not started: HeldKeyValues, HeldInputModifiers, ConsumedPresses,
-ConsumedInventoryKeys, virtual cursor axes and InternalFocusTransitionUntil/GFrameCounter
-retain their existing delivery/physical-state responsibilities and known focus/release
-limitations. The frame-based focus grace is not action execution deduplication.
+Stage four is accepted. Its final observation, pairing, cursor-axis and Parkour consumption contracts are documented below; no focus frame grace remains.
 
 For stage-five review (not implementation or a newly approved framework), PC still
 contains virtual-cursor/Character cursor-speed and Look plumbing plus the synthetic
@@ -429,3 +427,144 @@ APIs remain callable independently, but supported player ingress uses capability
 No new snapshot, delay, frame deduplication, mode exception or second receiver/owner
 registry was added during cleanup. This is source-path audit plus existing ingress
 regression, not a guarantee about arbitrary future Blueprint event wiring.
+
+## Stage four: accepted physical observation and consumption contract
+
+Stages 4.1-4.4 and the synthetic pointer surface fix passed user PIE acceptance.
+This is the final implementation contract. Stage five is not started.
+
+### Physical observation and invalidation
+
+PC HeldKeyValues is the single physical observation truth. Slate key/button and
+analog observations update it; paired analog axes are derived there. Permission
+checks decide whether consumers may act, never whether a physical key is Released.
+ReadHeldKey/ReadHeldAction retain continuous-value semantics (missing reads zero).
+FindHeldKeyObservation exposes validity to release-sensitive consumers: missing
+means Unknown; a present zero means an observed Up/analog zero.
+
+- Owned accepts observations and permits commands subject to Router authorization.
+- Transition permits no new commands, retains Held/modifiers/latches/accepted
+  locomotion and does not generate a zero, Release, or ownership-loss edge.
+- Definitive Lost enters InvalidatePhysicalObservationForExternalOwnership once.
+  It clears HeldKeyValues, HeldInputModifiers and ConsumedInventoryKeys, retaining
+  the existing external-loss Character ClearMovementInput behavior. It does not
+  stop velocity, consume pending movement, synthesize Release or mutate requests.
+- Initial Lost invalidates without broadcasting loss. Owned -> Lost (including
+  an intervening Transition) broadcasts the independent loss edge once. Repeated
+  Lost does neither again. Permissions query the adapter, not edge memory.
+- Activation, polling, request acquisition and analog ingress use that lifecycle.
+  Analog Transition drops the sample without writing zero; Lost invalidates.
+  Recovery samples ownership but never reconstructs Held or synthesizes events.
+- InvalidateGamepadObservationOnDisconnect uses the existing matching local-user
+  filter and removes gamepad observations/Inventory latches only. Keyboard/mouse,
+  modifiers and accepted locomotion remain. Disconnect is not physical Release.
+  Scope remains FKey-based gamepad input, not per-device-ID tracking.
+- Real Up updates only its observation/paired axis and Inventory press latch.
+  Processor ConsumedPresses pairs consumed Down/Up delivery and survives both
+  invalidation paths until the matching Up or processor teardown. It is separate
+  from the Inventory long-press latch ConsumedInventoryKeys.
+
+Capability denial invokes none of these invalidation paths. Scan cancellation
+belongs to its ownership-lost listener; persistent UI requests survive. No focus
+grace, timer, delayed zero, snapshot or second observation registry is present.
+The private explicit-state analog seam tests the production lifecycle policy;
+it does not override runtime ownership. Regression friends/fixtures remain used.
+
+### Continuous cursor axes
+
+ReadCursorStick derives from the existing paired Held axes with the original
+per-component 0.18 dead zone and float remap. GetCursorInputAxis uses LS, adds RS
+when the winner allows Cursor+Look, and clamps combined magnitude to one. Cursor
+speed, Y inversion, Slate delta and Look delta scaling retain their existing feel.
+IsCursorStickLookActive checks either stick independently, so opposed sticks still
+suppress mouse-warp Look even when their combined direction cancels.
+
+There is no separate virtual-axis storage, analog second write or winner-change
+reseed. Consumer permission changes do not change physical axes. Puzzle keeps its
+own radial dead zone, keyboard precedence and inverse Pan interpretation.
+
+### Synthetic pointer surface boundary
+
+The generic PC synthetic left-click helper requires external ownership and Confirm
+permission. Slate's actual hit path must contain the exact game viewport; sharing
+the active host window is insufficient. An existing pointer captor must also be
+inside that surface. Rejected targets emit no Down/Up or focus/cursor changes.
+Accepted targets use the local Slate user and hit-path window, preserve the
+recursion guard, and always pair emitted Down with Up even if the UI closes.
+Inventory's authorized receiver still calls this helper; Dialogue retains direct
+receiver execution. No Inventory/B/edge-coordinate special case is introduced.
+
+### Parkour Held and consumption
+
+Held is a continuous request. ConsumedHeldMarkers belongs to the current Marker
+overlap/execution opportunity, not an entire physical hold. Character calls
+UpdatePlayerHeldRequests with the local PC and Jump/Drop actions. Startup uses the
+existing Parkour capability and business feasibility rules, with Jump priority.
+
+A successful launch stores only the participating physical Key identities for
+that marker. GetObservedHeldKeysForAction obtains nonzero observations from the
+currently resolved mappings without reevaluating modifiers. Current Jump/Drop
+mappings are digital Space/B and Ctrl/A with no modifiers. Parkour stores no
+physical values and never adds later presses to an existing consumption.
+
+There are two independent ways to regain an execution opportunity:
+
+1. Real Exit immediately removes that marker's registration and consumption,
+   even during Parkour. Later Enter can execute with the key still Held:
+   A -> B -> A -> B is supported. Duplicate Register without Exit never rearms.
+2. Within the same overlap, all sources participating in that consumption must
+   have valid zero observations before release-based rearm. A subsequent press
+   can execute again. A Held or Unknown source blocks this release path; an unused
+   alternate binding does not. No global Action latch exists.
+
+Lost/Unknown, Transition, mapping shadow/restoration and capability denial do not
+prove Release or generate an entry. Source identity remains usable when a mapping
+is shadowed. No release history is cached: invalidating a formerly zero source
+makes it Unknown again; the same-overlap release path needs observed evidence.
+
+Marker OnEndOverlap checks TriggerBox->IsOverlappingActor before unregistering.
+UE removes the ending pair before broadcasting, so a remaining character component
+means no actor Exit. No additional overlap cache, counter or epoch ID is needed.
+FinishParkour prunes only invalid markers; it does not defer overlap-exit cleanup.
+The held update also prunes invalid entries. Component destruction ends the map's
+lifetime. Source-less scripted launches can rearm through real Exit or marker
+lifecycle termination. The bool-based Parkour Held/rearm API and Character copies
+are removed; regression fixtures submit physical observations through PC instead.
+
+### Accepted low-priority limitation
+
+After definitive ownership loss (Alt+Tab/F8), Held observation is invalidated.
+Ownership recovery does not rebuild it. A Parkour key held continuously across
+that loss may therefore require a real Release/Re-Press to resume traversal.
+The user explicitly accepts this limitation. Do not add reacquire snapshots,
+synthetic Held/Release, grace periods or guesses about missed physical events.
+A fresh observed repeat is still not Release of an already-consumed same-overlap
+request. This limitation does not apply a gameplay permission change as zero input.
+
+### Regression and handoff
+
+Input regression covers invalidation idempotence/scope, Down/Up pairing, analog
+Transition/Lost/recovery, derived LS/RS axes, synthetic pointer surface ownership,
+Parkour continuous A-B-A-B traversal, same-overlap duplicate prevention, true
+Release/Re-Press, partial multi-source release, mapping shadow, duplicate Register,
+invalid-marker cleanup and multiple character components exiting separately.
+Puzzle and Freeze regressions remain part of the full suite. The revised traversal
+assertions replace the discarded cross-overlap physical-hold restriction.
+
+Editor Win64 Development and full Input / Puzzle / Freeze regression (including
+Parkour) are the checkpoint checks. Headless tests do not replace live Slate/device
+validation; user PIE acceptance is recorded above with the explicit limitation.
+No temporary diagnostic code or console variables remain. No assets are modified.
+For stage five, retain the existing virtual-cursor/Look wiring, click recursion
+protection, Mapping Context uses and one-time Blueprint migration tool until their
+real callers/assets are separately reviewed. They are not cleanup leftovers.
+
+Final stage-four cleanup verification (2026-10-04): Editor Win64 Development
+build succeeded; Input / Puzzle / Freeze (including Parkour) passed 21/21,
+with 16 clean and 5 existing warning-bearing tests, zero failures/not-run.
+ParkourPhysicalRelease passed without warnings/errors. Final report:
+Saved/Automation/StageFourFour/index.json. git diff --check passed. Source/docs
+contain no temporary stage-four diagnostic identifiers; retired runtime Held
+bool paths, focus grace and virtual-axis copies have no remaining source matches.
+The accepted ownership-recovery limitation is not a commit blocker. This is a
+stable checkpoint for subsequent Inventory work; no stage-five work is included.

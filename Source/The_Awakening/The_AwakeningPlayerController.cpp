@@ -25,6 +25,8 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/NavigationConfig.h"
 #include "Widgets/SWindow.h"
+#include "Layout/WidgetPath.h"
+#include "Framework/Application/SlateUser.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
@@ -63,13 +65,8 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 	}
 
 	const FKey Key = InAnalogInputEvent.GetKey();
-	if (!Owner->OwnsPlayerInput())
-	{
-		Owner->RecordHeldInput(Key, 0.f, InAnalogInputEvent.GetUserIndex());
-		return false;
-	}
-	Owner->NotifyRawInputKey(Key);
-	Owner->RecordHeldInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex());
+	if (!Owner->ObserveAnalogInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex(),
+		Owner->GetPlayerInputOwnershipState())) return false;
 	if ((!Owner->AllowsInput(ETAInputCapability::Cursor) && !Owner->AllowsInput(ETAInputCapability::Pan)) || !Key.IsGamepadKey())
 	{
 		return false;
@@ -79,7 +76,6 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 		(Owner->UsesCursorLook() && (Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY)))
 	{
 		if (!Owner->GetLocalPlayer() || InAnalogInputEvent.GetUserIndex() != Owner->GetLocalPlayer()->GetControllerId()) return false;
-		Owner->SetVirtualCursorAxis(Key, InAnalogInputEvent.GetAnalogValue());
 		// Scan keeps Enhanced Input's axis state current; the character suppresses its scan Look callback.
 		return !Owner->AllowsInput(ETAInputCapability::Look);
 	}
@@ -147,11 +143,7 @@ void AThe_AwakeningPlayerController::BeginPlay()
 				if (State == EInputDeviceConnectionState::Disconnected && GetLocalPlayer() &&
 					User == GetLocalPlayer()->GetPlatformUserId())
 				{
-					for (auto It = HeldKeyValues.CreateIterator(); It; ++It)
-						if (It.Key().IsGamepadKey()) It.RemoveCurrent();
-					for (auto It = ConsumedInventoryKeys.CreateIterator(); It; ++It)
-						if (It->IsGamepadKey()) It.RemoveCurrent();
-					VirtualCursorAxis = FVector2D::ZeroVector; RightCursorAxis = FVector2D::ZeroVector;
+					InvalidateGamepadObservationOnDisconnect();
 				}
 			});
 		if (FSlateApplication::IsInitialized())
@@ -209,26 +201,48 @@ void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 	}
 }
 
+bool AThe_AwakeningPlayerController::IsSyntheticClickPathWithinPlayerSurface(
+	const FWidgetPath& Path, const TSharedPtr<SViewport>& Surface)
+{
+	return Surface.IsValid() && Path.IsValid() && Path.ContainsWidget(Surface.Get());
+}
+
 void AThe_AwakeningPlayerController::SimulateSyntheticLeftMouseClick()
 {
-	if (!FSlateApplication::IsInitialized())
+	if (!FSlateApplication::IsInitialized() || bSimulatingSyntheticLeftMouseClick ||
+		!AllowsInput(ETAInputCapability::Confirm))
 	{
 		return;
 	}
-	TGuardValue<bool> SyntheticClickGuard(bSimulatingSyntheticLeftMouseClick, true);
 	FSlateApplication& SlateApp = FSlateApplication::Get();
 	const FVector2D CursorPosition = SlateApp.GetCursorPos();
+	const auto* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	const auto Surface = Client ? Client->GetGameViewportWidget() : nullptr;
+	const int32 User = GetLocalPlayer() ? GetLocalPlayer()->GetControllerId() : 0;
+	const auto HitPath = SlateApp.LocateWindowUnderMouse(CursorPosition,
+		SlateApp.GetInteractiveTopLevelWindows(), false, User);
+	// The host window can also contain unrelated UI (including editor toolbars).
+	// Validate Slate's target, not the rectangular cursor bounds or window identity.
+	if (!IsSyntheticClickPathWithinPlayerSurface(HitPath, Surface)) return;
+	const auto SlateUser = SlateApp.GetUser(User);
+	if (SlateUser && SlateUser->HasCapture(0))
+	{
+		// ProcessMouseButtonDownEvent routes to an existing captor instead of HitPath.
+		const auto CapturePath = SlateUser->GetCaptorPath(0, FWeakWidgetPath::EInterruptedPathHandling::Truncate);
+		if (!IsSyntheticClickPathWithinPlayerSurface(CapturePath, Surface)) return;
+	}
+	TGuardValue<bool> SyntheticClickGuard(bSimulatingSyntheticLeftMouseClick, true);
 	const TSet<FKey> PressedButtons = { EKeys::LeftMouseButton };
 	const TSet<FKey> ReleasedButtons;
 	const FModifierKeysState Modifiers;
 	const FPointerEvent MouseDownEvent(
-		0, 0, CursorPosition, CursorPosition, PressedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
+		User, 0, CursorPosition, CursorPosition, PressedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
 	const FPointerEvent MouseUpEvent(
-		0, 0, CursorPosition, CursorPosition, ReleasedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
+		User, 0, CursorPosition, CursorPosition, ReleasedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
 
-	TSharedPtr<SWindow> ActiveWindow = SlateApp.GetActiveTopLevelWindow();
-	const TSharedPtr<FGenericWindow> NativeWindow = ActiveWindow.IsValid() ? ActiveWindow->GetNativeWindow() : nullptr;
+	const auto NativeWindow = HitPath.GetWindow()->GetNativeWindow();
 	SlateApp.ProcessMouseButtonDownEvent(NativeWindow, MouseDownEvent);
+	// Always finish an emitted Down, even if its handler closes the originating UI.
 	SlateApp.ProcessMouseButtonUpEvent(MouseUpEvent);
 }
 
@@ -251,6 +265,26 @@ void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int3
 	}
 }
 
+TOptional<FVector> AThe_AwakeningPlayerController::FindHeldKeyObservation(FKey Key) const
+{
+	if (const FVector* Value = HeldKeyValues.Find(Key)) return *Value;
+	return {};
+}
+
+TArray<FKey> AThe_AwakeningPlayerController::GetObservedHeldKeysForAction(const UInputAction* Action) const
+{
+	TArray<FKey> Sources;
+	const auto* Input = Cast<UTAPlayerInput>(PlayerInput);
+	if (Input && Action)
+		for (const auto& Mapping : Input->GetHeldActionMappings())
+		{
+			const auto Value = FindHeldKeyObservation(Mapping.Key);
+			if (Mapping.Action == Action && Value.IsSet() && !Value.GetValue().IsNearlyZero())
+				Sources.AddUnique(Mapping.Key);
+		}
+	return Sources;
+}
+
 bool AThe_AwakeningPlayerController::ConsumeInventoryTogglePress(const UInputAction* Action)
 {
 	if (!ConsumedInventoryKeys.IsEmpty()) return false;
@@ -268,9 +302,7 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 	FInputActionValue Result(Action->ValueType, FVector::ZeroVector);
 	const UTAPlayerInput* Enhanced = Cast<UTAPlayerInput>(PlayerInput);
 	if (!Enhanced) return Result;
-	// UI -> game focus may take a frame to settle. Suppress gameplay while unfocused,
-	// but preserve held keys so a keyboard does not need a second key-down to resume.
-	// Key-up events still update the cache; actual application deactivation clears it.
+	// Read physical observation only; consumers apply ownership/capability permission.
 	auto Modify = [&](const TArray<TObjectPtr<UInputModifier>>& Modifiers, FInputActionValue Value)
 	{
 		for (UInputModifier* Source : Modifiers)
@@ -328,41 +360,75 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIsActive)
 {
 	bApplicationInputActive = bIsActive;
-	if (!bIsActive)
-	{
-		HeldKeyValues.Reset();
-		ConsumedInventoryKeys.Reset();
-		HeldInputModifiers.Reset();
-		VirtualCursorAxis = FVector2D::ZeroVector; RightCursorAxis = FVector2D::ZeroVector;
-		if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
-	}
 	// Activation can precede Slate's updated focus state. Inactivity is definitive;
 	// activation only requests a fresh observation, never synthesizes a key release.
-	ObservePlayerInputOwnership(bIsActive ? TAInputOwnershipAdapter::GetState(this)
-		: TAInputOwnershipAdapter::EState::Lost);
+	ObservePlayerInputOwnership(GetPlayerInputOwnershipState());
 }
 
-void AThe_AwakeningPlayerController::SetVirtualCursorAxis(const FKey& AxisKey, float Value)
+TAInputOwnershipAdapter::EState AThe_AwakeningPlayerController::GetPlayerInputOwnershipState() const
 {
-	constexpr float DeadZone = 0.18f;
-	const float Magnitude = FMath::Abs(Value);
-	const float Remapped = Magnitude <= DeadZone ? 0.0f : FMath::Sign(Value) * ((Magnitude - DeadZone) / (1.0f - DeadZone));
-	if (AxisKey == EKeys::Gamepad_LeftX)
+	return bApplicationInputActive ? TAInputOwnershipAdapter::GetState(this) : TAInputOwnershipAdapter::EState::Lost;
+}
+
+bool AThe_AwakeningPlayerController::ObserveAnalogInput(FKey Key, float Value, int32 UserIndex,
+	TAInputOwnershipAdapter::EState State)
+{
+	ObservePlayerInputOwnership(State);
+	if (State != TAInputOwnershipAdapter::EState::Owned) return false;
+	NotifyRawInputKey(Key);
+	RecordHeldInput(Key, Value, UserIndex);
+	return true;
+}
+
+void AThe_AwakeningPlayerController::InvalidatePhysicalObservationForExternalOwnership()
+{
+	HeldKeyValues.Reset();
+	HeldInputModifiers.Reset();
+	ConsumedInventoryKeys.Reset();
+	// Preserve the existing external-loss cleanup; permission denial never calls this.
+	if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
+	// Do not generate Released, change requests, or clear the processor's Down/Up pairing.
+}
+
+void AThe_AwakeningPlayerController::InvalidateGamepadObservationOnDisconnect()
+{
+	// The caller retains the existing local platform-user/disconnected filtering.
+	// Held values are keyed by FKey, not device ID: this is the existing gamepad scope.
+	for (auto It = HeldKeyValues.CreateIterator(); It; ++It)
+		if (It.Key().IsGamepadKey()) It.RemoveCurrent();
+	for (auto It = ConsumedInventoryKeys.CreateIterator(); It; ++It)
+		if (It->IsGamepadKey()) It.RemoveCurrent();
+}
+
+FVector2D AThe_AwakeningPlayerController::ReadCursorStick(FKey PairedAxisKey) const
+{
+	const FVector Observed = ReadHeldKey(PairedAxisKey);
+	auto Remap = [](float Value)
 	{
-		VirtualCursorAxis.X = Remapped;
-	}
-	else if (AxisKey == EKeys::Gamepad_LeftY)
-	{
-		VirtualCursorAxis.Y = Remapped;
-	}
-	else if (AxisKey == EKeys::Gamepad_RightX) RightCursorAxis.X = Remapped;
-	else if (AxisKey == EKeys::Gamepad_RightY) RightCursorAxis.Y = Remapped;
+		constexpr float DeadZone = 0.18f;
+		const float Magnitude = FMath::Abs(Value);
+		return Magnitude <= DeadZone ? 0.0f : FMath::Sign(Value) * ((Magnitude - DeadZone) / (1.0f - DeadZone));
+	};
+	return FVector2D(Remap(Observed.X), Remap(Observed.Y));
+}
+
+FVector2D AThe_AwakeningPlayerController::GetCursorInputAxis() const
+{
+	return (ReadCursorStick(EKeys::Gamepad_Left2D) +
+		(UsesCursorLook() ? ReadCursorStick(EKeys::Gamepad_Right2D) : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
+}
+
+bool AThe_AwakeningPlayerController::IsCursorStickLookActive() const
+{
+	// Preserve warp suppression even when the two deflected sticks cancel each other.
+	return UsesCursorLook() && (!ReadCursorStick(EKeys::Gamepad_Left2D).IsNearlyZero() ||
+		!ReadCursorStick(EKeys::Gamepad_Right2D).IsNearlyZero());
 }
 
 void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 {
 	if (!AllowsInput(ETAInputCapability::Cursor)) return;
-	const FVector2D CursorAxis = (VirtualCursorAxis + (UsesCursorLook() ? RightCursorAxis : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
+	const FVector2D CursorAxis = GetCursorInputAxis();
 	if (!bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
 	{
 		return;
@@ -458,16 +524,8 @@ bool AThe_AwakeningPlayerController::AllowsInput(ETAInputCapability Capability) 
 
 void AThe_AwakeningPlayerController::RefreshInputOwnership()
 {
-	ObservePlayerInputOwnership(bApplicationInputActive ? TAInputOwnershipAdapter::GetState(this)
-		: TAInputOwnershipAdapter::EState::Lost);
+	ObservePlayerInputOwnership(GetPlayerInputOwnershipState());
 	SynchronizeInputPresentation();
-	if (OwnsPlayerInput()) return;
-	// SetInputMode transfers Slate focus asynchronously. Preserve physical state
-	// briefly across our own transfer; permission stays denied until focus arrives.
-	if (bApplicationInputActive && GFrameCounter <= InternalFocusTransitionUntil) return;
-	HeldKeyValues.Reset(); HeldInputModifiers.Reset(); ConsumedInventoryKeys.Reset();
-	VirtualCursorAxis = RightCursorAxis = FVector2D::ZeroVector;
-	if (auto* ControlledPawn = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledPawn->ClearMovementInput();
 }
 
 bool AThe_AwakeningPlayerController::AllowsInputFor(FTAInputRouter::FHandle Handle, const UObject* RequestOwner, ETAInputCapability Capability) const
@@ -480,15 +538,17 @@ void AThe_AwakeningPlayerController::ObservePlayerInputOwnership(TAInputOwnershi
 	using TAInputOwnershipAdapter::EState;
 	if (State == EState::Transition) return; // Unknown focus gap is neither a grant nor a loss.
 	const bool bLost = State == EState::Lost && LastDefinitiveInputOwnership == EState::Owned;
+	const bool bInvalidate = State == EState::Lost && LastDefinitiveInputOwnership != EState::Lost;
 	LastDefinitiveInputOwnership = State; // Commit before callbacks can release requests/re-enter.
+	// Initial Lost also invalidates, but only an Owned -> Lost edge cancels held behaviors.
+	if (bInvalidate) InvalidatePhysicalObservationForExternalOwnership();
 	if (bLost) OnPlayerInputOwnershipLost.Broadcast();
 }
 
 FTAInputRouter::FHandle AThe_AwakeningPlayerController::AcquireInputRequest(const FTAInputRequest& Request)
 {
 	if (!IsLocalPlayerController()) return 0;
-	ObservePlayerInputOwnership(bApplicationInputActive ? TAInputOwnershipAdapter::GetState(this)
-		: TAInputOwnershipAdapter::EState::Lost);
+	ObservePlayerInputOwnership(GetPlayerInputOwnershipState());
 	const auto Handle = InputRouter.Acquire(Request);
 	SynchronizeInputPresentation();
 	return Handle;
@@ -518,10 +578,6 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 	if (!ObservedWinnerHandle.IsSet() || ObservedWinnerHandle.GetValue() != Winner.Handle)
 	{
 		ObservedWinnerHandle = Winner.Handle;
-		SetVirtualCursorAxis(EKeys::Gamepad_LeftX, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).X);
-		SetVirtualCursorAxis(EKeys::Gamepad_LeftY, HeldKeyValues.FindRef(EKeys::Gamepad_Left2D).Y);
-		SetVirtualCursorAxis(EKeys::Gamepad_RightX, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).X);
-		SetVirtualCursorAxis(EKeys::Gamepad_RightY, HeldKeyValues.FindRef(EKeys::Gamepad_Right2D).Y);
 		OnInputOwnerChanged.Broadcast();
 		// A listener may release its request. Never apply a stale winner after callbacks.
 		Winner = GetInputWinner();
@@ -547,7 +603,6 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 		PresentedFocusTarget == Focus && PresentedViewport.Pin() == Viewport) return;
 	if (!Viewport.IsValid() || !TAInputOwnershipAdapter::CanApplyPresentation(this)) return;
 	const TSharedPtr<SWidget> FocusWidget = Focus ? Focus->GetCachedWidget() : Viewport;
-	InternalFocusTransitionUntil = GFrameCounter + 2; // Existing held-cache transition grace; unchanged in this stage.
 	switch (Presentation.InputMode)
 	{
 	case ETAInputModeRequirement::GameOnly:

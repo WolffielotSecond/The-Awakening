@@ -139,7 +139,8 @@ void AThe_AwakeningCharacter::Tick(float DeltaTime)
 	UpdateInteractTarget();
 	UpdateHeldGameplayInput();
 	UpdateMovementInput();
-	if (ParkourComponent) ParkourComponent->UpdateHeldRequests(bParkourJumpHeld, bParkourDropHeld);
+	if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetController()); ParkourComponent && PC && PC->IsLocalController())
+		ParkourComponent->UpdatePlayerHeldRequests(PC, ParkourJumpAction, ParkourDropAction);
 	UpdateSpriteFacing();
 }
 
@@ -288,9 +289,6 @@ void AThe_AwakeningCharacter::UpdateHeldGameplayInput()
 		StickInput = FVector2D(MoveValue[0], MoveValue[1]);
 		MovementCommandYaw = GetController()->GetControlRotation().Yaw;
 	}
-	// Physical release must rearm held parkour even when starting is unauthorized.
-	bParkourJumpHeld = PC->ReadHeldAction(ParkourJumpAction).IsNonZero();
-	bParkourDropHeld = PC->ReadHeldAction(ParkourDropAction).IsNonZero();
 }
 
 void AThe_AwakeningCharacter::UpdateMovementInput()

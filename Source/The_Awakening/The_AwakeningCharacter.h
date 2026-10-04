@@ -243,8 +243,6 @@ protected:
 
 	void UpdateMovementInput();
 	void UpdateHeldGameplayInput();
-	bool bParkourJumpHeld = false;
-	bool bParkourDropHeld = false;
 	void TryPlayerInteract();
 
 	void OnScanStarted(const FInputActionValue& Value);
