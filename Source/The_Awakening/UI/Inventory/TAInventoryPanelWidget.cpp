@@ -14,7 +14,6 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/SizeBox.h"
-#include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
 #include "Core/TALocalizeSubsystem.h"
@@ -39,8 +38,6 @@ FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry
 {
 	// Covered owners must not receive stale focus input through Blueprint handlers.
 	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return FReply::Handled();
-	if (Event.IsRepeat() && (Event.GetKey() == EKeys::Tab || Event.GetKey() == EKeys::Gamepad_Special_Left))
-		return FReply::Handled();
 	return Super::NativeOnPreviewKeyDown(Geometry, Event);
 }
 

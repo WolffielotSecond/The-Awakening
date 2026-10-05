@@ -20,10 +20,6 @@
 #include "Engine/GameViewportClient.h"
 #include "Widgets/SViewport.h"
 #include "The_AwakeningCharacter.h"
-#include "Components/Button.h"
-#include "Blueprint/WidgetTree.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Framework/Application/NavigationConfig.h"
 #include "Widgets/SWindow.h"
 #include "Layout/WidgetPath.h"
 #include "Framework/Application/SlateUser.h"
@@ -152,20 +148,6 @@ void AThe_AwakeningPlayerController::BeginPlay()
 			ApplicationActivationHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(
 				this, &AThe_AwakeningPlayerController::NotifyApplicationActivationChanged);
 		}
-	}
-	if (IsLocalPlayerController() && FSlateApplication::IsInitialized())
-	{
-		TSharedRef<FNavigationConfig> NavigationConfig =
-			FSlateApplication::Get().GetNavigationConfig();
-
-		// Tab / Shift+Tab
-		NavigationConfig->bTabNavigation = false;
-
-		// 键盘方向键 / D-Pad
-		NavigationConfig->bKeyNavigation = false;
-
-		// 手柄摇杆
-		NavigationConfig->bAnalogNavigation = false;
 	}
 }
 

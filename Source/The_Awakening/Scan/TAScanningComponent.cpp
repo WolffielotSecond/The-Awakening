@@ -160,18 +160,6 @@ void UTAScanningComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		UpdateHoveredTarget();
 		UpdateScanInfoWidgetPosition();
 	}
-	/*
-	//debug print time
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			0.0f,
-			FColor::Green,
-			FString::Printf(TEXT("ScanNormalizedTime: %.3f"), ScanNormalizedTime)
-		);
-	}
-	*/
 	switch (ScanState)
 	{
 		case ETAScanState::FadeIn:
@@ -331,12 +319,6 @@ bool UTAScanningComponent::UpdateScanState(ETAScanState NewState, bool bForce)
 				SetComponentTickEnabled(false);
 			}
 			break;
-		/*
-		case ETAScanState::Invalid:
-			SetComponentTickEnabled(false);
-			DestroyScanPPActor();
-			break;
-*/
 		default:
 			break;
 	}

@@ -23,6 +23,9 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Engine/LocalPlayer.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWindow.h"
+#include "Widgets/Layout/SBorder.h"
 
 namespace
 {
@@ -32,6 +35,18 @@ struct FUIIngressMappings : IEnhancedInputSubsystemInterface
 	TMap<TObjectPtr<const UInputAction>, FInjectedInput> Injected;
 	virtual UEnhancedPlayerInput* GetPlayerInput() const override { return Input; }
 	virtual TMap<TObjectPtr<const UInputAction>, FInjectedInput>& GetContinuouslyInjectedInputs() override { return Injected; }
+};
+
+// Observe whether input reaches the UMG path at all; production routing remains unchanged.
+class SInventoryPreviewProbe : public SBorder
+{
+public:
+	int32 Previews = 0;
+	virtual FReply OnPreviewKeyDown(const FGeometry&, const FKeyEvent&) override
+	{
+		++Previews;
+		return FReply::Unhandled();
+	}
 };
 }
 
@@ -160,6 +175,102 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	TestNull(TEXT("Player debug puzzle opener cannot bypass dialogue owner"),
 		UTAPathPuzzleWidget::OpenPuzzleWithSettingsFromPlayerInput(PC, nullptr, FTAPuzzleSettings()));
 	History->NativeDestruct(); Dialogue->RemoveFromParent(); Dialogue->NativeDestruct(); Session->Shutdown();
+	World->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAInventoryRepeatRoutingTest, "TheAwakening.Input.InventoryRepeatRouting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTAInventoryRepeatRoutingTest::RunTest(const FString&)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	auto* PCClass = LoadClass<AThe_AwakeningPlayerController>(nullptr,
+		TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
+	auto* PC = PCClass ? World->SpawnActor<AThe_AwakeningPlayerController>(PCClass) : nullptr;
+	auto* PanelClass = LoadClass<UTAInventoryPanelWidget>(nullptr,
+		TEXT("/Game/UI/Inventory/WBP_InventoryPanel.WBP_InventoryPanel_C"));
+	if (!TestNotNull(TEXT("Controller"), PC) || !TestNotNull(TEXT("Actual inventory WBP"), PanelClass) ||
+		!TestTrue(TEXT("Slate initialized"), FSlateApplication::IsInitialized()))
+	{ World->DestroyWorld(false); return false; }
+	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
+	World->AddController(PC);
+	PC->PlayerInput = NewObject<UTAPlayerInput>(PC);
+	FUIIngressMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
+	FModifyContextOptions Options; Options.bForceImmediately = true;
+	auto* Close = NewObject<UInputAction>();
+	auto* Context = NewObject<UInputMappingContext>();
+	Local->SetControllerId(0); // A raw NewObject LocalPlayer has no valid Slate user yet.
+	const int32 User = Local->GetControllerId();
+	auto& Slate = FSlateApplication::Get();
+	const auto PreviousFocus = Slate.GetUserFocusedWidget(User);
+	const auto Host = SNew(SWindow);
+	Slate.RegisterVirtualWindow(Host);
+	const auto Processor = MakeShared<FTAInputDeviceDetector>(PC);
+	Slate.RegisterInputPreProcessor(Processor, 0);
+	for (const FKey Key : {EKeys::Tab, EKeys::Gamepad_Special_Left, EKeys::K})
+	{
+		AddInfo(TEXT("Toggle source: ") + Key.ToString());
+		Mappings.RemoveMappingContext(Context, Options);
+		Context->UnmapAll(); Context->MapKey(Close, Key);
+		Mappings.AddMappingContext(Context, 0, Options);
+		const FKeyEvent Down(Key, FModifierKeysState(), User, false, 0, 0);
+		const FKeyEvent Repeat(Key, FModifierKeysState(), User, true, 0, 0);
+		// The first base-state Down goes to Gameplay's Enhanced Input Started entry.
+		// Exercise its existing toggle latch, then construct the real WBP as that entry does.
+		TestFalse(TEXT("Base Down is not executed by UI router"), Processor->HandleKeyDownEvent(Slate, Down));
+		TestTrue(TEXT("Gameplay opening press accepted once"), PC->ConsumeInventoryTogglePress(Close));
+		auto* Inventory = CreateWidget<UTAInventoryPanelWidget>(PC, PanelClass);
+		Inventory->Init(nullptr, Close);
+		const auto Surface = Inventory->TakeWidget();
+		const auto Probe = SNew(SInventoryPreviewProbe)[Surface];
+		Host->SetContent(Probe);
+		TestTrue(TEXT("Focus actual inventory Slate widget"), Slate.SetUserFocus(User, Surface));
+		const auto OpenHandle = Inventory->GetPlayerInputRequestHandle();
+		TestTrue(TEXT("Actual Inventory acquired ownership"), OpenHandle != 0);
+		for (int32 I = 0; I < 3; ++I)
+			TestTrue(TEXT("Mapped Repeat consumed before UMG Preview"), Slate.ProcessKeyDownEvent(Repeat));
+		TestEqual(TEXT("No Blueprint/UMG Preview path for mapped Repeat"), Probe->Previews, 0);
+		TestEqual(TEXT("Opening hold cannot close Inventory"), Inventory->GetPlayerInputRequestHandle(), OpenHandle);
+		TestTrue(TEXT("Duplicate non-repeat delivery is also latched"), Slate.ProcessKeyDownEvent(Down));
+		TestEqual(TEXT("Same opening Down cannot toggle twice"), Inventory->GetPlayerInputRequestHandle(), OpenHandle);
+		TestTrue(TEXT("Held remains observed while menu consumes input"), PC->ReadHeldKey(Key).X != 0.f);
+		if (Key == EKeys::K)
+			for (const FKey OldKey : {EKeys::Tab, EKeys::Gamepad_Special_Left})
+			{
+				TestFalse(TEXT("Rebound close does not resolve old key names"), Inventory->ResolvePlayerInput(OldKey).IsSet());
+				TestFalse(TEXT("Authorized unmapped Repeat has no hardcoded Preview interception"),
+					Surface->OnPreviewKeyDown(FGeometry(), FKeyEvent(OldKey, FModifierKeysState(), User, true, 0, 0)).IsEventHandled());
+			}
+		TestTrue(TEXT("Up pairs consumed menu Down/Repeat"), Slate.ProcessKeyUpEvent(Down));
+		TestTrue(TEXT("Physical Release is observed as zero"), PC->ReadHeldKey(Key).IsNearlyZero());
+		TestTrue(TEXT("New Press routes authorized close"), Slate.ProcessKeyDownEvent(Down));
+		TestEqual(TEXT("New Press closes exactly once"), Inventory->GetPlayerInputRequestHandle(), uint64(0));
+		Slate.ProcessKeyDownEvent(Repeat);
+		TestFalse(TEXT("Closing hold cannot reopen through Gameplay latch"), PC->ConsumeInventoryTogglePress(Close));
+		TestTrue(TEXT("Stale Widget stops Preview before Blueprint Super"), Surface->OnPreviewKeyDown(FGeometry(), Repeat).IsEventHandled());
+		TestTrue(TEXT("Closing Down's Up stays paired after Request release"), Slate.ProcessKeyUpEvent(Down));
+		TestFalse(TEXT("Base Down after Release remains Gameplay ingress"), Processor->HandleKeyDownEvent(Slate, Down));
+		TestTrue(TEXT("Release then Press rearms normal opening"), PC->ConsumeInventoryTogglePress(Close));
+		Inventory->NativeDestruct();
+
+		auto* Reopened = CreateWidget<UTAInventoryPanelWidget>(PC, PanelClass);
+		Reopened->Init(nullptr, Close);
+		const auto ReopenedSurface = Reopened->TakeWidget();
+		Host->SetContent(ReopenedSurface); Slate.SetUserFocus(User, ReopenedSurface);
+		FTAInputRequest Cover; Cover.Owner = PC; Cover.Priority = 400;
+		Cover.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::InventoryToggle};
+		const auto CoverHandle = PC->AcquireInputRequest(Cover);
+		TestFalse(TEXT("Covered Inventory cannot borrow winner Navigate"), Reopened->AllowsPlayerInput(ETAInputCapability::Navigate));
+		TestTrue(TEXT("Covered Preview stops before Blueprint Super"), ReopenedSurface->OnPreviewKeyDown(FGeometry(), Repeat).IsEventHandled());
+		Reopened->ExecutePlayerInput(Key, ETAInputCapability::InventoryToggle);
+		TestTrue(TEXT("Covered player behavior cannot close request"), Reopened->GetPlayerInputRequestHandle() != 0);
+		PC->ReleaseInputRequest(CoverHandle);
+		Reopened->RemoveFromParent(); Reopened->NativeDestruct();
+		Processor->HandleKeyUpEvent(Slate, Down);
+	}
+	Slate.ClearUserFocus(User); Slate.UnregisterInputPreProcessor(Processor);
+	Slate.UnregisterVirtualWindow(Host);
+	if (PreviousFocus.IsValid()) Slate.SetUserFocus(User, PreviousFocus);
 	World->DestroyWorld(false);
 	return true;
 }

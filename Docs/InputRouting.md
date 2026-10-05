@@ -29,7 +29,13 @@ keyboard/mouse and gamepad paths. Mobile/touch is not a project target; its temp
 widget creation entry point has been removed rather than migrated into ownership.
 Stage-two interactive PIE acceptance is complete. Stage-three Scan/Freeze fixes are
 PIE accepted; final cleanup does not change input consumption or gameplay behavior.
-Stage four (4.1-4.4, including the synthetic click surface fix) is PIE accepted. Final cleanup preserves behavior; stage five is not started.
+Stage four (4.1-4.4, including the synthetic click surface fix) is PIE accepted.
+Stage 5.1 scoped Slate navigation is implemented, automated and user PIE accepted.
+Stage 5.2 verified migration/source cleanup is accepted. Stage 5.3's redundant
+Inventory Preview repeat interception removal passed automation and user PIE smoke.
+Stage 5.4 final audit changes documentation only; no new runtime refactoring.
+Stages 1-5 are complete. Final compile, regression and diff checks passed; this is
+a stable checkpoint with the explicitly accepted ownership-recovery limitation.
 
 ## External player input ownership lifecycle
 
@@ -260,7 +266,7 @@ it actually implements; a capability does not itself bind a key or execute an ac
 
 | Player action | Authorized execution path |
 |---|---|
-| Move/sprint | Physical Held observation -> Character held-intent update -> Move gate -> DoMove; no parallel EI state writer |
+| Move/sprint | Physical Held observation -> Move-authorized UpdateHeldGameplayInput -> UpdateMovementInput -> ExecuteMovementCommand; no parallel EI state writer. A live Freeze request advances the already accepted command without accepting new intent |
 | Look | EI Look or cursor-look calculation -> SubmitPlayerLook -> Look gate -> DoLook |
 | Interact | TryPlayerInteract -> Interact gate -> TryInteract / domain CanInteract |
 | Parkour start/preview | CanPlayerParkourToMarker -> Parkour gate + domain CanParkourToMarker -> existing execution |
@@ -283,9 +289,10 @@ Drop checks source and destination ownership. Drag cancel remains callable while
 
 Actual exported WBP graphs have no independent player behavior callbacks bypassing
 these handlers. The Character B debug graph did directly call the public Puzzle opener;
-the editor-only TAInputBlueprintMigration commandlet migrated that single call to
+the one-time editor commandlet migrated that single call to
 OpenPuzzleWithSettingsFromPlayerInput, verified unchanged pin defaults/links, compiled
-and saved it. This is an asset migration tool, not a runtime manager or registry.
+and saved it. The completed migration commandlet was removed in Stage 5.2; Git
+retains its history. The player-input entry and migrated Blueprint remain intact.
 
 Public domain functions (DoMove/DoLook/TryInteract, Parkour/Scan domain calls, Inventory
 data commands, Puzzle SelectNode/Undo/OpenPuzzleWithSettings) remain script/system/test
@@ -395,11 +402,12 @@ instrumentation; LastTimerUpdateSeconds is the live timer's consumption position
 
 Stage four is accepted. Its final observation, pairing, cursor-axis and Parkour consumption contracts are documented below; no focus frame grace remains.
 
-For stage-five review (not implementation or a newly approved framework), PC still
+After stage-five review, PC deliberately retains
 contains virtual-cursor/Character cursor-speed and Look plumbing plus the synthetic
 click recursion guard. These are real behavior, not trace leftovers; any extraction
-must preserve device feel. The editor-only one-time B-key Blueprint migration tool
-also remains, with its BlueprintGraph dependency, for explicit/reproducible migration.
+must preserve device feel. The one-time Blueprint migration tool was retained at
+the Stage 4 checkpoint, then removed after asset verification in Stage 5.2 together
+with its otherwise-unused direct BlueprintGraph module dependency.
 Saved audit scripts/logs are offline artifacts, not runtime input paths.
 
 Mapping contexts/resource guards stay for mapped key lookup and prompt icons. Inventory
@@ -431,7 +439,8 @@ regression, not a guarantee about arbitrary future Blueprint event wiring.
 ## Stage four: accepted physical observation and consumption contract
 
 Stages 4.1-4.4 and the synthetic pointer surface fix passed user PIE acceptance.
-This is the final implementation contract. Stage five is not started.
+This is the final stage-four implementation contract; stage-five changes below do
+not change its observation or Gameplay semantics.
 
 ### Physical observation and invalidation
 
@@ -556,8 +565,9 @@ Parkour) are the checkpoint checks. Headless tests do not replace live Slate/dev
 validation; user PIE acceptance is recorded above with the explicit limitation.
 No temporary diagnostic code or console variables remain. No assets are modified.
 For stage five, retain the existing virtual-cursor/Look wiring, click recursion
-protection, Mapping Context uses and one-time Blueprint migration tool until their
-real callers/assets are separately reviewed. They are not cleanup leftovers.
+protection and Mapping Context uses. Stage 5 asset/caller review confirmed these
+still have real responsibilities; only the completed one-time migration tool was
+removed in Stage 5.2.
 
 Final stage-four cleanup verification (2026-10-04): Editor Win64 Development
 build succeeded; Input / Puzzle / Freeze (including Parkour) passed 21/21,
@@ -567,4 +577,188 @@ Saved/Automation/StageFourFour/index.json. git diff --check passed. Source/docs
 contain no temporary stage-four diagnostic identifiers; retired runtime Held
 bool paths, focus grace and virtual-axis copies have no remaining source matches.
 The accepted ownership-recovery limitation is not a commit blocker. This is a
-stable checkpoint for subsequent Inventory work; no stage-five work is included.
+stable historical stage-four checkpoint. Subsequent stage-five work is recorded below.
+
+## Stage 5.1: game-scoped Slate focus navigation
+
+DefaultEngine.ini selects UTAGameViewportClient. It overrides the existing
+UGameViewportClient::HandleNavigation hook and returns handled without changing
+focus. The controller no longer writes application-global NavigationConfig flags.
+No configuration snapshot, delegate registry, mode branch or timer is added.
+
+UE 5.6 converts unhandled focusable-widget key/analog input into an FReply navigation
+request in SWidget::OnKeyDown/OnAnalogValueChanged. ProcessReply resolves a candidate;
+ExecuteNavigation consults the window's ISlateViewport only when the source focus
+path contains that viewport's widget. FSceneViewport forwards to its viewport client
+before Slate sets navigation focus. RegisterGameViewport/RegisterViewport establish
+this chain for standalone and Selected Viewport PIE. The policy therefore belongs to
+the game viewport's lifetime and applies to its local users, not the application.
+Editor siblings in the same host window do not pass the source-path containment test;
+other PIE windows have their own viewport. No Editor-specific code is needed here.
+
+This consumes Slate navigation focus requests, including explicit navigation
+destinations, while leaving direct SetUserFocus/Presentation available. Current UI
+uses receiver actions and pointer interactions, not intentional Slate focus travel.
+New UI that intentionally needs automatic/explicit Slate navigation must revise this
+viewport policy explicitly rather than adding a PC mode exception. Detached popup
+windows outside the game viewport path are outside this hook's scope.
+
+RoutePlayerInputKey runs earlier in InputPreProcessors; authorized receiver Navigate
+does not become a Slate navigation request. Cursor/Pan observation and consumer
+algorithms are unchanged. Scan focuses the viewport and retains its existing
+SceneViewport axis delivery and cursor-look path. Button Accept/Back classification,
+UMG pointer clicks/drag/drop and synthetic-click validation are not handled by this
+hook. History's Accept -> Close callback remains intact.
+
+UE's GetRelevantNavConfig already selects a separate EditorNavigationConfig for the
+keyboard user outside registered game viewports. The old writes cannot be described
+as disabling all Editor navigation; they still modified shared application game
+configuration without a viewport lifetime. The scoped replacement modifies neither
+configuration and installs no BeginPlay/EndPlay restore logic.
+
+Validation (2026-10-05): Editor Win64 Development succeeded. Input/Puzzle/Freeze,
+including Parkour, passed 22/22 (17 clean, 5 existing warning-bearing tests).
+ScopedNavigation uses a virtual Slate window, actual ProcessReply/FSceneViewport
+routing and a deterministic candidate to verify game rejection versus a same-window
+non-game source, raw Tab/Arrow/D-pad conversion, controller navigation, direct focus,
+Enter/Space/Virtual Accept and Back classification, and unchanged global flags.
+It does not replace interactive PIE, device, popup or concurrent-PIE validation.
+Report: Saved/Automation/StageFiveOne/index.json.
+
+Restart the Editor before PIE acceptance: the configured viewport-client class is
+selected at engine startup; hot reload does not replace an existing viewport client.
+Verify Editor Tab/Arrow before/during/after PIE; Inventory/Dialogue/History/Puzzle
+Tab/Shift+Tab/Arrow/D-pad/LS without automatic focus travel; custom receiver Navigate;
+History Accept; legal/edge synthetic clicks; Scan Cursor+Look; F8/Alt+Tab and Stop PIE.
+Stage 5.1 subsequently passed the user's interactive PIE acceptance.
+
+## Stage 5.2: verified migration/source cleanup
+
+Removed the completed input Blueprint migration commandlet (.h/.cpp). No other
+source uses its BlueprintGraph API, so the editor module's direct dependency is
+removed too. KismetCompiler, AssetRegistry and the other editor dependencies remain;
+the puzzle-layout and story-editor tools are not part of this cleanup.
+
+Removed unused PC Button/WidgetTree includes and the duplicate SlateApplication
+include, plus Inventory's unused EnhancedInputComponent include. Removed the obsolete
+stick > 0.5 Sprint comment and two commented-out Scan blocks (debug print and an old
+Invalid case). No executable gameplay statements or assets change. Scan duration's
+intentionally disabled decrement, Puzzle Retry placeholder, mapping contexts, public
+business APIs and Inventory repeat interception remain unchanged.
+
+Stage 5.2 validation (2026-10-05): Editor Win64 Development succeeded after removing
+the direct BlueprintGraph dependency. Full Input/Puzzle/Freeze regression (including
+Parkour and scoped navigation) passed 22/22: 17 clean, 5 existing warning-bearing,
+zero failures/not-run. git diff --check passed. Source/config/docs contain no removed
+commandlet-name references. Report: Saved/Automation/StageFiveTwo/index.json.
+This is behavior-neutral source/dependency cleanup; no additional PIE pass is required.
+Stage 5.2 is code-accepted under the user's criteria.
+
+## Stage 5.3: Inventory Preview repeat interception
+
+Removed only the hardcoded Tab/Gamepad_Special_Left repeat Handled branch from
+Inventory NativeOnPreviewKeyDown. The exact owner/handle/Navigate authorization
+defense still returns Handled before Blueprint Super for stale or unauthorized UI.
+
+The physical processor observes Down before routing. In base Gameplay, the first
+Inventory Toggle reaches Enhanced Input Started and the Character opening entry.
+ConsumeInventoryTogglePress latches the currently held mapped sources. With an
+Inventory receiver winner, RoutePlayerInputKey consumes mapped Repeat without
+executing Close; Slate therefore never delivers that Repeat to UMG Preview.
+Duplicate Toggle attempts during the same hold are rejected by ConsumedInventoryKeys.
+After closing, the latch still prevents reopening until physical Up clears it;
+processor ConsumedPresses independently pairs the matching Up even after owner release.
+These policies use Action mappings, not the Tab/SpecialLeft key names.
+
+Authorized Preview may observe an unmapped Repeat; observation grants no behavior
+permission. The current Inventory Blueprint has no Preview behavior handler. Future
+Blueprint player behavior must use authorized receiver/entry paths; a raw public
+business call is intentionally also available to scripts and is not a player gate.
+
+InventoryRepeatRouting tests actual Slate routing and the Inventory WBP with Tab,
+SpecialLeft and a transient K rebind. Opening uses the existing Toggle-latch fixture
+seam; closing routes the actual receiver. Tests cover repeated/duplicate delivery,
+release and re-press, held close/no reopen, pairing after owner release, mapped Repeat
+not reaching Preview, and stale/non-winner Preview and behavior rejection.
+
+Validation (2026-10-05): Editor Win64 Development succeeded. Full Input/Puzzle/Freeze
+regression including Parkour and scoped navigation passed 23/23: 18 clean, 5 existing
+warning-bearing, zero failures/not-run; the new test has no warnings or errors.
+Report: Saved/Automation/StageFiveThree/index.json. git diff --check passed.
+The user subsequently passed the 5.3 Inventory PIE smoke and formally accepted it.
+No mapping assets or other runtime paths changed.
+
+## Stage 5.4: final responsibilities and extension boundary
+
+Final source audit found no remaining legacy ownerless request/release API, UI
+ownership bool/count, historical Presentation snapshot, focus frame grace, separate
+virtual axes/reseed, PC Puzzle behavior, retired Parkour bool-rearm path, temporary
+Stage3/P44 trace/CVar, removed migration commandlet reference or runtime global
+NavigationConfig write. Tests deliberately set/restore fixture focus; the localization
+editor tool focuses its own editor surface. Neither is a player Presentation writer.
+Unused Touch assets remain outside the supported runtime input path. Saved audit
+artifacts and the capability-gated debug puzzle opener are not migration execution.
+
+| Layer | Owns / may know | Does not own |
+|---|---|---|
+| Router | Live owner requests, exact handles, exclusive capability winner, declarative Presentation | Slate, editor state, receivers, Gameplay execution |
+| Ownership Adapter | External game surface Owned/Transition/Lost; centralized PIE simulation/focus evidence | Router arbitration, Held reconstruction, Gameplay cancellation |
+| Input Processor | Device observation, physical Down/Up/analog delivery, consumed delivery pairing, forwarding to PC | UI rules, independent permissions, Presentation restoration |
+| PlayerController | Sole Held physical truth, ownership edges, authorized winner forwarding, applying Presentation, cursor/synthetic-pointer adapter | Puzzle rules, UI mode gates, domain feasibility, global navigation settings |
+| Character | Accepted locomotion, player Gameplay ingress, SubmitPlayerLook, explicit StopCurrentMovement, owned movement coordination | Slate/editor focus, UI ownership, independent physical cache |
+| Widget / receiver | Own request/issuer token, action resolution, exact authorization of keys/pointers, domain UI behavior and teardown | Borrowing another winner's capabilities or restoring previous Presentation |
+| Enhanced Input | Resolved mappings/modifiers, prompts and retained Gameplay callbacks/Look axes | Parallel UI behavior callbacks or parallel accepted Move writes |
+| Parkour | Marker feasibility/movement, overlap opportunities, consumed source identities | Physical Held values, inferred Release from Unknown, UI ownership |
+| GameViewportClient | Consume default Slate focus Navigation originating inside its game viewport | Accept/Back behavior, receiver Navigate, global config or editor sibling paths |
+
+Runtime Cursor/Focus/InputMode authority is exclusively SynchronizeInputPresentation:
+winner declaration -> cursor output and input-mode focus application. Applied-output
+bookkeeping avoids redundant operations; it never determines winner or restoration.
+No request means deterministic GameOnly/hidden cursor/viewport focus. Missing focus
+target falls back within the same winning request. Owner expiry recomputes requests.
+GameAndUI/UIOnly currently use DoNotLock; GameAndUI preserves cursor during capture.
+Pointer motion and guarded game-surface synthetic clicks are separate from ownership.
+
+### Read-only extension checks
+
+| New UI | Request declaration | Receiver / execution |
+|---|---|---|
+| Cursor + Confirm | Widget owner, suitable priority; Cursor/Confirm, GameAndUI, visible cursor, self focus; omit Move/Look | Owner resolves its mapped Confirm and exact handle is authorized before execution |
+| Skip-only, no cursor | Widget owner; Confirm used as the sole skip command, hidden cursor, target or viewport focus; omit Gameplay capabilities | Owner resolves its Skip binding to Confirm and implements Skip locally. A separately distinguished Skip permission would require a vocabulary addition, not a mode branch |
+| Cursor + Look, no Move | Widget owner; Cursor/Look plus required UI actions, visible cursor, GameAndUI and target focus; omit Move | Existing cursor+Look plumbing calls SubmitPlayerLook; UI receiver handles its own commands |
+
+All three fit current arbitration, Presentation and forwarding without Inventory,
+Dialogue or Puzzle branches in PC/Character. Receiver implementations are currently
+C++ (CannotImplementInterfaceInBlueprint); derived WBP can customize exposed UI.
+New custom hold/chord triggers or intentional default Slate focus navigation require
+an explicit design review; raw key resolution does not silently implement them.
+
+### Minimum future UI integration rules
+
+1. Request with a live owner and declarative requirements; retain exact handle and
+   weak issuing PC. Release idempotently on close and destruct; never restore a snapshot.
+2. Resolve/execute through the winner receiver. Authorize every real player pointer,
+   button and drag ingress using external ownership + exact owner/handle + capability.
+   Blueprint player events must not bypass these entry points via public business APIs.
+3. Keep domain feasibility in Gameplay. Permission denial submits no command; it is
+   neither Release nor a Stop. Explicit domain lifecycle Stop remains separate.
+4. Read physical observations from PC. Unknown is not Up; do not rebuild Held on
+   ownership recovery, change it on winner transitions or duplicate continuous axes.
+5. Keep mapping contexts/prompts and cleanup guards where they have real duties.
+   Do not add mode-specific PC/Character gates, global Slate policy or frame grace.
+
+Accepted limitation remains unchanged: Lost invalidates Held without reconstructing
+it on recovery. A Parkour hold across Alt+Tab/F8 may need Release/Re-Press. No repair
+is planned or required for this checkpoint. Detached popup navigation and arbitrary
+future Blueprint bypasses are not automatically protected by the viewport/ingress
+contracts; integrate such surfaces deliberately rather than adding hidden exceptions.
+
+Final validation (2026-10-05): Editor Win64 Development build succeeded (target
+up to date). Full Input/Puzzle/Freeze regression, including Parkour, passed 23/23:
+18 clean, 5 existing warning-bearing, zero failures/not-run. Report:
+Saved/Automation/StageFiveFour/index.json. The first sandboxed launch could not
+access UE's Zen utility; the approved unrestricted rerun completed with exit code 0.
+git diff --check passed. The three untracked files are the intended stage-5 viewport
+client header/source and scoped-navigation regression; include them in the checkpoint.
+Stage 5.4 changed documentation only. Stages 5.1 and 5.3 already have user PIE acceptance;
+no new runtime behavior needs additional PIE validation for this documentation audit.

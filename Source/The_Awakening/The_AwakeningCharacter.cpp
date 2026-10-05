@@ -329,7 +329,6 @@ void AThe_AwakeningCharacter::UpdateMovementInput()
 		{
 			MoveInput = StickInput;
 
-			// 等于 0.5 仍是走路，只有大于 0.5 才跑
 			// Stick magnitude only determines whether input is outside the dead zone.
 			// SprintAction alone selects WalkSpeed versus SprintSpeed.
 		}
