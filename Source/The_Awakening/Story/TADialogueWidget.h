@@ -18,12 +18,12 @@ class UTADialogueHistoryWidget;
 class UTAActionPromptWidget;
 class UTALocalizeSubsystem;
 class UTAInputIconSubsystem;
+class UTASelectableMenuOptionWidget;
 class UTextBlock;
 class UButton;
 class UImage;
 class UHorizontalBox;
 class UInputAction;
-class UInputMappingContext;
 class UWidget;
 class UCanvasPanel;
 class UVerticalBox;
@@ -54,6 +54,7 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool HandleMenuBackRequested() override;
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
 	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
@@ -85,13 +86,10 @@ protected:
 	void RefreshChoices();
 	void RefreshPortraits();
 	void RefreshHistory();
-	void RefreshIcons();
-	void RefreshPromptLabels();
 	void BuildActionPromptBar();
 	void RefreshActionPromptBar();
 	void UpdateChoiceHighlights();
-	void UpdateChoiceSelectionFromMouse();
-	void EnsureChoiceInputActions();
+	void ValidateChoiceInputActions() const;
 	void OnChoicePreviousPressed();
 	void OnChoiceNextPressed();
 	void OnChoiceConfirmPressed();
@@ -111,22 +109,18 @@ protected:
 	void HandleStoryFinished();
 	UFUNCTION()
 	void HandleLanguageChanged();
-	UFUNCTION()
-	void HandleInputDeviceChanged();
 
 	UFUNCTION()
 	void OnChoiceClicked(int32 Index);
 	UFUNCTION()
 	void OnChoiceFocused(int32 Index);
 	UFUNCTION()
+	void OnChoiceOptionHovered(UTASelectableMenuOptionWidget* OptionWidget);
+	UFUNCTION()
 	void OnActionPromptClicked(UTAActionPromptWidget* Prompt);
 
 	UFUNCTION()
 	void CloseHistoryOverlay();
-
-	// ==================== 输入管理 ====================
-	void PushDialogueMappingContext();
-	void PopDialogueMappingContext();
 
 	// ==================== 输入配置（WBP 上指定） ====================
 
@@ -136,7 +130,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Dialogue|Input")
 	TObjectPtr<UInputAction> HistoryAction;
 
-	/** Enhanced Input actions for choice navigation and confirmation. Missing actions are created at runtime. */
+	/** These actions must be mapped in the shared IMC_UI Input Mapping Context. */
 	UPROPERTY(EditAnywhere, Category = "Dialogue|Input|Choices")
 	TObjectPtr<UInputAction> ChoicePreviousAction;
 
@@ -149,13 +143,6 @@ protected:
 	/** Optional styled prompt WBP; falls back to the native action-prompt widget. */
 	UPROPERTY(EditAnywhere, Category = "Dialogue|Input|Choices")
 	TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;
-
-	/** 对话期间激活的映射上下文（高优先级屏蔽移动等） */
-	UPROPERTY(EditAnywhere, Category = "Dialogue|Input")
-	TObjectPtr<UInputMappingContext> DialogueMappingContext;
-
-	UPROPERTY(EditAnywhere, Category = "Dialogue|Input")
-	int32 DialogueMappingPriority = 10;
 
 	// ==================== 绑定控件 ====================
 
@@ -219,9 +206,6 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTAActionPromptWidget>> ActionPromptWidgets;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> RuntimeChoiceMappingContext;
-
 	UPROPERTY()
 	TObjectPtr<UTADialogueController> Controller;
 
@@ -231,22 +215,16 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTALocalizeSubsystem> LocalizeSubsystem;
 
-	UPROPERTY()
-	TObjectPtr<UTAInputIconSubsystem> InputIconSubsystem;
 
 	/** 输入绑定句柄（解绑用） */
 	/** 防止同一物理按键同时映射到 AdvanceAction 和 HistoryAction 时打开历史。 */
 	/** 防止同一物理按键同时映射到 AdvanceAction 和 ChoiceConfirmAction 时重复选择。 */
-	FVector2D LastChoiceMousePosition = FVector2D::ZeroVector;
-	bool bHasLastChoiceMousePosition = false;
-	bool bRefreshIconsOnNextTick = false;
 	ESlateVisibility ContinueButtonVisibilityBeforeHistory = ESlateVisibility::Visible;
 	ESlateVisibility HistoryButtonVisibilityBeforeHistory = ESlateVisibility::Visible;
 	bool bContinueButtonWasEnabledBeforeHistory = true;
 
 	bool IsHistoryOpen() const;
 	bool bPreviewMode = false;
-	bool bMappingPushed = false;
 private:
 	FTAInputRouter::FHandle InputRequestHandle = 0;
 	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;

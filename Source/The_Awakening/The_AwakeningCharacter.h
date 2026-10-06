@@ -212,6 +212,7 @@ protected:
 	
 public:
 	AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	void NotifyInventoryPanelClosed(UTAInventoryPanelWidget* ClosedPanel);
 	bool IsLandingMomentumSafe(const FVector& Direction) const { return IsSafeToMoveToward(Direction); }
 	void ClearMovementInput();
 	void SubmitPlayerLook(float Yaw, float Pitch);

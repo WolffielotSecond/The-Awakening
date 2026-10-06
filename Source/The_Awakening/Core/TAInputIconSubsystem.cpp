@@ -6,11 +6,57 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/InputDeviceSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "Core/TALocalizeSubsystem.h"
 
 void UTAInputIconSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	CurrentDeviceType = EInputDeviceType::KeyboardMouse;
+	Collection.InitializeDependency<UTALocalizeSubsystem>();
+	GetGameInstance()->GetSubsystem<UTALocalizeSubsystem>()->OnLanguageChanged.AddUniqueDynamic(
+		this, &UTAInputIconSubsystem::NotifyInputPromptsChanged);
+	GetGameInstance()->OnLocalPlayerAddedEvent.AddUObject(this, &UTAInputIconSubsystem::RegisterLocalPlayer);
+	GetGameInstance()->OnLocalPlayerRemovedEvent.AddUObject(this, &UTAInputIconSubsystem::UnregisterLocalPlayer);
+	for (ULocalPlayer* Player : GetGameInstance()->GetLocalPlayers()) RegisterLocalPlayer(Player);
+}
+
+void UTAInputIconSubsystem::Deinitialize()
+{
+	GetGameInstance()->OnLocalPlayerAddedEvent.RemoveAll(this);
+	GetGameInstance()->OnLocalPlayerRemovedEvent.RemoveAll(this);
+	if (auto* Loc = GetGameInstance()->GetSubsystem<UTALocalizeSubsystem>())
+		Loc->OnLanguageChanged.RemoveDynamic(this, &UTAInputIconSubsystem::NotifyInputPromptsChanged);
+	for (const auto& Observed : ObservedInputSubsystems)
+		if (auto* Input = Observed.Get())
+			Input->ControlMappingsRebuiltDelegate.RemoveDynamic(this, &UTAInputIconSubsystem::NotifyInputPromptsChanged);
+	ObservedInputSubsystems.Reset();
+	Super::Deinitialize();
+}
+
+void UTAInputIconSubsystem::RegisterLocalPlayer(ULocalPlayer* LocalPlayer)
+{
+	if (!LocalPlayer) return;
+	if (auto* Input = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+	{
+		ObservedInputSubsystems.AddUnique(Input);
+		Input->ControlMappingsRebuiltDelegate.AddUniqueDynamic(this, &UTAInputIconSubsystem::NotifyInputPromptsChanged);
+	}
+}
+
+void UTAInputIconSubsystem::UnregisterLocalPlayer(ULocalPlayer* LocalPlayer)
+{
+	if (!LocalPlayer) return;
+	if (auto* Input = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+	{
+		Input->ControlMappingsRebuiltDelegate.RemoveDynamic(this, &UTAInputIconSubsystem::NotifyInputPromptsChanged);
+		ObservedInputSubsystems.Remove(Input);
+	}
+}
+
+void UTAInputIconSubsystem::NotifyInputPromptsChanged()
+{
+	OnInputPromptsChanged.Broadcast();
 }
 
 void UTAInputIconSubsystem::SetCurrentDeviceType(EInputDeviceType NewType)
@@ -19,6 +65,7 @@ void UTAInputIconSubsystem::SetCurrentDeviceType(EInputDeviceType NewType)
 	{
 		CurrentDeviceType = NewType;
 		OnInputDeviceChanged.Broadcast();
+		NotifyInputPromptsChanged();
 	}
 }
 
@@ -44,6 +91,7 @@ void UTAInputIconSubsystem::NotifyInputKey(const FKey& Key)
 	{
 		CurrentDeviceType = NewType;
 		OnInputDeviceChanged.Broadcast();
+		NotifyInputPromptsChanged();
 		UE_LOG(LogTemp, Log, TEXT("Input device changed"));
 	}
 }
@@ -128,6 +176,8 @@ FString UTAInputIconSubsystem::KeyToAssetName(FKey Key) const
 	if (Key == EKeys::Gamepad_DPad_Right) return TEXT("DPad_Right");
 	if (Key == EKeys::Gamepad_LeftThumbstick)  return TEXT("Stick_L");
 	if (Key == EKeys::Gamepad_RightThumbstick) return TEXT("Stick_R");
+	if (Key == EKeys::Gamepad_Left2D || Key == EKeys::Gamepad_LeftX || Key == EKeys::Gamepad_LeftY) return TEXT("Stick_L");
+	if (Key == EKeys::Gamepad_Right2D || Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY) return TEXT("Stick_R");
 	if (Key == EKeys::Gamepad_Special_Left)  return TEXT("Special_Left");
 	if (Key == EKeys::Gamepad_Special_Right) return TEXT("Special_Right");
 
@@ -260,65 +310,27 @@ UTexture2D* UTAInputIconSubsystem::GetGamepadIconForKey(FKey Key) const
 
 UTexture2D* UTAInputIconSubsystem::GetIconForAction(UInputAction* Action) const
 {
-	if (!Action)
-	{
-		return nullptr;
-	}
+	const UGameInstance* GI = GetGameInstance();
+	return GetIconForActionForPlayer(Action, GI ? GI->GetFirstGamePlayer() : nullptr);
+}
 
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return nullptr;
-	}
+TArray<FKey> UTAInputIconSubsystem::GetPromptKeysForAction(UInputAction* Action, ULocalPlayer* LocalPlayer) const
+{
+	TArray<FKey> Keys;
+	if (!Action || !LocalPlayer) return Keys;
+	const auto* Input = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+	if (!Input) return Keys;
+	const bool bGamepad = CurrentDeviceType != EInputDeviceType::KeyboardMouse;
+	for (const FKey& Key : Input->QueryKeysMappedToAction(Action))
+		if (Key.IsValid() && Key.IsGamepadKey() == bGamepad) Keys.AddUnique(Key);
+	return Keys;
+}
 
-	APlayerController* PC = World->GetFirstPlayerController();
-	if (!PC)
-	{
-		return nullptr;
-	}
-
-	ULocalPlayer* LocalPlayer = PC->GetLocalPlayer();
-	if (!LocalPlayer)
-	{
-		return nullptr;
-	}
-
-	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-	if (!InputSubsystem)
-	{
-		return nullptr;
-	}
-
-	const TArray<FKey> MappedKeys = InputSubsystem->QueryKeysMappedToAction(Action);
-	if (MappedKeys.Num() == 0)
-	{
-		return nullptr;
-	}
-
-	for (const FKey& Key : MappedKeys)
-	{
-		if (!Key.IsValid())
-		{
-			continue;
-		}
-
-		if (CurrentDeviceType == EInputDeviceType::KeyboardMouse)
-		{
-			if (!Key.IsGamepadKey())
-			{
-				return GetIconForKey(Key);
-			}
-		}
-		else
-		{
-			if (Key.IsGamepadKey())
-			{
-				return GetIconForKey(Key);
-			}
-		}
-	}
-
-	return GetIconForKey(MappedKeys[0]);
+UTexture2D* UTAInputIconSubsystem::GetIconForActionForPlayer(UInputAction* Action, ULocalPlayer* LocalPlayer) const
+{
+	for (const FKey& Key : GetPromptKeysForAction(Action, LocalPlayer))
+		if (UTexture2D* Icon = GetIconForKey(Key)) return Icon;
+	return nullptr;
 }
 
 void UTAInputIconSubsystem::RefreshCurrentDeviceForUser(FPlatformUserId UserId)

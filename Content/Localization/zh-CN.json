@@ -41,6 +41,12 @@
 	"UI_Inventory_DragMode": "移动物品",
 	"UI_Inventory_NextPage": "下一页",
 	"UI_Inventory_PreviousPage": "上一页",
+	"UI_Pause_QuitGame": "关闭游戏",
+	"UI_Pause_ChoiceUp": "上一个选项",
+	"UI_Pause_ChoiceDown": "下一个选项",
+	"UI_Pause_ChoiceSelect": "选择",
+	"UI_Pause_CloseMenu": "关闭菜单",
+	"UI_Pause_Resume": "继续游戏",
 	"UI_Settings": "设置",
 	"UI_Skill": "技能",
 	"UI_StartGame": "开始游戏"

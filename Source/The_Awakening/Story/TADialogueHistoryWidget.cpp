@@ -68,7 +68,7 @@ void UTADialogueHistoryWidget::NativeConstruct()
 	}
 	if (InputIconSubsystem)
 	{
-		InputIconSubsystem->OnInputDeviceChanged.AddDynamic(this, &UTADialogueHistoryWidget::HandleInputDeviceChanged);
+		InputIconSubsystem->OnInputPromptsChanged.AddUniqueDynamic(this, &UTADialogueHistoryWidget::HandleInputPromptsChanged);
 	}
 	RefreshClosePrompt();
 
@@ -103,7 +103,7 @@ void UTADialogueHistoryWidget::NativeDestruct()
 	}
 	if (InputIconSubsystem)
 	{
-		InputIconSubsystem->OnInputDeviceChanged.RemoveDynamic(this, &UTADialogueHistoryWidget::HandleInputDeviceChanged);
+		InputIconSubsystem->OnInputPromptsChanged.RemoveDynamic(this, &UTADialogueHistoryWidget::HandleInputPromptsChanged);
 		InputIconSubsystem = nullptr;
 	}
 	Super::NativeDestruct();
@@ -131,7 +131,7 @@ void UTADialogueHistoryWidget::RefreshClosePrompt()
 	{
 		FTAPromptWidgetUtils::ApplyKeyIcon(
 			Image_CloseIcon,
-			CloseHistoryAction ? InputIconSubsystem->GetIconForAction(CloseHistoryAction) : nullptr,
+			InputIconSubsystem->GetIconForActionForPlayer(CloseHistoryAction, GetOwningLocalPlayer()),
 			CloseIconHeight,
 			SizeBox_CloseIcon);
 	}
@@ -139,10 +139,10 @@ void UTADialogueHistoryWidget::RefreshClosePrompt()
 
 void UTADialogueHistoryWidget::HandleLanguageChanged()
 {
-	RefreshClosePrompt();
+	Rebuild();
 }
 
-void UTADialogueHistoryWidget::HandleInputDeviceChanged()
+void UTADialogueHistoryWidget::HandleInputPromptsChanged()
 {
 	RefreshClosePrompt();
 }
@@ -245,4 +245,18 @@ TOptional<ETAInputCapability> UTADialogueHistoryWidget::ResolvePlayerInput(FKey 
 void UTADialogueHistoryWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
 {
 	if (Capability == ETAInputCapability::Close) HandleCloseClicked();
+}
+
+bool UTADialogueHistoryWidget::HandleMenuBackRequested()
+{
+	if (!AllowsPlayerInput(ETAInputCapability::Close)) return false;
+	if (OnCloseRequested.IsBound())
+	{
+		HandleCloseClicked();
+	}
+	else
+	{
+		RemoveFromParent();
+	}
+	return true;
 }

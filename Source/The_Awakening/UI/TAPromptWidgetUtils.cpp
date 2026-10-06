@@ -6,6 +6,23 @@
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Styling/SlateBrush.h"
+#include "UI/TAActionPromptWidget.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+
+UTAActionPromptWidget* FTAPromptWidgetUtils::AddActionPrompt(UUserWidget* Owner, UHorizontalBox* Container,
+	TSubclassOf<UTAActionPromptWidget> WidgetClass, UInputAction* Action, const FString& TextId)
+{
+	if (!Owner || !Container || !Action) return nullptr;
+	UClass* PromptClass = WidgetClass.Get();
+	if (!PromptClass) PromptClass = LoadClass<UTAActionPromptWidget>(nullptr, TEXT("/Game/UI/WBP_ActionPrompt.WBP_ActionPrompt_C"));
+	if (!PromptClass) PromptClass = UTAActionPromptWidget::StaticClass();
+	UTAActionPromptWidget* Prompt = CreateWidget<UTAActionPromptWidget>(Owner, PromptClass);
+	if (!Prompt) return nullptr;
+	Prompt->ConfigureLocalizedPrompt(Action, TextId);
+	Container->AddChildToHorizontalBox(Prompt)->SetPadding(FMargin(6.0f, 0.0f));
+	return Prompt;
+}
 
 void FTAPromptWidgetUtils::ApplyKeyIcon(
 	UImage* Image,

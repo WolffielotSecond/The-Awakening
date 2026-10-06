@@ -18,7 +18,6 @@ class UImage;
 class UHorizontalBox;
 class USizeBox;
 class UInputAction;
-class UInputMappingContext;
 class UTAActionPromptWidget;
 class UTAItemDefinition;
 class UTAScanInfoWidget;
@@ -33,6 +32,7 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool HandleMenuBackRequested() override { RemoveFromParent(); return true; }
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
 	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
@@ -70,11 +70,9 @@ protected:
 	void OnClickSkillsTab();
 
 	void EnsureInventoryInputActions();
-	void PushInventoryMappingContext();
-	void PopInventoryMappingContext();
 	void RefreshInputIcons();
 	UFUNCTION()
-	void HandleInputDeviceChanged();
+	void HandleInputPromptsChanged();
 	void ToggleGamepadDragMode(const FInputActionValue& Value);
 	void HandleConfirmPressed();
 	void BeginGamepadDragMode(UTAInventorySlotWidget* SourceSlot);
@@ -187,7 +185,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> HorizontalBox_Controls;
 
-	/** Actions should be assigned to the matching actions in the inventory IMC. */
+	/** Actions should be assigned to assets mapped in the controller's shared IMC_UI. */
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TObjectPtr<UInputAction> PreviousPageAction;
 
@@ -200,12 +198,6 @@ protected:
 	/** Gamepad-only toggle for selecting and placing an inventory item. */
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TObjectPtr<UInputAction> GamepadDragModeAction;
-
-	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
-	TObjectPtr<UInputMappingContext> InventoryMappingContext;
-
-	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input", meta = (ClampMin = "0"))
-	int32 InventoryMappingPriority = 20;
 
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;
@@ -230,9 +222,6 @@ protected:
 	FVector2D ItemInfoCursorOffset = FVector2D(20.0f, 20.0f);
 
 	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> RuntimeInventoryMappingContext;
-
-	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTAActionPromptWidget>> ActionPromptWidgets;
 
 	UPROPERTY(Transient)
@@ -248,8 +237,6 @@ protected:
 	TWeakObjectPtr<UTAInventorySlotWidget> CurrentHoveredInventorySlot;
 	TWeakObjectPtr<UTAInventorySlotWidget> GamepadDragSourceSlot;
 
-	bool bInventoryMappingPushed = false;
-	bool bRefreshInputPromptsNextTick = false;
 	bool bGamepadDragModeActive = false;
 	bool bWasItemDragActive = false;
 private:

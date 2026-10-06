@@ -122,13 +122,9 @@ void AThe_AwakeningCharacter::BeginPlay()
 	}
 	if (UGameInstance* GI = GetGameInstance())
 	{
-		if (UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
-		{
-			Loc->OnLanguageChanged.AddDynamic(this, &AThe_AwakeningCharacter::OnPromptRelatedSettingsChanged);
-		}
 		if (UTAInputIconSubsystem* Icons = GI->GetSubsystem<UTAInputIconSubsystem>())
 		{
-			Icons->OnInputDeviceChanged.AddDynamic(this, &AThe_AwakeningCharacter::OnPromptRelatedSettingsChanged);
+			Icons->OnInputPromptsChanged.AddUniqueDynamic(this, &AThe_AwakeningCharacter::OnPromptRelatedSettingsChanged);
 		}
 	}
 }
@@ -786,6 +782,14 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	InventoryPanelInstance->AddToViewport(50);
 
 	InventoryPanelInstance->RefreshInputPrompts();
+}
+
+void AThe_AwakeningCharacter::NotifyInventoryPanelClosed(UTAInventoryPanelWidget* ClosedPanel)
+{
+	if (InventoryPanelInstance == ClosedPanel)
+	{
+		InventoryPanelInstance = nullptr;
+	}
 }
 
 void AThe_AwakeningCharacter::ClearMovementInput()

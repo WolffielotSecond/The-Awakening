@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/TASelectableMenuOptionWidget.h"
 #include "TADialogueChoiceButton.generated.h"
 
 class UButton;
@@ -20,7 +20,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryChoiceFocused, int32, Index)
  *   Image_Highlight（UImage，可选，选中高亮边框）
  */
 UCLASS(Blueprintable)
-class THE_AWAKENING_API UTADialogueChoiceButton : public UUserWidget
+class THE_AWAKENING_API UTADialogueChoiceButton : public UTASelectableMenuOptionWidget
 {
 	GENERATED_BODY()
 
@@ -30,6 +30,7 @@ public:
 
 	/** 设置文本与可见序号（序号用于点击回调） */
 	void Setup(int32 InIndex, const FText& Text);
+	int32 GetChoiceIndex() const { return Index; }
 
 	/** 高亮（当前选中项） */
 	void SetHighlighted(bool bHighlighted);

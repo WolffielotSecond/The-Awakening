@@ -35,18 +35,7 @@ void UTAActionPromptWidget::NativeConstruct()
 
 	if (InputIconSubsystem)
 	{
-		InputIconSubsystem->OnInputDeviceChanged.AddUniqueDynamic(this, &UTAActionPromptWidget::HandleInputDeviceChanged);
-	}
-	if (LocalizeSubsystem)
-	{
-		LocalizeSubsystem->OnLanguageChanged.AddUniqueDynamic(this, &UTAActionPromptWidget::HandleLanguageChanged);
-	}
-	if (InputIconSubsystem)
-	{
-		if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
-		{
-			InputIconSubsystem->RefreshCurrentDeviceForUser(LocalPlayer->GetPlatformUserId());
-		}
+		InputIconSubsystem->OnInputPromptsChanged.AddUniqueDynamic(this, &UTAActionPromptWidget::HandleInputPromptsChanged);
 	}
 
 	RefreshPrompt();
@@ -56,12 +45,11 @@ void UTAActionPromptWidget::NativeDestruct()
 {
 	if (InputIconSubsystem)
 	{
-		InputIconSubsystem->OnInputDeviceChanged.RemoveDynamic(this, &UTAActionPromptWidget::HandleInputDeviceChanged);
+		InputIconSubsystem->OnInputPromptsChanged.RemoveDynamic(this, &UTAActionPromptWidget::HandleInputPromptsChanged);
 		InputIconSubsystem = nullptr;
 	}
 	if (LocalizeSubsystem)
 	{
-		LocalizeSubsystem->OnLanguageChanged.RemoveDynamic(this, &UTAActionPromptWidget::HandleLanguageChanged);
 		LocalizeSubsystem = nullptr;
 	}
 
@@ -164,18 +152,13 @@ void UTAActionPromptWidget::RefreshPrompt()
 	{
 		FTAPromptWidgetUtils::ApplyKeyIcon(
 			Image_Icon,
-			PromptAction ? InputIconSubsystem->GetIconForAction(PromptAction) : nullptr,
+			InputIconSubsystem->GetIconForActionForPlayer(PromptAction, GetOwningLocalPlayer()),
 			IconHeight,
 			SizeBox_Icon);
 	}
 }
 
-void UTAActionPromptWidget::HandleInputDeviceChanged()
-{
-	RefreshPrompt();
-}
-
-void UTAActionPromptWidget::HandleLanguageChanged()
+void UTAActionPromptWidget::HandleInputPromptsChanged()
 {
 	RefreshPrompt();
 }

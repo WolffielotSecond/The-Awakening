@@ -41,6 +41,12 @@
 	"UI_Inventory_DragMode": "Move Item",
 	"UI_Inventory_NextPage": "Next Page",
 	"UI_Inventory_PreviousPage": "Previous Page",
+	"UI_Pause_QuitGame": "Quit Game",
+	"UI_Pause_ChoiceUp": "Previous Option",
+	"UI_Pause_ChoiceDown": "Next Option",
+	"UI_Pause_ChoiceSelect": "Select",
+	"UI_Pause_CloseMenu": "Close Menu",
+	"UI_Pause_Resume": "Resume Game",
 	"UI_Settings": "Settings",
 	"UI_Skill": "Skills",
 	"UI_StartGame": "Start Game"

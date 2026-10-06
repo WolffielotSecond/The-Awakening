@@ -24,7 +24,21 @@
 #include "Core/TAInputIconSubsystem.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "UI/TAPromptWidgetUtils.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Engine/GameInstance.h"
+
+UTAPathPuzzleWidget::UTAPathPuzzleWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	static ConstructorHelpers::FObjectFinder<UInputAction> ConfirmAsset(TEXT("/Game/Input/Actions/IA_PuzzleConfirm.IA_PuzzleConfirm"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> UndoAsset(TEXT("/Game/Input/Actions/IA_PuzzleUndo.IA_PuzzleUndo"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> PanAsset(TEXT("/Game/Input/Actions/IA_PuzzlePan.IA_PuzzlePan"));
+	ConfirmAction = ConfirmAsset.Object;
+	UndoAction = UndoAsset.Object;
+	PanAction = PanAsset.Object;
+}
 
 FTAPuzzleAppearance::FTAPuzzleAppearance()
 {
@@ -102,8 +116,7 @@ void UTAPathPuzzleWidget::NativeConstruct()
 	Super::NativeConstruct();
 	if (auto* GI = GetGameInstance())
 	{
-		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputDeviceChanged.AddUniqueDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
-		GI->GetSubsystem<UTALocalizeSubsystem>()->OnLanguageChanged.AddUniqueDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
+		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputPromptsChanged.AddUniqueDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
 	}
 	RefreshLocalizedPrompts();
 	// SelfHitTestInvisible skips this screen in Slate's cursor query. Make the
@@ -140,8 +153,7 @@ void UTAPathPuzzleWidget::NativeDestruct()
 	ReleaseInput();
 	if (auto* GI = GetGameInstance())
 	{
-		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputDeviceChanged.RemoveDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
-		GI->GetSubsystem<UTALocalizeSubsystem>()->OnLanguageChanged.RemoveDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
+		GI->GetSubsystem<UTAInputIconSubsystem>()->OnInputPromptsChanged.RemoveDynamic(this, &UTAPathPuzzleWidget::RefreshLocalizedPrompts);
 	}
 	if (UWorld* World = GetWorld())
 	{
@@ -348,19 +360,19 @@ void UTAPathPuzzleWidget::RefreshLocalizedPrompts()
 	auto* Icons = GI->GetSubsystem<UTAInputIconSubsystem>();
 	auto* Loc = GI->GetSubsystem<UTALocalizeSubsystem>();
 	if (!Icons || !Loc) return;
-	const bool Gamepad = Icons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
 	const TCHAR* TextNames[] = {TEXT("PromptText_0"),TEXT("PromptText_1"),TEXT("PromptText_2"),TEXT("Text_EnergyLabel"),TEXT("Text_TimeLabel")};
 	const TCHAR* TextIds[] = {TEXT("Puzzle_Select"),TEXT("Puzzle_MoveView"),TEXT("Puzzle_Undo"),TEXT("Puzzle_Energy"),TEXT("Puzzle_TimeRemaining")};
 	for (int32 I=0; I<5; ++I)
 		if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(TextNames[I]))) Text->SetText(Loc->GetText(TextIds[I]));
-	const FKey Keys[] = {EKeys::W,EKeys::A,EKeys::S,EKeys::D};
+	UInputAction* Actions[] = {ConfirmAction, PanAction, UndoAction};
 	for (int32 Row=0; Row<3; ++Row)
+	{
+		const TArray<FKey> Keys = Icons->GetPromptKeysForAction(Actions[Row], GetOwningLocalPlayer());
 		for (int32 I=0; I<(Row==1 ? 4 : 1); ++I)
 			if (auto* Icon=Cast<UImage>(GetWidgetFromName(FName(*FString::Printf(TEXT("PromptIcon_%d_%d"),Row,I)))))
 			{
-				if (Gamepad && Row==1 && I>0) { Icon->SetVisibility(ESlateVisibility::Collapsed); continue; }
-				const FKey Key = Row==0 ? (Gamepad ? EKeys::Gamepad_FaceButton_Bottom : EKeys::LeftMouseButton) : Row==2 ? (Gamepad ? EKeys::Gamepad_FaceButton_Right : EKeys::RightMouseButton) : (Gamepad ? EKeys::Gamepad_LeftThumbstick : Keys[I]);
-				FTAPromptWidgetUtils::ApplyKeyIcon(Icon,Icons->GetIconForKey(Key),32.f);
+				if (!Keys.IsValidIndex(I)) { Icon->SetVisibility(ESlateVisibility::Collapsed); continue; }
+				FTAPromptWidgetUtils::ApplyKeyIcon(Icon,Icons->GetIconForKey(Keys[I]),32.f);
 				// Auto width plus centered height keeps the brush aspect ratio instead
 				// of stretching a 32px icon to the full 40px row height.
 				if (auto* IconSlot = Cast<UHorizontalBoxSlot>(Icon->Slot))
@@ -370,6 +382,7 @@ void UTAPathPuzzleWidget::RefreshLocalizedPrompts()
 					IconSlot->SetVerticalAlignment(VAlign_Center);
 				}
 			}
+	}
 	RefreshUndoPrompt();
 }
 
@@ -491,8 +504,10 @@ bool UTAPathPuzzleWidget::AllowsPlayerInput(ETAInputCapability Capability) const
 
 TOptional<ETAInputCapability> UTAPathPuzzleWidget::ResolvePlayerInput(FKey Key) const
 {
-	if (Key == EKeys::LeftMouseButton || Key == EKeys::Gamepad_FaceButton_Bottom) return ETAInputCapability::Confirm;
-	if (Key == EKeys::RightMouseButton || Key == EKeys::Gamepad_FaceButton_Right) return ETAInputCapability::Undo;
+	const auto* PC = InputRequestController.Get();
+	if (!PC) return {};
+	if (PC->IsKeyMappedToAction(Key, ConfirmAction)) return ETAInputCapability::Confirm;
+	if (PC->IsKeyMappedToAction(Key, UndoAction)) return ETAInputCapability::Undo;
 	return {};
 }
 
@@ -516,14 +531,9 @@ void UTAPathPuzzleWidget::HandlePlayerSelectNode(int32 Index)
 FVector2D UTAPathPuzzleWidget::GetPlayerPanInput() const
 {
 	if (!AllowsPlayerInput(ETAInputCapability::Pan)) return FVector2D::ZeroVector;
-	const auto* PC = InputRequestController.Get();
-	auto Down = [PC](FKey Key) { return PC->ReadHeldKey(Key).X != 0.f ? 1.f : 0.f; };
-	FVector2D Keyboard(Down(EKeys::A) - Down(EKeys::D), Down(EKeys::W) - Down(EKeys::S));
-	if (!bInversePanInput) Keyboard *= -1.f;
-	if (!Keyboard.IsNearlyZero()) return Keyboard.GetClampedToMaxSize(1.f);
-	const FVector Stick = PC->ReadHeldKey(EKeys::Gamepad_Left2D);
-	FVector2D Axis(-Stick.X, Stick.Y);
+	auto* PC = InputRequestController.Get();
+	const FVector2D Input = PC->ReadHeldAction(PanAction).Get<FVector2D>();
+	FVector2D Axis(-Input.X, Input.Y);
 	if (!bInversePanInput) Axis *= -1.f;
-	const float Magnitude = Axis.Size();
-	return Magnitude > .18f ? Axis.GetSafeNormal() * FMath::Clamp((Magnitude - .18f) / .82f, 0.f, 1.f) : FVector2D::ZeroVector;
+	return Axis.GetClampedToMaxSize(1.f);
 }

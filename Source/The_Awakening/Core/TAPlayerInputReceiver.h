@@ -18,4 +18,6 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const = 0;
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const = 0;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) = 0;
+	/** Called for the shared UI Back action while this receiver owns input. */
+	virtual bool HandleMenuBackRequested() { return false; }
 };

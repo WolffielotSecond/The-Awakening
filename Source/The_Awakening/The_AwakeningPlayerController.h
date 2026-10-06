@@ -17,6 +17,8 @@ class UInputAction;
 class UInputModifier;
 class SViewport;
 class FWidgetPath;
+class UTAPauseMenuWidget;
+class UTASettingsMenuWidget;
 struct FInputActionValue;
 struct FInputKeyEventArgs;
 /**
@@ -67,6 +69,18 @@ public:
 	void RecordHeldInput(FKey Key, float Value, int32 UserIndex);
 	FInputActionValue ReadHeldAction(const UInputAction* Action);
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
+	UFUNCTION(BlueprintCallable, Category = "UI|Pause Menu")
+	void OpenPauseMenu();
+	UFUNCTION(BlueprintCallable, Category = "UI|Pause Menu")
+	void ClosePauseMenu();
+	UFUNCTION(BlueprintPure, Category = "UI|Pause Menu")
+	bool IsPauseMenuOpen() const;
+	UFUNCTION(BlueprintCallable, Category = "UI|Settings")
+	void OpenSettingsMenu();
+	UFUNCTION(BlueprintCallable, Category = "UI|Settings")
+	void CloseSettingsMenu();
+	UInputAction* GetUIBackAction() const { return UIBackAction; }
+	UInputAction* GetPauseAction() const { return PauseAction; }
 
 	bool IsKeyMappedToAction(FKey Key, const UInputAction* Action) const;
 	FSimpleMulticastDelegate OnInputOwnerChanged;
@@ -97,6 +111,21 @@ protected:
 	// Serialized template name retained for existing desktop IMC_MouseLook defaults.
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings", meta = (DisplayName = "Additional Input Mapping Contexts"))
 	TArray<UInputMappingContext*> MobileExcludedMappingContexts;
+	/** Shared UI mappings (inventory, dialogue, pause, and future menus), active for this local player. */
+	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
+	TObjectPtr<UInputMappingContext> UIInputMappingContext;
+	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
+	TObjectPtr<UInputAction> UIBackAction;
+	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
+	TObjectPtr<UInputAction> PauseAction;
+	UPROPERTY(EditAnywhere, Category = "UI|Pause Menu")
+	TSubclassOf<UTAPauseMenuWidget> PauseMenuWidgetClass;
+	UPROPERTY(EditAnywhere, Category = "UI|Settings")
+	TSubclassOf<UTASettingsMenuWidget> SettingsMenuWidgetClass;
+	UPROPERTY(Transient)
+	TObjectPtr<UTAPauseMenuWidget> PauseMenuInstance;
+	UPROPERTY(Transient)
+	TObjectPtr<UTASettingsMenuWidget> SettingsMenuInstance;
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
 	FDelegateHandle ApplicationActivationHandle;
@@ -118,6 +147,9 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
+	void HandlePauseAction(const FInputActionValue& Value);
+	UFUNCTION()
+	void HandleSettingsRequested();
 
 private:
 	friend class FTAInputDeviceDetector;
@@ -136,8 +168,11 @@ private:
 	// not keyboard/mouse, accepted movement, or held modifier instances.
 	void InvalidateGamepadObservationOnDisconnect();
 	void ObservePlayerInputOwnership(TAInputOwnershipAdapter::EState State);
+	void SynchronizeUIInputMappingContext(const FTAInputRouter::FWinner& Winner);
+	bool bUIInputMappingContextActive = false;
 	// Lifecycle edge memory (loss notification/invalidation), never an authorization source.
 	TOptional<TAInputOwnershipAdapter::EState> LastDefinitiveInputOwnership;
+	FTAInputRouter::FHandle PauseInputRequestHandle = 0;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTAExternalInputOwnershipTest;
 	friend class FTAHeldObservationLifecycleTest;

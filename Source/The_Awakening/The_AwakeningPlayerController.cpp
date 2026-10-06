@@ -2,6 +2,7 @@
 
 #include "The_AwakeningPlayerController.h"
 #include "Scan/TAScanningComponent.h"
+#include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
@@ -15,11 +16,14 @@
 #include "Blueprint/UserWidget.h"
 #include "The_Awakening.h"
 #include "Framework/Application/SlateApplication.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "InputKeyEventArgs.h"
 #include "Engine/GameViewportClient.h"
 #include "Widgets/SViewport.h"
 #include "The_AwakeningCharacter.h"
+#include "UI/Pause/TAPauseMenuWidget.h"
+#include "Settings/TASettingsMenuWidget.h"
 #include "Widgets/SWindow.h"
 #include "Layout/WidgetPath.h"
 #include "Framework/Application/SlateUser.h"
@@ -29,6 +33,19 @@ AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
 {
 	OverridePlayerInputClass = UTAPlayerInput::StaticClass();
 	ScanningComponent = CreateDefaultSubobject<UTAScanningComponent>(TEXT("ScanComponent"));
+
+	static ConstructorHelpers::FObjectFinder<UInputMappingContext> UIContextAsset(
+		TEXT("/Game/Input/IMC_UI.IMC_UI"));
+	if (UIContextAsset.Succeeded())
+	{
+		UIInputMappingContext = UIContextAsset.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UInputAction> UIBackActionAsset(
+		TEXT("/Game/Input/Actions/IA_UIBack.IA_UIBack"));
+	if (UIBackActionAsset.Succeeded())
+	{
+		UIBackAction = UIBackActionAsset.Object;
+	}
 }
 
 bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, const FKeyEvent& InKeyEvent)
@@ -132,6 +149,8 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 	if (IsLocalPlayerController())
 	{
+		if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>(); Icons && GetLocalPlayer())
+			Icons->RefreshCurrentDeviceForUser(GetLocalPlayer()->GetPlatformUserId());
 		InputDeviceDetector = MakeShared<FTAInputDeviceDetector>(this);
 		DeviceConnectionHandle = IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().AddWeakLambda(this,
 			[this](EInputDeviceConnectionState State, FPlatformUserId User, FInputDeviceId)
@@ -153,6 +172,8 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	FTAInputRouter::FWinner BaseInputOwner;
+	SynchronizeUIInputMappingContext(BaseInputOwner);
 	IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().Remove(DeviceConnectionHandle);
 	if (InputDeviceDetector.IsValid() && FSlateApplication::IsInitialized())
 	{
@@ -319,6 +340,18 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 void AThe_AwakeningPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		if (PauseAction)
+		{
+			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started,
+				this, &AThe_AwakeningPlayerController::HandlePauseAction);
+		}
+		else
+		{
+			UE_LOG(LogThe_Awakening, Warning, TEXT("PauseAction is not configured on %s."), *GetName());
+		}
+	}
 
 	if (IsLocalPlayerController())
 	{
@@ -486,6 +519,13 @@ bool AThe_AwakeningPlayerController::RoutePlayerInputKey(FKey Key, bool bRepeat,
 	const auto Winner = GetInputWinner();
 	auto* Receiver = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
 	if (!Receiver) return false;
+	// Back is a dedicated Enhanced Input action in the shared UI mapping context.
+	if (UIBackAction && IsKeyMappedToAction(Key, UIBackAction))
+	{
+		// A held back key must not pop multiple nested menus as key-repeat events arrive.
+		if (bRepeat) return true;
+		if (Receiver->HandleMenuBackRequested()) return true;
+	}
 	const auto Action = Receiver->ResolvePlayerInput(Key);
 	if (!Action.IsSet() || !AllowsInputFor(Receiver->GetPlayerInputRequestHandle(),
 		Winner.Request.Owner.Get(), Action.GetValue())) return false;
@@ -564,6 +604,7 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 		// A listener may release its request. Never apply a stale winner after callbacks.
 		Winner = GetInputWinner();
 	}
+	SynchronizeUIInputMappingContext(Winner);
 	const auto& Presentation = Winner.Request.Presentation;
 	UWidget* CursorOwner = Cast<UWidget>(Winner.Request.Owner.Get());
 	if (PresentedCursorOwner != CursorOwner || bShowMouseCursor != Presentation.bShowCursor)
@@ -610,6 +651,49 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 	PresentedViewport = Viewport;
 }
 
+void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAInputRouter::FWinner& Winner)
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+
+	const bool bShouldBeActive = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get()) != nullptr;
+	if (bShouldBeActive == bUIInputMappingContextActive)
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer
+		? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer)
+		: nullptr;
+	if (!Subsystem || !UIInputMappingContext)
+	{
+		if (bShouldBeActive)
+		{
+			UE_LOG(LogThe_Awakening, Warning, TEXT("UIInputMappingContext is not available on %s."), *GetName());
+		}
+		return;
+	}
+
+	FModifyContextOptions Options;
+	Options.bForceImmediately = true;
+	if (bShouldBeActive)
+	{
+		Subsystem->AddMappingContext(UIInputMappingContext, 10, Options);
+	}
+	else
+	{
+		Subsystem->RemoveMappingContext(UIInputMappingContext, Options);
+	}
+	bUIInputMappingContextActive = bShouldBeActive;
+	// Widgets are already constructed when their menu acquires input. Refresh only
+	// after the immediate rebuild so their first visible frame has valid icons.
+	if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>())
+		Icons->NotifyInputPromptsChanged();
+}
+
 bool AThe_AwakeningPlayerController::IsKeyMappedToAction(FKey Key, const UInputAction* Action) const
 {
 	const auto* Input = Cast<UTAPlayerInput>(PlayerInput);
@@ -617,4 +701,143 @@ bool AThe_AwakeningPlayerController::IsKeyMappedToAction(FKey Key, const UInputA
 	for (const auto& Mapping : Input->GetHeldActionMappings())
 		if (Mapping.Action == Action && Mapping.Key == Key) return true;
 	return false;
+}
+
+void AThe_AwakeningPlayerController::HandlePauseAction(const FInputActionValue&)
+{
+	if (SettingsMenuInstance)
+	{
+		SettingsMenuInstance->HandleMenuBackRequested();
+		return;
+	}
+	if (IsPauseMenuOpen())
+	{
+		ClosePauseMenu();
+		return;
+	}
+
+	const FTAInputRouter::FWinner CurrentInputOwner = GetInputWinner();
+	// The pause menu may interrupt scanning; other modal UI remains exclusive.
+	if (!CurrentInputOwner.IsBase() && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Scan))
+	{
+		return;
+	}
+
+	OpenPauseMenu();
+}
+
+void AThe_AwakeningPlayerController::OpenPauseMenu()
+{
+	if (!IsLocalPlayerController() || IsPauseMenuOpen() || !PauseMenuWidgetClass)
+	{
+		if (IsLocalPlayerController() && !PauseMenuWidgetClass)
+		{
+			UE_LOG(LogThe_Awakening, Error, TEXT("PauseMenuWidgetClass is not configured on %s."), *GetName());
+		}
+		return;
+	}
+
+	const FTAInputRouter::FWinner CurrentInputOwner = GetInputWinner();
+	if (!CurrentInputOwner.IsBase() && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Scan))
+	{
+		return;
+	}
+
+	PauseMenuInstance = CreateWidget<UTAPauseMenuWidget>(this, PauseMenuWidgetClass);
+	if (!PauseMenuInstance)
+	{
+		UE_LOG(LogThe_Awakening, Error, TEXT("Failed to create pause menu widget for %s."), *GetName());
+		return;
+	}
+
+	PauseMenuInstance->AddToViewport(1000);
+
+	FTAInputRequest Request;
+	Request.Owner = PauseMenuInstance;
+	Request.Priority = 500;
+	Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor,
+		ETAInputCapability::Confirm, ETAInputCapability::Close};
+	Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+	Request.Presentation.bShowCursor = true;
+	Request.Presentation.Focus = ETAInputFocusRequirement::Target;
+	Request.Presentation.FocusTarget = PauseMenuInstance->GetInitialFocusTarget();
+	PauseInputRequestHandle = AcquireInputRequest(Request);
+	if (!PauseInputRequestHandle)
+	{
+		PauseMenuInstance->RemoveFromParent();
+		PauseMenuInstance = nullptr;
+		return;
+	}
+	PauseMenuInstance->SetPlayerInputRequest(this, PauseInputRequestHandle);
+	PauseMenuInstance->OnSettingsRequested.AddUniqueDynamic(this, &AThe_AwakeningPlayerController::HandleSettingsRequested);
+
+	SetPause(true);
+}
+
+void AThe_AwakeningPlayerController::HandleSettingsRequested()
+{
+	OpenSettingsMenu();
+}
+
+void AThe_AwakeningPlayerController::OpenSettingsMenu()
+{
+	if (!IsLocalPlayerController() || !PauseMenuInstance || SettingsMenuInstance) return;
+	if (!SettingsMenuWidgetClass)
+	{
+		UE_LOG(LogThe_Awakening, Error, TEXT("SettingsMenuWidgetClass is not configured on %s."), *GetName());
+		return;
+	}
+	SettingsMenuInstance = CreateWidget<UTASettingsMenuWidget>(this, SettingsMenuWidgetClass);
+	if (!SettingsMenuInstance) return;
+	SettingsMenuInstance->InitializeMenu(this, nullptr);
+	SettingsMenuInstance->AddToViewport(1050);
+
+	FTAInputRequest Request;
+	Request.Owner = SettingsMenuInstance;
+	Request.Priority = 600;
+	Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm, ETAInputCapability::Close};
+	Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
+	Request.Presentation.bShowCursor = true;
+	Request.Presentation.Focus = ETAInputFocusRequirement::Target;
+	Request.Presentation.FocusTarget = SettingsMenuInstance->GetInitialFocusTarget();
+	const auto Handle = AcquireInputRequest(Request);
+	if (!Handle)
+	{
+		SettingsMenuInstance->RemoveFromParent();
+		SettingsMenuInstance = nullptr;
+		return;
+	}
+	SettingsMenuInstance->SetPlayerInputRequest(this, Handle);
+}
+
+void AThe_AwakeningPlayerController::CloseSettingsMenu()
+{
+	if (!SettingsMenuInstance) return;
+	SettingsMenuInstance->RemoveFromParent();
+	SettingsMenuInstance = nullptr;
+}
+
+void AThe_AwakeningPlayerController::ClosePauseMenu()
+{
+	if (!PauseMenuInstance)
+	{
+		return;
+	}
+	CloseSettingsMenu();
+
+	const FTAInputRouter::FHandle Handle = PauseInputRequestHandle;
+	PauseInputRequestHandle = 0;
+	if (Handle)
+	{
+		ReleaseInputRequest(Handle);
+	}
+	PauseMenuInstance->SetPlayerInputRequest(nullptr, 0);
+	PauseMenuInstance->RemoveFromParent();
+	PauseMenuInstance = nullptr;
+	SetPause(false);
+}
+
+bool AThe_AwakeningPlayerController::IsPauseMenuOpen() const
+{
+	return PauseMenuInstance && PauseMenuInstance->IsInViewport();
 }

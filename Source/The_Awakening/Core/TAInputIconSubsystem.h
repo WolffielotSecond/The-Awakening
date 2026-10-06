@@ -7,6 +7,8 @@
 
 class UInputAction;
 class UTexture2D;
+class ULocalPlayer;
+class UEnhancedInputLocalPlayerSubsystem;
 
 UENUM(BlueprintType)
 enum class EInputDeviceType : uint8
@@ -26,6 +28,7 @@ class THE_AWAKENING_API UTAInputIconSubsystem : public UGameInstanceSubsystem
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 
 	/** 获取指定按键对应的图标 */
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
@@ -37,6 +40,9 @@ public:
 	/** 获取指定 InputAction 当前绑定按键的图标 */
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
 	UTexture2D* GetIconForAction(UInputAction* Action) const;
+	/** Query this widget's player's active IMC bindings, filtered to the current device. */
+	UTexture2D* GetIconForActionForPlayer(UInputAction* Action, ULocalPlayer* LocalPlayer) const;
+	TArray<FKey> GetPromptKeysForAction(UInputAction* Action, ULocalPlayer* LocalPlayer) const;
 
 	/** 当前输入设备类型 */
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
@@ -57,12 +63,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "InputIcon")
 	FOnInputDeviceChanged OnInputDeviceChanged;
 
+	/** Shared prompt refresh: device, language, or rebuilt input mappings. */
+	UPROPERTY(BlueprintAssignable, Category = "InputIcon")
+	FOnInputDeviceChanged OnInputPromptsChanged;
+	UFUNCTION(BlueprintCallable, Category = "InputIcon")
+	void NotifyInputPromptsChanged();
+
 protected:
 	FString BuildIconPath(FKey Key) const;
 	UTexture2D* LoadIconFromPath(const FString& Path) const;
 	FString KeyToAssetName(FKey Key) const;
 	FString XboxAssetName(const FString& Logical) const;
 	FString PSAssetName(const FString& Logical) const;
+	void RegisterLocalPlayer(ULocalPlayer* LocalPlayer);
+	void UnregisterLocalPlayer(ULocalPlayer* LocalPlayer);
+	TArray<TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem>> ObservedInputSubsystems;
 
 protected:
 	UPROPERTY()

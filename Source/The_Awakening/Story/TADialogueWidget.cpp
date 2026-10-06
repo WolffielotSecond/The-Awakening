@@ -10,11 +10,9 @@
 #include "The_AwakeningCharacter.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
+#include "UI/TAPromptWidgetUtils.h"
 #include "The_AwakeningPlayerController.h"
-#include "EnhancedInputSubsystems.h"
-#include "EnhancedInputComponent.h"
 #include "InputAction.h"
-#include "InputMappingContext.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -98,7 +96,6 @@ void UTADialogueWidget::NativeConstruct()
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		LocalizeSubsystem = GI->GetSubsystem<UTALocalizeSubsystem>();
-		InputIconSubsystem = GI->GetSubsystem<UTAInputIconSubsystem>();
 	}
 
 	// 子系统委托
@@ -106,11 +103,7 @@ void UTADialogueWidget::NativeConstruct()
 	{
 		LocalizeSubsystem->OnLanguageChanged.AddDynamic(this, &UTADialogueWidget::HandleLanguageChanged);
 	}
-	if (InputIconSubsystem)
-	{
-		InputIconSubsystem->OnInputDeviceChanged.AddDynamic(this, &UTADialogueWidget::HandleInputDeviceChanged);
-	}
-	EnsureChoiceInputActions();
+	ValidateChoiceInputActions();
 	BuildActionPromptBar();
 
 	// 控制器委托
@@ -124,23 +117,11 @@ void UTADialogueWidget::NativeConstruct()
 		Controller->OnStoryFinished.AddDynamic(this, &UTADialogueWidget::HandleStoryFinished);
 	}
 
-	// 输入
-	PushDialogueMappingContext();
-	if (InputIconSubsystem)
-	{
-		if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
-		{
-			InputIconSubsystem->RefreshCurrentDeviceForUser(LocalPlayer->GetPlatformUserId());
-		}
-	}
-
 	// 初始状态
 	RefreshLine();
 	RefreshChoices();
 	RefreshPortraits();
-	RefreshIcons();
-	bRefreshIconsOnNextTick = true;
-	RefreshPromptLabels();
+	RefreshActionPromptBar();
 
 	SetIsFocusable(true);
 	if (!InputRequestHandle)
@@ -163,7 +144,6 @@ void UTADialogueWidget::NativeConstruct()
 void UTADialogueWidget::NativeDestruct()
 {
 	ReleaseInput();
-	PopDialogueMappingContext();
 	if (ActiveHistoryWidget)
 	{
 		ActiveHistoryWidget->RemoveFromParent();
@@ -173,11 +153,6 @@ void UTADialogueWidget::NativeDestruct()
 	{
 		LocalizeSubsystem->OnLanguageChanged.RemoveDynamic(this, &UTADialogueWidget::HandleLanguageChanged);
 		LocalizeSubsystem = nullptr;
-	}
-	if (InputIconSubsystem)
-	{
-		InputIconSubsystem->OnInputDeviceChanged.RemoveDynamic(this, &UTADialogueWidget::HandleInputDeviceChanged);
-		InputIconSubsystem = nullptr;
 	}
 	if (Controller)
 	{
@@ -195,16 +170,10 @@ void UTADialogueWidget::NativeDestruct()
 void UTADialogueWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	if (bRefreshIconsOnNextTick)
-	{
-		bRefreshIconsOnNextTick = false;
-		RefreshIcons();
-	}
 
 	if (Controller)
 	{
 		Controller->Tick(InDeltaTime);
-		UpdateChoiceSelectionFromMouse();
 
 		// Refresh after Tick even when it just completed the line. Tick may flip
 		// IsTyping to false on the exact frame that reveals the final character.
@@ -219,52 +188,28 @@ void UTADialogueWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 
 void UTADialogueWidget::CloseDialogue()
 {
-	PopDialogueMappingContext();
 	RemoveFromParent();
+}
+
+bool UTADialogueWidget::HandleMenuBackRequested()
+{
+	if (IsHistoryOpen())
+	{
+		CloseHistoryOverlay();
+	}
+	// Dialogue ends through its story flow. Consume Back to keep it modal.
+	return true;
 }
 
 // ------------------------------------------------------------
 // 输入
 // ------------------------------------------------------------
 
-void UTADialogueWidget::EnsureChoiceInputActions()
+void UTADialogueWidget::ValidateChoiceInputActions() const
 {
-	if (!ChoicePreviousAction)
+	if (!ChoicePreviousAction || !ChoiceNextAction || !ChoiceConfirmAction)
 	{
-		ChoicePreviousAction = NewObject<UInputAction>(this, TEXT("Runtime_DialogueChoicePrevious"));
-	}
-	if (!ChoiceNextAction)
-	{
-		ChoiceNextAction = NewObject<UInputAction>(this, TEXT("Runtime_DialogueChoiceNext"));
-	}
-	if (!ChoiceConfirmAction)
-	{
-		ChoiceConfirmAction = NewObject<UInputAction>(this, TEXT("Runtime_DialogueChoiceConfirm"));
-	}
-
-	RuntimeChoiceMappingContext = NewObject<UInputMappingContext>(this, TEXT("Runtime_DialogueChoiceMappingContext"));
-	if (!RuntimeChoiceMappingContext)
-	{
-		return;
-	}
-
-	// Only supply defaults for transiently-created actions. Designer-assigned actions are expected
-	// to be mapped in DialogueMappingContext so project input settings remain authoritative.
-	if (ChoicePreviousAction && ChoicePreviousAction->GetFName() == TEXT("Runtime_DialogueChoicePrevious"))
-	{
-		RuntimeChoiceMappingContext->MapKey(ChoicePreviousAction, EKeys::Up);
-		RuntimeChoiceMappingContext->MapKey(ChoicePreviousAction, EKeys::Gamepad_DPad_Up);
-	}
-	if (ChoiceNextAction && ChoiceNextAction->GetFName() == TEXT("Runtime_DialogueChoiceNext"))
-	{
-		RuntimeChoiceMappingContext->MapKey(ChoiceNextAction, EKeys::Down);
-		RuntimeChoiceMappingContext->MapKey(ChoiceNextAction, EKeys::Gamepad_DPad_Down);
-	}
-	if (ChoiceConfirmAction && ChoiceConfirmAction->GetFName() == TEXT("Runtime_DialogueChoiceConfirm"))
-	{
-		RuntimeChoiceMappingContext->MapKey(ChoiceConfirmAction, EKeys::Enter);
-		RuntimeChoiceMappingContext->MapKey(ChoiceConfirmAction, EKeys::SpaceBar);
-		RuntimeChoiceMappingContext->MapKey(ChoiceConfirmAction, EKeys::Gamepad_FaceButton_Bottom);
+		UE_LOG(LogTemp, Error, TEXT("Dialogue choice actions must be assigned to shared UI Input Actions in the dialogue widget defaults."));
 	}
 }
 
@@ -333,71 +278,6 @@ void UTADialogueWidget::OnActionPromptClicked(UTAActionPromptWidget* Prompt)
 	else if (Action == AdvanceAction)
 	{
 		OnAdvancePressed();
-	}
-}
-
-void UTADialogueWidget::PushDialogueMappingContext()
-{
-	if (bMappingPushed)
-	{
-		return;
-	}
-
-	if (DialogueMappingContext)
-	{
-		if (ULocalPlayer* LP = GetOwningLocalPlayer())
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* EILP = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-			{
-				EILP->AddMappingContext(DialogueMappingContext, DialogueMappingPriority);
-				if (RuntimeChoiceMappingContext)
-				{
-					EILP->AddMappingContext(RuntimeChoiceMappingContext, DialogueMappingPriority + 1);
-				}
-			}
-		}
-	}
-	else if (RuntimeChoiceMappingContext)
-	{
-		if (ULocalPlayer* LP = GetOwningLocalPlayer())
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* EILP = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-			{
-				EILP->AddMappingContext(RuntimeChoiceMappingContext, DialogueMappingPriority + 1);
-			}
-		}
-	}
-
-	bMappingPushed = true;
-}
-
-void UTADialogueWidget::PopDialogueMappingContext()
-{
-	if (!bMappingPushed)
-	{
-		return;
-	}
-	bMappingPushed = false;
-
-	if (DialogueMappingContext)
-	{
-		if (ULocalPlayer* LP = GetOwningLocalPlayer())
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* EILP = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-			{
-				EILP->RemoveMappingContext(DialogueMappingContext);
-			}
-		}
-	}
-	if (RuntimeChoiceMappingContext)
-	{
-		if (ULocalPlayer* LP = GetOwningLocalPlayer())
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* EILP = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-			{
-				EILP->RemoveMappingContext(RuntimeChoiceMappingContext);
-			}
-		}
 	}
 }
 
@@ -557,6 +437,7 @@ void UTADialogueWidget::RefreshChoices()
 		ChoiceW->SetHighlighted(i == Selected);
 		ChoiceW->OnClickedIndex.AddDynamic(this, &UTADialogueWidget::OnChoiceClicked);
 		ChoiceW->OnFocusedIndex.AddDynamic(this, &UTADialogueWidget::OnChoiceFocused);
+		ChoiceW->OnHovered.AddUniqueDynamic(this, &UTADialogueWidget::OnChoiceOptionHovered);
 		Box_Choices->AddChildToVerticalBox(ChoiceW);
 		ChoiceWidgets.Add(ChoiceW);
 	}
@@ -657,41 +538,21 @@ void UTADialogueWidget::RefreshHistory()
 	}
 }
 
-void UTADialogueWidget::RefreshIcons()
-{
-	RefreshActionPromptBar();
-}
-
-void UTADialogueWidget::RefreshPromptLabels()
-{
-	RefreshActionPromptBar();
-}
-
 void UTADialogueWidget::BuildActionPromptBar()
 {
 	if (!HorizontalBox_Controls || ActionPromptWidgets.Num() > 0)
 	{
 		return;
 	}
-	UClass* PromptClass = ActionPromptWidgetClass.Get();
-	if (!PromptClass)
+	auto AddPrompt = [this](UInputAction* Action, const TCHAR* TextId) -> UTAActionPromptWidget*
 	{
-		PromptClass = LoadClass<UTAActionPromptWidget>(nullptr, TEXT("/Game/UI/WBP_ActionPrompt.WBP_ActionPrompt_C"));
-	}
-	if (!PromptClass)
-	{
-		PromptClass = UTAActionPromptWidget::StaticClass();
-	}
-	auto AddPrompt = [this, PromptClass](UInputAction* Action, const TCHAR* TextId) -> UTAActionPromptWidget*
-	{
-		UTAActionPromptWidget* Prompt = CreateWidget<UTAActionPromptWidget>(this, PromptClass);
+		UTAActionPromptWidget* Prompt = FTAPromptWidgetUtils::AddActionPrompt(
+			this, HorizontalBox_Controls, ActionPromptWidgetClass, Action, TextId);
 		if (!Prompt)
 		{
 			return nullptr;
 		}
-		Prompt->ConfigureLocalizedPrompt(Action, TextId);
 		Prompt->OnPromptClicked.AddDynamic(this, &UTADialogueWidget::OnActionPromptClicked);
-		HorizontalBox_Controls->AddChildToHorizontalBox(Prompt)->SetPadding(FMargin(6.0f, 0.0f));
 		ActionPromptWidgets.Add(Prompt);
 		return Prompt;
 	};
@@ -748,13 +609,6 @@ void UTADialogueWidget::RefreshActionPromptBar()
 			Prompt->SetVisibility(bShowChoicePrompts ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		}
 	}
-	for (UTAActionPromptWidget* Prompt : ActionPromptWidgets)
-	{
-		if (Prompt)
-		{
-			Prompt->RefreshPrompt();
-		}
-	}
 }
 
 void UTADialogueWidget::UpdateChoiceHighlights()
@@ -765,44 +619,6 @@ void UTADialogueWidget::UpdateChoiceHighlights()
 		if (ChoiceWidgets[Index])
 		{
 			ChoiceWidgets[Index]->SetHighlighted(Index == Selected);
-		}
-	}
-}
-
-void UTADialogueWidget::UpdateChoiceSelectionFromMouse()
-{
-	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
-	if (!Controller || !Controller->IsChoiceNode() || !FSlateApplication::IsInitialized())
-	{
-		return;
-	}
-
-	const FVector2D MousePosition = FSlateApplication::Get().GetCursorPos();
-	if (!bHasLastChoiceMousePosition)
-	{
-		LastChoiceMousePosition = MousePosition;
-		bHasLastChoiceMousePosition = true;
-		return;
-	}
-
-	const bool bMouseMoved = !MousePosition.Equals(LastChoiceMousePosition, 0.5f);
-	LastChoiceMousePosition = MousePosition;
-	if (!bMouseMoved)
-	{
-		return;
-	}
-
-	for (int32 Index = 0; Index < ChoiceWidgets.Num(); ++Index)
-	{
-		UTADialogueChoiceButton* Choice = ChoiceWidgets[Index];
-		if (Choice && Choice->GetCachedGeometry().IsUnderLocation(MousePosition))
-		{
-			if (Controller->GetSelectedChoiceIndex() != Index)
-			{
-				Controller->SetSelectedChoiceIndex(Index);
-				UpdateChoiceHighlights();
-			}
-			return;
 		}
 	}
 }
@@ -827,6 +643,14 @@ void UTADialogueWidget::OnChoiceFocused(int32 Index)
 	{
 		Controller->SetSelectedChoiceIndex(Index);
 		UpdateChoiceHighlights();
+	}
+}
+
+void UTADialogueWidget::OnChoiceOptionHovered(UTASelectableMenuOptionWidget* OptionWidget)
+{
+	if (const UTADialogueChoiceButton* Choice = Cast<UTADialogueChoiceButton>(OptionWidget))
+	{
+		OnChoiceFocused(Choice->GetChoiceIndex());
 	}
 }
 
@@ -860,12 +684,6 @@ void UTADialogueWidget::HandleLanguageChanged()
 	RefreshLine();
 	RefreshChoices();
 	RefreshHistory();
-	RefreshPromptLabels();
-}
-
-void UTADialogueWidget::HandleInputDeviceChanged()
-{
-	RefreshIcons();
 }
 
 void UTADialogueWidget::ReleaseInput()

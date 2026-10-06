@@ -6,7 +6,7 @@ class UWidget;
 enum class ETAInputCapability : uint8
 {
 	Move, Look, Interact, Parkour, Scan, InventoryToggle, Cursor,
-	Confirm, Undo, Pan, Navigate, Close, Advance, ToggleHistory, ToggleDrag, OpenDebugUI
+	Confirm, Undo, Pan, Navigate, Close, Advance, ToggleHistory, ToggleDrag, OpenDebugUI, ToggleFavorite
 };
 enum class ETAInputModeRequirement : uint8 { GameOnly, GameAndUI, UIOnly };
 enum class ETAInputFocusRequirement : uint8 { Viewport, Target };

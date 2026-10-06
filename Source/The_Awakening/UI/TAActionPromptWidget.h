@@ -78,10 +78,7 @@ protected:
 	TObjectPtr<UTextBlock> Text_ActionName;
 
 	UFUNCTION()
-	void HandleInputDeviceChanged();
-
-	UFUNCTION()
-	void HandleLanguageChanged();
+	void HandleInputPromptsChanged();
 
 	void EnsureWidgetBindings();
 	void BuildFallbackWidget();

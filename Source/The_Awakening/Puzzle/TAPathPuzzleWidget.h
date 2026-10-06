@@ -14,6 +14,7 @@ class UProgressBar;
 class UTextBlock;
 class UButton;
 class UImage;
+class UInputAction;
 class UTAPathPuzzleNodeWidget;
 
 USTRUCT(BlueprintType)
@@ -44,9 +45,11 @@ class THE_AWAKENING_API UTAPathPuzzleWidget : public UUserWidget, public ITAPlay
 {
 	GENERATED_BODY()
 public:
+	UTAPathPuzzleWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool HandleMenuBackRequested() override { ClosePuzzle(); return true; }
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
 	FVector2D GetPlayerPanInput() const;
 	virtual void RemoveFromParent() override;
@@ -88,6 +91,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="1")) float AimRadius = 30.f;
 	/** When enabled, W/S pan the board down/up and A/D pan it right/left. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope") bool bInversePanInput = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Puzzle|Input") TObjectPtr<UInputAction> ConfirmAction;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Puzzle|Input") TObjectPtr<UInputAction> UndoAction;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Puzzle|Input") TObjectPtr<UInputAction> PanAction;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="0.1", ClampMax="1.0")) float ScopeHeightFraction = .8f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Puzzle|Scope", meta=(ClampMin="0")) float EnergyBlendSpeed = 14.f;
 

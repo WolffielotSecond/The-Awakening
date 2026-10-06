@@ -37,6 +37,7 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool HandleMenuBackRequested() override;
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
 	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
@@ -59,7 +60,7 @@ protected:
 	void HandleLanguageChanged();
 
 	UFUNCTION()
-	void HandleInputDeviceChanged();
+	void HandleInputPromptsChanged();
 
 	UFUNCTION()
 	void HandleCloseClicked();

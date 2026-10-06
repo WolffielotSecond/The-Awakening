@@ -6,9 +6,15 @@ class UUserWidget;
 class UTexture2D;
 class UImage;
 class USizeBox;
+class UHorizontalBox;
+class UInputAction;
+class UTAActionPromptWidget;
 
 struct THE_AWAKENING_API FTAPromptWidgetUtils
 {
+	/** Common prompt creation; layout remains controlled by the supplied Blueprint container. */
+	static UTAActionPromptWidget* AddActionPrompt(UUserWidget* Owner, UHorizontalBox* Container,
+		TSubclassOf<UTAActionPromptWidget> WidgetClass, UInputAction* Action, const FString& TextId);
 	/** Applies a key icon at the requested height while preserving its texture aspect ratio. */
 	static void ApplyKeyIcon(UImage* Image, UTexture2D* KeyIcon, float TargetIconHeight, USizeBox* IconSizeBox = nullptr);
 

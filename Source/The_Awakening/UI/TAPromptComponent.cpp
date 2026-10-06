@@ -8,6 +8,7 @@
 #include "Core/TAInputIconSubsystem.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -314,7 +315,9 @@ void UTAPromptComponent::RefreshCandidate(const FTAPromptCandidate& Candidate)
 			{
 				if (Candidate.Action)
 				{
-					Icon = Icons->GetIconForAction(Candidate.Action);
+					auto* Pawn = OwnerPawn.Get();
+					auto* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+					Icon = Icons->GetIconForActionForPlayer(Candidate.Action, PC ? PC->GetLocalPlayer() : nullptr);
 				}
 			}
 		}
