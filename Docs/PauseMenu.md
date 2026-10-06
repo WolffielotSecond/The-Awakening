@@ -25,7 +25,7 @@ The C++ widget builds one styled row for every valid option definition. `OptionI
 - The menu pauses the world, acquires a high-priority UI input request, and focuses the first generated button. Closing it releases that request and unpauses the world.
 - Pause input can interrupt scanning, but does not stack the menu over another modal UI such as dialogue, inventory, or the puzzle.
 - Resume closes the pause menu. Quit Game calls Unreal's `QuitGame` function.
-- Settings broadcasts `OnSettingsRequested`. Bind this event in Blueprint when the settings screen is ready; the pause widget does not invent a placeholder settings screen.
+- Settings broadcasts `OnSettingsRequested`; the controller opens its configured SettingsMenuWidgetClass while retaining the pause menu. See `Docs/SettingsSystem.md` for manual Blueprint layout and wiring.
 
 The shared context migration for Inventory and Dialogue is documented in `Docs/UIInputMapping.md`.
 

@@ -24,6 +24,9 @@
 #include "The_AwakeningCharacter.h"
 #include "UI/Pause/TAPauseMenuWidget.h"
 #include "Settings/TASettingsMenuWidget.h"
+#include "Settings/TASettingsSubsystem.h"
+#include "Settings/TAKeyBindingService.h"
+#include "InputMappingContext.h"
 #include "Widgets/SWindow.h"
 #include "Layout/WidgetPath.h"
 #include "Framework/Application/SlateUser.h"
@@ -101,6 +104,8 @@ void FTAInputDeviceDetector::Tick(const float DeltaTime, FSlateApplication& Soft
 	{
 		Owner->RefreshInputOwnership();
 		Owner->TickVirtualCursor(DeltaTime);
+  if (Owner->GetLocalPlayer())
+   if (auto* Settings=Owner->GetLocalPlayer()->GetSubsystem<UTASettingsSubsystem>()) Settings->CheckVideoModeTimeout();
 	}
 }
 
@@ -357,16 +362,33 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 		{
+   auto* Bindings=GetLocalPlayer()->GetSubsystem<UTAKeyBindingService>();
+   if (UIInputMappingContext && SettingsActions.IsEmpty())
+   {
+    UIInputMappingContext=DuplicateObject<UInputMappingContext>(UIInputMappingContext,this,TEXT("IMC_UI"));
+    auto Add=[&](const TCHAR* Name,FKey Keyboard,FKey Gamepad)
+    {
+     auto* Action=NewObject<UInputAction>(this,FName(*(FString(TEXT("IA_Settings"))+Name)));
+     Action->bTriggerWhenPaused=true; SettingsActions.Add(Name,Action);
+     UIInputMappingContext->MapKey(Action,Keyboard); UIInputMappingContext->MapKey(Action,Gamepad);
+    };
+    Add(TEXT("AdjustLeft"),EKeys::Left,EKeys::Gamepad_DPad_Left);
+    Add(TEXT("AdjustRight"),EKeys::Right,EKeys::Gamepad_DPad_Right);
+    Add(TEXT("PreviousPage"),EKeys::PageUp,EKeys::Gamepad_LeftShoulder);
+    Add(TEXT("NextPage"),EKeys::PageDown,EKeys::Gamepad_RightShoulder);
+    Add(TEXT("Favorite"),EKeys::F,EKeys::Gamepad_FaceButton_Left);
+    if (Bindings) UIInputMappingContext=Bindings->PrepareContext(UIInputMappingContext);
+   }
 			for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
 			{
-				Subsystem->AddMappingContext(CurrentContext, 0);
+				Subsystem->AddMappingContext(Bindings?Bindings->PrepareContext(CurrentContext):CurrentContext, 0);
 			}
 
 			// The legacy property contains desktop mouse mappings, not touch controls.
 			// Keep its serialized name so existing Blueprint defaults remain valid.
 			for (UInputMappingContext* CurrentContext : MobileExcludedMappingContexts)
 			{
-				Subsystem->AddMappingContext(CurrentContext, 0);
+				Subsystem->AddMappingContext(Bindings?Bindings->PrepareContext(CurrentContext):CurrentContext, 0);
 			}
 		}
 	}
@@ -476,7 +498,7 @@ void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 	// The character suppresses the normal gamepad Look callback during scanning.
 	if (IsCursorStickLookActive() && PlayerCharacter)
 	{
-		PlayerCharacter->SubmitPlayerLook(CursorAxis.X * DeltaTime * 60.f, -CursorAxis.Y * DeltaTime * 60.f);
+		PlayerCharacter->SubmitPlayerLook(CursorAxis.X * DeltaTime * 60.f, -CursorAxis.Y * DeltaTime * 60.f, true);
 	}
 }
 
@@ -519,6 +541,11 @@ bool AThe_AwakeningPlayerController::RoutePlayerInputKey(FKey Key, bool bRepeat,
 	const auto Winner = GetInputWinner();
 	auto* Receiver = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
 	if (!Receiver) return false;
+ if (Receiver->IsCapturingPlayerInput())
+ {
+  if (!AllowsInputFor(Receiver->GetPlayerInputRequestHandle(), Winner.Request.Owner.Get(), ETAInputCapability::CaptureBinding)) return false;
+  return Receiver->CapturePlayerInput(Key,bRepeat);
+ }
 	// Back is a dedicated Enhanced Input action in the shared UI mapping context.
 	if (UIBackAction && IsKeyMappedToAction(Key, UIBackAction))
 	{
@@ -795,7 +822,7 @@ void AThe_AwakeningPlayerController::OpenSettingsMenu()
 	FTAInputRequest Request;
 	Request.Owner = SettingsMenuInstance;
 	Request.Priority = 600;
-	Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm, ETAInputCapability::Close};
+	Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm, ETAInputCapability::Close, ETAInputCapability::ToggleFavorite};
 	Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
 	Request.Presentation.bShowCursor = true;
 	Request.Presentation.Focus = ETAInputFocusRequirement::Target;

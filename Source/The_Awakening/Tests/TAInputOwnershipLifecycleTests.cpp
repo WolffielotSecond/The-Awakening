@@ -14,6 +14,7 @@
 #include "Core/TAFreezeComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Puzzle/TAPathPuzzleWidget.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAInputLifecycleTest, "TheAwakening.Input.OwnershipLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -36,6 +37,20 @@ bool FTAInputLifecycleTest::RunTest(const FString&)
 	if (!TestNotNull(TEXT("Inventory"), Inventory) || !TestNotNull(TEXT("Dialogue"), Dialogue) || !TestNotNull(TEXT("History"), History))
 	{ PC->OnInputOwnerChanged.Remove(Listener); World->DestroyWorld(false); return false; }
 	// Exercise actual lifecycle hooks without requiring a PIE viewport in automation.
+ // Native fixtures do not inherit WBP action defaults. Supply the project's
+ // shared actions before Construct so validation exercises a configured menu.
+ auto AssignAction=[](UObject* Widget,const TCHAR* Property,const TCHAR* Path)
+ {
+  if (auto* Field=FindFProperty<FObjectPropertyBase>(Widget->GetClass(),Property))
+   Field->SetObjectPropertyValue_InContainer(Widget,LoadObject<UInputAction>(nullptr,Path));
+ };
+ AssignAction(Inventory,TEXT("PreviousPageAction"),TEXT("/Game/Input/Actions/Inventory/IA_Inventory_PreviousPage"));
+ AssignAction(Inventory,TEXT("NextPageAction"),TEXT("/Game/Input/Actions/Inventory/IA_Inventory_NextPage"));
+ AssignAction(Inventory,TEXT("ConfirmAction"),TEXT("/Game/Input/Actions/Inventory/IA_Inventory_Confirm"));
+ AssignAction(Inventory,TEXT("GamepadDragModeAction"),TEXT("/Game/Input/Actions/Inventory/IA_Inventory_Drag"));
+ AssignAction(Dialogue,TEXT("ChoicePreviousAction"),TEXT("/Game/Input/Actions/IA_ChoicePrevious"));
+ AssignAction(Dialogue,TEXT("ChoiceNextAction"),TEXT("/Game/Input/Actions/IA_ChoiceNext"));
+ AssignAction(Dialogue,TEXT("ChoiceConfirmAction"),TEXT("/Game/Input/Actions/IA_ChoiceConfirm"));
 	Inventory->NativeConstruct();
 	const auto InventoryHandle = PC->GetInputWinner().Handle;
 	TestTrue(TEXT("Inventory owns its request"), PC->GetInputWinner().Request.Owner.Get() == Inventory && PC->bShowMouseCursor);

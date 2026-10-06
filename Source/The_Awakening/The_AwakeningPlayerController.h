@@ -81,6 +81,7 @@ public:
 	void CloseSettingsMenu();
 	UInputAction* GetUIBackAction() const { return UIBackAction; }
 	UInputAction* GetPauseAction() const { return PauseAction; }
+ UInputAction* GetSettingsAction(FName Name) const { return SettingsActions.FindRef(Name); }
 
 	bool IsKeyMappedToAction(FKey Key, const UInputAction* Action) const;
 	FSimpleMulticastDelegate OnInputOwnerChanged;
@@ -126,6 +127,8 @@ protected:
 	TObjectPtr<UTAPauseMenuWidget> PauseMenuInstance;
 	UPROPERTY(Transient)
 	TObjectPtr<UTASettingsMenuWidget> SettingsMenuInstance;
+ UPROPERTY(Transient)
+ TMap<FName,TObjectPtr<UInputAction>> SettingsActions;
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
 	FDelegateHandle ApplicationActivationHandle;

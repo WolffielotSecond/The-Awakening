@@ -20,4 +20,6 @@ public:
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) = 0;
 	/** Called for the shared UI Back action while this receiver owns input. */
 	virtual bool HandleMenuBackRequested() { return false; }
+ virtual bool IsCapturingPlayerInput() const { return false; }
+ virtual bool CapturePlayerInput(FKey Key, bool bRepeat) { return false; }
 };

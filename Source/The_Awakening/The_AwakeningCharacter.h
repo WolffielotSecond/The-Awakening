@@ -215,12 +215,12 @@ public:
 	void NotifyInventoryPanelClosed(UTAInventoryPanelWidget* ClosedPanel);
 	bool IsLandingMomentumSafe(const FVector& Direction) const { return IsSafeToMoveToward(Direction); }
 	void ClearMovementInput();
-	void SubmitPlayerLook(float Yaw, float Pitch);
+	void SubmitPlayerLook(float Yaw, float Pitch, bool bControllerInput = false);
 	virtual bool CanParticipateInDialogue_Implementation() const override;
 	/** Explicit gameplay stop for normal movement/landing, never a permission side effect. */
 	UFUNCTION(BlueprintCallable, Category="Movement")
 	void StopCurrentMovement();
-	float GetMenuCursorSpeed() const { return MenuCursorSpeed; }
+	float GetMenuCursorSpeed() const;
 
 	// IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;

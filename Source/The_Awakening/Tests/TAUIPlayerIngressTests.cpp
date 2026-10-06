@@ -134,6 +134,11 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	Story.Nodes = {Choice, Line}; Story.RebuildIndex();
 	auto* Session = NewObject<UTADialogueController>(); Session->Initialize(nullptr, Story, PC); Session->Start();
 	auto* Dialogue = CreateWidget<UTADialogueWidget>(PC, UTADialogueWidget::StaticClass());
+ // The native fixture has no WBP defaults; configure shared choice actions
+ // before validation and before adding the test's physical-key mappings.
+ Dialogue->ChoicePreviousAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/Input/Actions/IA_ChoicePrevious"));
+ Dialogue->ChoiceNextAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/Input/Actions/IA_ChoiceNext"));
+ Dialogue->ChoiceConfirmAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/Input/Actions/IA_ChoiceConfirm"));
 	Dialogue->Setup(nullptr, Session); Dialogue->NativeConstruct();
 	Context->MapKey(Dialogue->ChoiceConfirmAction, EKeys::Gamepad_FaceButton_Bottom);
 	Dialogue->AdvanceAction = NewObject<UInputAction>(); Context->MapKey(Dialogue->AdvanceAction, EKeys::Gamepad_FaceButton_Bottom);

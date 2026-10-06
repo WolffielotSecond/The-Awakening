@@ -6,6 +6,7 @@
 #include "Core/TAFreezeExemptSpringArm.h"
 #include "AbilitySystemComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "Settings/TASettingsSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -346,7 +347,7 @@ void AThe_AwakeningCharacter::Look(const FInputActionValue& Value)
 	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
 	if (PC && PC->UsesCursorLook()) return;
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
-	SubmitPlayerLook(LookAxisVector.X, LookAxisVector.Y);
+	SubmitPlayerLook(LookAxisVector.X, LookAxisVector.Y, true);
 }
 
 void AThe_AwakeningCharacter::MouseLook(const FInputActionValue& Value)
@@ -436,10 +437,24 @@ void AThe_AwakeningCharacter::ExecuteMovementCommand(float Right, float Forward,
 	AddMovementInput(RightDirection, SafeRight);
 }
 
-void AThe_AwakeningCharacter::SubmitPlayerLook(float Yaw, float Pitch)
+float AThe_AwakeningCharacter::GetMenuCursorSpeed() const
+{
+ const auto* PC=Cast<AThe_AwakeningPlayerController>(GetController());
+ const auto* LP=PC?PC->GetLocalPlayer():nullptr;
+ const auto* S=LP?LP->GetSubsystem<UTASettingsSubsystem>():nullptr;
+ return MenuCursorSpeed*(S?S->GetNumber(TEXT("Controller.MenuCursorSpeed"),1):1);
+}
+void AThe_AwakeningCharacter::SubmitPlayerLook(float Yaw, float Pitch, bool bControllerInput)
 {
 	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
-	if (PC && PC->AllowsInput(ETAInputCapability::Look)) DoLook(Yaw, Pitch);
+ if (!PC || !PC->AllowsInput(ETAInputCapability::Look)) return;
+ const auto* LP=PC->GetLocalPlayer();
+ const auto* S=LP?LP->GetSubsystem<UTASettingsSubsystem>():nullptr;
+ const FString Prefix=bControllerInput?TEXT("Controller."):TEXT("MouseKeyboard.");
+ const float Scale=S?S->GetNumber(FName(*(Prefix+TEXT("CameraSensitivity"))),1):1;
+ const bool X=S && S->GetBoolean(FName(*(Prefix+TEXT("InvertCameraX"))));
+ const bool Y=S && S->GetBoolean(FName(*(Prefix+TEXT("InvertCameraY"))));
+ DoLook(Yaw*Scale*(X?-1:1),Pitch*Scale*(Y?-1:1));
 }
 
 void AThe_AwakeningCharacter::DoLook(float Yaw, float Pitch)

@@ -18,4 +18,4 @@ Keep the parent menu alive while its child is open. Give the child an input requ
 
 When a menu can only be opened directly, its back handler should close that menu. No navigation history is inferred: the parent/child relationship comes from which menu widgets remain active and own input requests.
 
-Settings child pages should follow the same pattern when implemented. At present, the pause menu's Settings option does not open a settings page.
+Settings uses the same pattern: Pause stays at priority 500, Settings uses 600, and brightness/binding children use 610. Back from a child returns to Settings, then Pause; only leaving Pause resumes gameplay. During binding capture, Back cancels the capture first. See `Docs/SettingsSystem.md`.
