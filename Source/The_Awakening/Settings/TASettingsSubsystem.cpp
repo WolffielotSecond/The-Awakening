@@ -8,14 +8,14 @@
 #include "Misc/DefaultValueHelper.h"
 #include "HAL/PlatformTime.h"
 
-namespace { const TCHAR* Section=TEXT("TheAwakening.PlayerSettings"); }
+namespace { const TCHAR* PlayerSettingsConfigSection=TEXT("TheAwakening.PlayerSettings"); }
 void UTASettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
  Super::Initialize(Collection);
  Pages=FTASettingsCatalog::BuildPages();
  Definitions=FTASettingsCatalog::Build(this);
  FString AssetPath;
- if (GConfig && GConfig->GetString(Section,TEXT("DefinitionAsset"),AssetPath,GGameIni))
+ if (GConfig && GConfig->GetString(PlayerSettingsConfigSection,TEXT("DefinitionAsset"),AssetPath,GGameIni))
   if (auto* Asset=LoadObject<UTASettingsDefinitionAsset>(nullptr,*AssetPath)) UseDefinitionAsset(Asset);
  LoadSavedValues();
  // Do not replace existing engine display settings with catalog defaults on startup.
@@ -162,12 +162,12 @@ FText UTASettingsSubsystem::FormatValue(const FTASettingDefinition& D) const
 void UTASettingsSubsystem::LoadSavedValues()
 {
  if (!GConfig) return;
- int32 Schema=1; GConfig->GetInt(Section,TEXT("SchemaVersion"),Schema,GGameUserSettingsIni);
+ int32 Schema=1; GConfig->GetInt(PlayerSettingsConfigSection,TEXT("SchemaVersion"),Schema,GGameUserSettingsIni);
  for (const auto& D:Definitions)
  {
   // Engine display settings retain their engine authority across hardware changes.
   if (D.Type==ETASettingType::Submenu || FTASettingsApplyService::IsDisplaySetting(D.ApplyHandlerId)) continue;
-  FString Encoded; if (!GConfig->GetString(Section,*D.SettingId.ToString(),Encoded,GGameUserSettingsIni)) continue;
+  FString Encoded; if (!GConfig->GetString(PlayerSettingsConfigSection,*D.SettingId.ToString(),Encoded,GGameUserSettingsIni)) continue;
   int32 V=0,N=0;
   if (Schema>=2)
   { if (!FDefaultValueHelper::ParseInt(Encoded,V)) continue; }
@@ -180,20 +180,20 @@ void UTASettingsSubsystem::LoadSavedValues()
   else if (!FDefaultValueHelper::ParseInt(Encoded,V)) continue;
   if (D.Normalize(V,N)) CurrentValues.Add(D.SettingId,N);
  }
- TArray<FString> Favorites; GConfig->GetArray(Section,TEXT("Favorites"),Favorites,GGameUserSettingsIni);
+ TArray<FString> Favorites; GConfig->GetArray(PlayerSettingsConfigSection,TEXT("Favorites"),Favorites,GGameUserSettingsIni);
  for (const FString& S:Favorites)
   if (const auto* D=FindDefinition(FName(*S));D && !D->bSubmenuOnly && D->bCanFavorite) FavoriteSettingIds.Add(D->SettingId);
 }
 void UTASettingsSubsystem::SaveValues() const
 {
  if (!GConfig) return;
- GConfig->SetInt(Section,TEXT("SchemaVersion"),2,GGameUserSettingsIni);
+ GConfig->SetInt(PlayerSettingsConfigSection,TEXT("SchemaVersion"),2,GGameUserSettingsIni);
  for (const auto& D:Definitions)
  {
   if (D.Type==ETASettingType::Submenu || (HasPendingVideoMode() && D.ApplyPolicy==ETASettingApplyPolicy::VideoMode)) continue;
   int32 V=0; if (!GetValue(D.SettingId,V)) continue;
-  GConfig->SetInt(Section,*D.SettingId.ToString(),V,GGameUserSettingsIni);
+  GConfig->SetInt(PlayerSettingsConfigSection,*D.SettingId.ToString(),V,GGameUserSettingsIni);
  }
  TArray<FString> Favorites; for(FName Id:FavoriteSettingIds) Favorites.Add(Id.ToString()); Favorites.Sort();
- GConfig->SetArray(Section,TEXT("Favorites"),Favorites,GGameUserSettingsIni); GConfig->Flush(false,GGameUserSettingsIni);
+ GConfig->SetArray(PlayerSettingsConfigSection,TEXT("Favorites"),Favorites,GGameUserSettingsIni); GConfig->Flush(false,GGameUserSettingsIni);
 }
