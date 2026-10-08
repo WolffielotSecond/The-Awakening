@@ -1,5 +1,8 @@
 #include "Settings/TASettingsMenuWidget.h"
 #include "Settings/TASettingRowWidget.h"
+#include "Settings/TASettingsPageWidget.h"
+#include "Settings/TASettingsSectionWidget.h"
+#include "Settings/TASettingsDescriptionBlockWidget.h"
 #include "Settings/TASettingsSubsystem.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "The_AwakeningPlayerController.h"
@@ -23,7 +26,14 @@ UTASettingsMenuWidget::UTASettingsMenuWidget(const FObjectInitializer& O):Super(
  PreviousAction=Prev.Object; NextAction=Next.Object; ConfirmAction=Confirm.Object;
 }
 void UTASettingsMenuWidget::InitializeMenu(AThe_AwakeningPlayerController* PC,UTASettingsMenuWidget* Parent,UTASettingsMenuDefinitionAsset* Menu)
-{ InputController=PC; ParentMenu=Parent; MenuDefinition=Menu; }
+{
+ InputController=PC; ParentMenu=Parent; MenuDefinition=Menu?Menu:DefaultMenuDefinition.Get();
+ if (Parent && !MenuDefinition)
+ {
+  MenuDefinition=NewObject<UTASettingsMenuDefinitionAsset>(this);
+  MenuDefinition->MenuId=TEXT("Menu.Custom"); MenuDefinition->TitleTextId=TEXT("UI_Settings");
+ }
+}
 void UTASettingsMenuWidget::NativeConstruct()
 {
  Super::NativeConstruct();
@@ -31,18 +41,10 @@ void UTASettingsMenuWidget::NativeConstruct()
  if (GetOwningLocalPlayer()) SettingsSubsystem=GetOwningLocalPlayer()->GetSubsystem<UTASettingsSubsystem>();
  if (SettingsSubsystem) { SettingsSubsystem->OnSettingValueChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::ValueChanged); SettingsSubsystem->OnFavoritesChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::FavoritesChanged); }
  if (auto* GI=GetGameInstance()) if (auto* Loc=GI->GetSubsystem<UTALocalizeSubsystem>()) Loc->OnLanguageChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::LanguageChanged);
- if (Button_Game) Button_Game->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::GamePage);
- if (Button_Display) Button_Display->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::DisplayPage);
- if (Button_Audio) Button_Audio->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::AudioPage);
- if (Button_MouseKeyboard) Button_MouseKeyboard->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::MousePage);
- if (Button_Controller) Button_Controller->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::ControllerPage);
- if (Button_Favorites) Button_Favorites->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::FavoritesPage);
  if (Button_RestoreDefaults) Button_RestoreDefaults->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::RestoreClicked);
  if (Button_ConfirmVideoMode) Button_ConfirmVideoMode->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::ConfirmVideo);
  if (Button_RevertVideoMode) Button_RevertVideoMode->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::RevertVideo);
- if (MenuDefinition)
-  for (UButton* B:{Button_Game.Get(),Button_Display.Get(),Button_Audio.Get(),Button_MouseKeyboard.Get(),Button_Controller.Get(),Button_Favorites.Get()}) if (B) B->SetVisibility(ESlateVisibility::Collapsed);
- RefreshPageLabels(); BuildSettingRows(); BuildPromptBar();
+ BuildPageEntries(); RefreshPageLabels(); BuildSettingRows(); BuildPromptBar();
 }
 void UTASettingsMenuWidget::NativeDestruct()
 {
@@ -78,7 +80,7 @@ UTASettingRowWidget* UTASettingsMenuWidget::AddRow(const FTASettingDefinition& D
  auto Class=OptionWidgetClass; if (const auto* Specific=RowWidgetClasses.Find(D.Type);Specific && *Specific) Class=*Specific;
  if (!Box_SettingsOptions || !Class) return nullptr;
  auto* W=CreateWidget<UTASettingRowWidget>(this,Class); if (!W) return nullptr;
- W->Configure(D,Text(D.NameTextId),Value,SettingsSubsystem?SettingsSubsystem->GetNumber(D.SettingId,0):0,SettingsSubsystem && SettingsSubsystem->IsFavorite(D.SettingId));
+ W->Configure(D,Text(D.NameTextId),Value,SettingsSubsystem?SettingsSubsystem->GetInteger(D.SettingId,0):0,SettingsSubsystem && SettingsSubsystem->IsFavorite(D.SettingId));
  W->OnHovered.AddDynamic(this,&UTASettingsMenuWidget::RowHovered);
  W->OnActivated.AddDynamic(this,&UTASettingsMenuWidget::RowActivated);
  W->OnAdjusted.AddDynamic(this,&UTASettingsMenuWidget::RowAdjusted);
@@ -88,38 +90,114 @@ UTASettingRowWidget* UTASettingsMenuWidget::AddRow(const FTASettingDefinition& D
 }
 void UTASettingsMenuWidget::BuildSettingRows()
 {
- if (!Box_SettingsOptions) return; Box_SettingsOptions->ClearChildren(); Rows.Reset();
- if (SettingsSubsystem) for (const auto& D:SettingsSubsystem->GetDefinitions())
+ if (!Box_SettingsOptions) return; Box_SettingsOptions->ClearChildren(); Rows.Reset(); SectionHeadings.Reset(); SectionHeadingIds.Reset();
+ if (SettingsSubsystem)
  {
-  bool Show=MenuDefinition?MenuDefinition->SettingIds.Contains(D.SettingId):!D.bSubmenuOnly && (CurrentPage==ETAGameSettingsPage::Favorites?SettingsSubsystem->IsFavorite(D.SettingId):D.Page==CurrentPage);
-  if (Show) AddRow(D,SettingsSubsystem->FormatValue(D));
+  if (MenuDefinition)
+  {
+   for (FName Id:MenuDefinition->SettingIds)
+    if (const auto* D=SettingsSubsystem->FindDefinition(Id)) AddRow(*D,SettingsSubsystem->FormatValue(*D));
+  }
+  else
+  {
+   TSet<FName> Favorites; for (FName Id:SettingsSubsystem->GetFavoriteSettingIds()) Favorites.Add(Id);
+   const auto Groups=FTASettingsCatalog::BuildViewGroups(SettingsSubsystem->GetPages(),SettingsSubsystem->GetDefinitions(),CurrentPageId,Favorites);
+   for (const auto& G:Groups)
+   {
+    if (SectionWidgetClass)
+    {
+     if (auto* Heading=CreateWidget<UTASettingsSectionWidget>(this,SectionWidgetClass))
+     {
+      Box_SettingsOptions->AddChild(Heading); Heading->SetTitle(Text(G.HeadingId.ToString()));
+      SectionHeadings.Add(Heading); SectionHeadingIds.Add(G.HeadingId);
+     }
+    }
+    else UE_LOG(LogTemp,Warning,TEXT("Configure SectionWidgetClass on the main Settings WBP."));
+    for (FName Id:G.SettingIds)
+     if (const auto* D=SettingsSubsystem->FindDefinition(Id)) AddRow(*D,SettingsSubsystem->FormatValue(*D));
+   }
+  }
  }
- if (!Rows.ContainsByPredicate([&](const auto& R){return R->GetSettingId()==SelectedSettingId;})) SelectedSettingId=Rows.IsEmpty()?NAME_None:Rows[0]->GetSettingId();
- if (Text_Empty) { Text_Empty->SetText(Text(CurrentPage==ETAGameSettingsPage::Audio?TEXT("Settings.Empty.Audio"):TEXT("Settings.Empty"))); Text_Empty->SetVisibility(Rows.IsEmpty()?ESlateVisibility::Visible:ESlateVisibility::Collapsed); }
+ SelectedRowIndex=Rows.IndexOfByPredicate([&](const auto& R){return R->GetSettingId()==SelectedSettingId;});
+ EnsureRowSelection();
+ if (Text_Empty) { Text_Empty->SetText(Text(TEXT("Settings.Empty"))); Text_Empty->SetVisibility(Rows.IsEmpty()?ESlateVisibility::Visible:ESlateVisibility::Collapsed); }
  RefreshRows();
 }
 void UTASettingsMenuWidget::RefreshRows()
 {
- for (UTASettingRowWidget* R:Rows) if (R)
+ EnsureRowSelection();
+ for (int32 I=0;I<Rows.Num();++I) if (auto* R=Rows[I].Get())
  {
-  if (SettingsSubsystem) if (const auto* D=SettingsSubsystem->FindDefinition(R->GetSettingId())) R->Configure(*D,Text(D->NameTextId),SettingsSubsystem->FormatValue(*D),SettingsSubsystem->GetNumber(D->SettingId,0),SettingsSubsystem->IsFavorite(D->SettingId));
-  R->SetHighlighted(R->GetSettingId()==SelectedSettingId);
+  if (SettingsSubsystem) if (const auto* D=SettingsSubsystem->FindDefinition(R->GetSettingId())) R->Configure(*D,Text(D->NameTextId),SettingsSubsystem->FormatValue(*D),SettingsSubsystem->GetInteger(D->SettingId,0),SettingsSubsystem->IsFavorite(D->SettingId));
+  R->SetHighlighted(I==SelectedRowIndex);
  }
  const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr;
- if (Text_Description) Text_Description->SetText(D?Text(D->DescriptionTextId):FText::GetEmpty());
+ RefreshSettingDetails(D);
  const bool Pending=SettingsSubsystem && SettingsSubsystem->HasPendingVideoMode();
  if (Button_ConfirmVideoMode) Button_ConfirmVideoMode->SetVisibility(Pending?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
  if (Button_RevertVideoMode) Button_RevertVideoMode->SetVisibility(Pending?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
 }
-void UTASettingsMenuWidget::SelectPage(ETAGameSettingsPage P)
-{ if (MenuDefinition || !Allows(ETAInputCapability::Navigate)) return; CurrentPage=P; SelectedSettingId=NAME_None; BuildSettingRows(); RefreshPageLabels(); }
+void UTASettingsMenuWidget::RefreshSettingDetails(const FTASettingDefinition* D)
+{
+ if (Text_SettingTitle) Text_SettingTitle->SetText(D?Text(D->NameTextId):FText::GetEmpty());
+ TArray<FTASettingDescriptionBlock> Blocks;
+ if (D)
+ {
+  Blocks=D->DescriptionBlocks;
+  if (Blocks.IsEmpty() && !D->DescriptionTextId.IsEmpty())
+  {
+   FTASettingDescriptionBlock Block; Block.TextId=D->DescriptionTextId; Blocks.Add(Block);
+  }
+ }
+ const bool UseBlocks=Box_Description && DescriptionBlockWidgetClass;
+ if (Text_Description)
+ {
+  Text_Description->SetText(D && !D->DescriptionTextId.IsEmpty()?Text(D->DescriptionTextId):FText::GetEmpty());
+  Text_Description->SetVisibility(UseBlocks?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible);
+ }
+ if (!Box_Description) return;
+ Box_Description->SetVisibility(UseBlocks && !Blocks.IsEmpty()?ESlateVisibility::SelfHitTestInvisible:ESlateVisibility::Collapsed);
+ const int32 Count=UseBlocks?Blocks.Num():0;
+ // Reuse blocks while changing values or hovering so the details scroll position stays stable.
+ if (DescriptionEntries.Num()!=Count)
+ {
+  Box_Description->ClearChildren(); DescriptionEntries.Reset();
+  for (int32 I=0;I<Count;++I)
+   if (auto* Entry=CreateWidget<UTASettingsDescriptionBlockWidget>(this,DescriptionBlockWidgetClass))
+   { Box_Description->AddChild(Entry); DescriptionEntries.Add(Entry); }
+ }
+ for (int32 I=0;I<DescriptionEntries.Num();++I)
+  DescriptionEntries[I]->Configure(Blocks[I],Blocks[I].Type==ETASettingDescriptionBlockType::Text && !Blocks[I].TextId.IsEmpty()?Text(Blocks[I].TextId):FText::GetEmpty());
+}
+void UTASettingsMenuWidget::SelectPage(FName PageId)
+{
+ if (MenuDefinition || !Allows(ETAInputCapability::Navigate) || !PageDefinitions.ContainsByPredicate([&](const auto& D){return D.PageId==PageId;})) return;
+ CurrentPageId=PageId; SelectedSettingId=NAME_None; SelectedRowIndex=INDEX_NONE; BuildSettingRows(); RefreshPageLabels();
+}
 void UTASettingsMenuWidget::MovePage(int32 Dir)
-{ if (!MenuDefinition) SelectPage(static_cast<ETAGameSettingsPage>((static_cast<int32>(CurrentPage)+Dir+6)%6)); }
+{
+ if (MenuDefinition || PageDefinitions.IsEmpty()) return;
+ const int32 I=PageDefinitions.IndexOfByPredicate([&](const auto& D){return D.PageId==CurrentPageId;});
+ SelectPage(PageDefinitions[(FMath::Max(I,0)+Dir+PageDefinitions.Num())%PageDefinitions.Num()].PageId);
+}
+void UTASettingsMenuWidget::EnsureRowSelection()
+{
+ if (!Rows.IsValidIndex(SelectedRowIndex) || Rows[SelectedRowIndex]->GetSettingId()!=SelectedSettingId)
+ {
+  SelectedRowIndex=Rows.IndexOfByPredicate([&](const auto& R){return R->GetSettingId()==SelectedSettingId;});
+  if (SelectedRowIndex==INDEX_NONE && !Rows.IsEmpty()) SelectedRowIndex=0;
+ }
+ SelectedSettingId=Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex]->GetSettingId():NAME_None;
+}
+void UTASettingsMenuWidget::SelectRow(int32 Index)
+{
+ if (!Rows.IsValidIndex(Index)) return;
+ SelectedRowIndex=Index; SelectedSettingId=Rows[Index]->GetSettingId();
+}
 void UTASettingsMenuWidget::MoveSelection(int32 Dir)
 {
  if (Rows.IsEmpty()) return;
- int32 I=Rows.IndexOfByPredicate([&](const auto& R){return R->GetSettingId()==SelectedSettingId;});
- I=I==INDEX_NONE?0:(I+Dir+Rows.Num())%Rows.Num(); SelectedSettingId=Rows[I]->GetSettingId(); RefreshRows();
+ EnsureRowSelection(); SelectRow((SelectedRowIndex+Dir+Rows.Num())%Rows.Num()); RefreshRows();
 }
 void UTASettingsMenuWidget::AdjustSelectedValue(int32 Dir) { if (SettingsSubsystem) SettingsSubsystem->AdjustValue(SelectedSettingId,Dir); }
 void UTASettingsMenuWidget::ConfirmSelection()
@@ -130,8 +208,8 @@ void UTASettingsMenuWidget::ConfirmSelection()
 }
 void UTASettingsMenuWidget::OpenSubmenu(const FTASettingDefinition& D)
 {
- if (!InputController.IsValid() || ActiveSubmenu || !D.TargetMenuDefinition) return;
- auto Class=D.TargetMenuDefinition->MenuKind==ETASettingSubmenuTarget::Brightness?BrightnessMenuWidgetClass:KeyBindingsMenuWidgetClass;
+ if (!InputController.IsValid() || ActiveSubmenu) return;
+ auto Class=D.TargetMenuWidgetClass;
  if (!Class) { UE_LOG(LogTemp,Error,TEXT("Configure Settings submenu Blueprint class for %s"),*D.SettingId.ToString()); return; }
  auto* Child=CreateWidget<UTASettingsMenuWidget>(InputController.Get(),Class); if (!Child) return;
  Child->InitializeMenu(InputController.Get(),this,D.TargetMenuDefinition); Child->AddToViewport(1100);
@@ -149,20 +227,45 @@ bool UTASettingsMenuWidget::HandleMenuBackRequested()
  if (InputController.IsValid()) { InputController->CloseSettingsMenu(); return true; } return false;
 }
 void UTASettingsMenuWidget::RowHovered(UTASelectableMenuOptionWidget* W)
-{ if (Allows(ETAInputCapability::Navigate)) if (auto* R=Cast<UTASettingRowWidget>(W)) { SelectedSettingId=R->GetSettingId(); RefreshRows(); } }
-void UTASettingsMenuWidget::RowActivated(FName Id) { if (IsCapturingPlayerInput() || !Allows(ETAInputCapability::Confirm)) return; SelectedSettingId=Id; ConfirmSelection(); RefreshRows(); }
-void UTASettingsMenuWidget::RowAdjusted(FName Id,int32 Dir) { if (!Allows(ETAInputCapability::Navigate)) return; SelectedSettingId=Id; AdjustSelectedValue(Dir); }
-void UTASettingsMenuWidget::RowNumberChanged(FName Id,float N) { if (Allows(ETAInputCapability::Navigate) && SettingsSubsystem) SettingsSubsystem->SetValue(Id,FTASettingValue::Numeric(N)); }
-void UTASettingsMenuWidget::RowFavorite(FName Id) { if (Allows(ETAInputCapability::ToggleFavorite) && SettingsSubsystem) SettingsSubsystem->SetFavorite(Id,!SettingsSubsystem->IsFavorite(Id)); }
+{ if (Allows(ETAInputCapability::Navigate)) if (auto* R=Cast<UTASettingRowWidget>(W)) { SelectRow(Rows.IndexOfByKey(R)); RefreshRows(); } }
+void UTASettingsMenuWidget::RowActivated(UTASettingRowWidget* R)
+{ if (!R || IsCapturingPlayerInput() || !Allows(ETAInputCapability::Confirm)) return; SelectRow(Rows.IndexOfByKey(R)); ConfirmSelection(); RefreshRows(); }
+void UTASettingsMenuWidget::RowAdjusted(UTASettingRowWidget* R,int32 Dir)
+{ if (!R || !Allows(ETAInputCapability::Navigate)) return; SelectRow(Rows.IndexOfByKey(R)); AdjustSelectedValue(Dir); }
+void UTASettingsMenuWidget::RowNumberChanged(UTASettingRowWidget* R,int32 N)
+{ if (R && Allows(ETAInputCapability::Navigate) && SettingsSubsystem) { SelectRow(Rows.IndexOfByKey(R)); SettingsSubsystem->SetValue(R->GetSettingId(),N); } }
+void UTASettingsMenuWidget::RowFavorite(UTASettingRowWidget* R)
+{ if (R && Allows(ETAInputCapability::ToggleFavorite) && SettingsSubsystem) SettingsSubsystem->SetFavorite(R->GetSettingId(),!SettingsSubsystem->IsFavorite(R->GetSettingId())); }
 void UTASettingsMenuWidget::ValueChanged(FName) { RefreshRows(); }
-void UTASettingsMenuWidget::FavoritesChanged() { if (CurrentPage==ETAGameSettingsPage::Favorites) BuildSettingRows(); else RefreshRows(); }
-void UTASettingsMenuWidget::LanguageChanged() { RefreshPageLabels(); RefreshRows(); }
+void UTASettingsMenuWidget::FavoritesChanged() { if (CurrentPageId==FTASettingsCatalog::FavoritesPageId()) BuildSettingRows(); else RefreshRows(); }
+void UTASettingsMenuWidget::LanguageChanged() { RefreshPageLabels(); for (int32 I=0;I<SectionHeadings.Num();++I) SectionHeadings[I]->SetTitle(Text(SectionHeadingIds[I].ToString())); RefreshRows(); }
+void UTASettingsMenuWidget::BuildPageEntries()
+{
+ PageEntries.Reset(); PageDefinitions.Reset();
+ if (Box_Pages) { Box_Pages->ClearChildren(); Box_Pages->SetVisibility(MenuDefinition?ESlateVisibility::Collapsed:ESlateVisibility::Visible); }
+ if (MenuDefinition) return;
+ PageDefinitions=FTASettingsCatalog::BuildNavigationPages(SettingsSubsystem?SettingsSubsystem->GetPages():FTASettingsCatalog::BuildPages());
+ if (!PageDefinitions.ContainsByPredicate([&](const auto& D){return D.PageId==CurrentPageId;})) CurrentPageId=FTASettingsCatalog::FavoritesPageId();
+ if (!Box_Pages || !PageWidgetClass)
+ { UE_LOG(LogTemp,Warning,TEXT("Configure Box_Pages and PageWidgetClass on the main Settings Blueprint.")); return; }
+ for (const auto& D:PageDefinitions)
+ {
+  auto* Entry=CreateWidget<UTASettingsPageWidget>(this,PageWidgetClass);
+  PageEntries.Add(Entry); if (!Entry) continue;
+  Box_Pages->AddChild(Entry);
+  Entry->Configure(D,Text(D.PageId.ToString()),D.PageId==CurrentPageId);
+  Entry->OnPageActivated.AddDynamic(this,&UTASettingsMenuWidget::SelectPage);
+ }
+}
 void UTASettingsMenuWidget::RefreshPageLabels()
 {
- UTextBlock* Labels[]={Text_Game,Text_Display,Text_Audio,Text_MouseKeyboard,Text_Controller,Text_Favorites};
- UButton* Buttons[]={Button_Game,Button_Display,Button_Audio,Button_MouseKeyboard,Button_Controller,Button_Favorites};
- const TCHAR* Names[]={TEXT("Game"),TEXT("Display"),TEXT("Audio"),TEXT("MouseKeyboard"),TEXT("Controller"),TEXT("Favorites")};
- for(int32 I=0;I<6;++I) { if (Labels[I]) Labels[I]->SetText(Text(FString(TEXT("Settings.Page."))+Names[I])); if (Buttons[I]) Buttons[I]->SetBackgroundColor(I==static_cast<int32>(CurrentPage)?FLinearColor(0.12f,0.42f,0.82f,1):FLinearColor::White); }
+ for (int32 I=0;I<PageEntries.Num();++I)
+ {
+  if (!PageEntries[I]) continue;
+  // Entries are generated in the same order as definitions.
+  const auto& D=PageDefinitions[I];
+  PageEntries[I]->Configure(D,Text(D.PageId.ToString()),D.PageId==CurrentPageId);
+ }
  if (Text_Title) Text_Title->SetText(Text(MenuDefinition?MenuDefinition->TitleTextId:TEXT("UI_Settings")));
 }
 void UTASettingsMenuWidget::BuildPromptBar()
@@ -182,7 +285,7 @@ void UTASettingsMenuWidget::PromptClicked(UTAActionPromptWidget* P)
  if (A==InputController->GetUIBackAction()) { HandleMenuBackRequested(); return; }
  if (IsCapturingPlayerInput()) return;
  if (A==ConfirmAction) { if (Allows(ETAInputCapability::Confirm)) ConfirmSelection(); return; }
- if (A==InputController->GetSettingsAction(TEXT("Favorite"))) { RowFavorite(SelectedSettingId); return; }
+ if (A==InputController->GetSettingsAction(TEXT("Favorite"))) { RowFavorite(Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr); return; }
  if (!Allows(ETAInputCapability::Navigate)) return;
  if (A==PreviousAction) MoveSelection(-1); else if (A==NextAction) MoveSelection(1);
  else if (A==InputController->GetSettingsAction(TEXT("AdjustLeft"))) AdjustSelectedValue(-1);
@@ -204,7 +307,7 @@ void UTASettingsMenuWidget::ExecutePlayerInput(FKey K,ETAInputCapability C)
 {
  if (!Allows(C)) return;
  if (C==ETAInputCapability::Confirm) { ConfirmSelection(); return; }
- if (C==ETAInputCapability::ToggleFavorite) { RowFavorite(SelectedSettingId); return; }
+ if (C==ETAInputCapability::ToggleFavorite) { RowFavorite(Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr); return; }
  if (C!=ETAInputCapability::Navigate) return;
  if (InputController->IsKeyMappedToAction(K,PreviousAction)) MoveSelection(-1);
  else if (InputController->IsKeyMappedToAction(K,NextAction)) MoveSelection(1);
@@ -216,15 +319,9 @@ void UTASettingsMenuWidget::ExecutePlayerInput(FKey K,ETAInputCapability C)
 void UTASettingsMenuWidget::RestoreCurrentDefaults()
 {
  if (!SettingsSubsystem) return;
- TArray<FName> Ids; for (const UTASettingRowWidget* R:Rows) Ids.Add(R->GetSettingId());
+ TArray<FName> Ids; for (const UTASettingRowWidget* R:Rows) Ids.AddUnique(R->GetSettingId());
  for(FName Id:Ids) SettingsSubsystem->RestoreSettingDefault(Id);
 }
 void UTASettingsMenuWidget::RestoreClicked() { if (Allows(ETAInputCapability::Confirm)) RestoreCurrentDefaults(); }
 void UTASettingsMenuWidget::ConfirmVideo() { if (Allows(ETAInputCapability::Confirm) && SettingsSubsystem) SettingsSubsystem->ConfirmVideoMode(); }
 void UTASettingsMenuWidget::RevertVideo() { if (Allows(ETAInputCapability::Confirm) && SettingsSubsystem) SettingsSubsystem->RevertVideoMode(); }
-void UTASettingsMenuWidget::GamePage() { SelectPage(ETAGameSettingsPage::Game); }
-void UTASettingsMenuWidget::DisplayPage() { SelectPage(ETAGameSettingsPage::Display); }
-void UTASettingsMenuWidget::AudioPage() { SelectPage(ETAGameSettingsPage::Audio); }
-void UTASettingsMenuWidget::MousePage() { SelectPage(ETAGameSettingsPage::MouseKeyboard); }
-void UTASettingsMenuWidget::ControllerPage() { SelectPage(ETAGameSettingsPage::Controller); }
-void UTASettingsMenuWidget::FavoritesPage() { SelectPage(ETAGameSettingsPage::Favorites); }

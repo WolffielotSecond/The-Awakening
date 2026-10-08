@@ -92,6 +92,15 @@
 	"Settings.Page.MouseKeyboard": "滑鼠與鍵盤",
 	"Settings.Page.Controller": "控制器",
 	"Settings.Page.Favorites": "收藏",
+	"Settings.Section.Game.General": "一般",
+	"Settings.Section.Display.Video": "畫面",
+	"Settings.Section.Display.Information": "資訊顯示",
+	"Settings.Section.Audio.Volume": "音量",
+	"Settings.Section.MouseKeyboard.Camera": "相機",
+	"Settings.Section.MouseKeyboard.Bindings": "按鍵綁定",
+	"Settings.Section.Controller.Camera": "相機",
+	"Settings.Section.Controller.Bindings": "按鈕綁定",
+	"Settings.Section.Controller.Cursor": "選單游標",
 	"Settings.Value.On": "開啟",
 	"Settings.Value.Off": "關閉",
 	"Settings.Value.Basic": "基礎",
@@ -175,5 +184,6 @@
 	"Settings.Binding.IA_SettingsAdjustRight": "設定增加",
 	"Settings.Binding.IA_SettingsPreviousPage": "設定上一頁",
 	"Settings.Binding.IA_SettingsNextPage": "設定下一頁",
-	"Settings.Binding.IA_SettingsFavorite": "設定收藏"
+	"Settings.Binding.IA_SettingsFavorite": "設定收藏",
+	"Settings.Test.ImageLayout.Description": "圖文版面測試：橫圖與直圖都應填滿說明欄的可用寬度，高度依原圖比例變化；內容較長時可捲動查看。"
 }

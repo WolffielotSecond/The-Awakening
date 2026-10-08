@@ -35,13 +35,16 @@ void UTAKeyBindingsMenuWidget::BuildSettingRows()
 }
 void UTAKeyBindingsMenuWidget::RefreshRows()
 {
+ EnsureRowSelection();
  if (BindingService) for (UTASettingRowWidget* R:Rows)
  {
   const auto* B=BindingService->GetBindings().FindByPredicate([&](const auto& D){return D.BindingId==R->GetSettingId();});
   if (!B) continue; FTASettingDefinition D; D.SettingId=B->BindingId; D.Type=ETASettingType::Submenu; D.NameTextId=B->NameTextId; D.bCanFavorite=false;
   R->Configure(D,Text(B->NameTextId),BindingService->GetKey(B->BindingId).GetDisplayName(),0,false); R->SetHighlighted(B->BindingId==SelectedSettingId);
  }
- if (Text_Description) Text_Description->SetText(Text(TEXT("Settings.Binding.Description")));
+ FTASettingDefinition Details; Details.DescriptionTextId=TEXT("Settings.Binding.Description");
+ if (BindingService) if (const auto* B=BindingService->GetBindings().FindByPredicate([&](const auto& Binding){return Binding.BindingId==SelectedSettingId;})) Details.NameTextId=B->NameTextId;
+ RefreshSettingDetails(SelectedSettingId.IsNone()?nullptr:&Details);
  if (Text_CaptureStatus) Text_CaptureStatus->SetText(StatusTextId.IsEmpty()?FText::GetEmpty():Text(StatusTextId));
  if (Button_CancelCapture) Button_CancelCapture->SetVisibility(IsCapturingPlayerInput()?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
 }

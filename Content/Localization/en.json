@@ -92,6 +92,15 @@
 	"Settings.Page.MouseKeyboard": "Mouse and keyboard",
 	"Settings.Page.Controller": "Controller",
 	"Settings.Page.Favorites": "Favorites",
+	"Settings.Section.Game.General": "General",
+	"Settings.Section.Display.Video": "Video",
+	"Settings.Section.Display.Information": "Information",
+	"Settings.Section.Audio.Volume": "Volume",
+	"Settings.Section.MouseKeyboard.Camera": "Camera",
+	"Settings.Section.MouseKeyboard.Bindings": "Key bindings",
+	"Settings.Section.Controller.Camera": "Camera",
+	"Settings.Section.Controller.Bindings": "Button bindings",
+	"Settings.Section.Controller.Cursor": "Menu cursor",
 	"Settings.Value.On": "On",
 	"Settings.Value.Off": "Off",
 	"Settings.Value.Basic": "Basic",
@@ -175,5 +184,6 @@
 	"Settings.Binding.IA_SettingsAdjustRight": "Increase setting",
 	"Settings.Binding.IA_SettingsPreviousPage": "Previous settings page",
 	"Settings.Binding.IA_SettingsNextPage": "Next settings page",
-	"Settings.Binding.IA_SettingsFavorite": "Toggle setting favorite"
+	"Settings.Binding.IA_SettingsFavorite": "Toggle setting favorite",
+	"Settings.Test.ImageLayout.Description": "Image layout test: landscape and portrait images should fill the available description width and preserve their original aspect ratios. Scroll to view longer content."
 }

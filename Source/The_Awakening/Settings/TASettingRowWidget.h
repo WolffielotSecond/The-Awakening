@@ -6,17 +6,19 @@
 class UButton;
 class UTextBlock;
 class USlider;
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTASettingRowActivated,FName,SettingId);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTASettingRowAdjusted,FName,SettingId,int32,Direction);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTASettingRowNumberChanged,FName,SettingId,float,Number);
+class UTexture2D;
+class UTASettingRowWidget;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTASettingRowActivated,UTASettingRowWidget*,Row);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTASettingRowAdjusted,UTASettingRowWidget*,Row,int32,Direction);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTASettingRowNumberChanged,UTASettingRowWidget*,Row,int32,Number);
 UCLASS(Abstract,Blueprintable)
 class THE_AWAKENING_API UTASettingRowWidget : public UTASelectableMenuOptionWidget
 {
  GENERATED_BODY()
 public:
- void Configure(const FTASettingDefinition& Definition,FText Name,FText Value,float Number,bool bFavorite);
+ void Configure(const FTASettingDefinition& Definition,FText Name,FText Value,int32 Number,bool bFavorite);
  void SetHighlighted(bool B);
- FName GetSettingId() const { return Definition.SettingId; }
+ UFUNCTION(BlueprintPure,Category="Settings") FName GetSettingId() const { return Definition.SettingId; }
  UWidget* GetFocusTarget() const;
  UPROPERTY(BlueprintAssignable) FTASettingRowActivated OnActivated;
  UPROPERTY(BlueprintAssignable) FTASettingRowActivated OnFavorite;
@@ -24,6 +26,9 @@ public:
  UPROPERTY(BlueprintAssignable) FTASettingRowNumberChanged OnNumberChanged;
 protected:
  virtual void NativeOnInitialized() override;
+ // Assign both textures in the row Blueprint to show a clickable star in either state.
+ UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Settings|Favorite") TObjectPtr<UTexture2D> FavoriteIconTexture;
+ UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Settings|Favorite") TObjectPtr<UTexture2D> NotFavoriteIconTexture;
  UPROPERTY(meta=(BindWidget)) TObjectPtr<UButton> Button_Option;
  UPROPERTY(meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Name;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Value;
@@ -33,6 +38,8 @@ protected:
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<USlider> Slider_Value;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_Highlight;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_Favorite;
+ UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_ToggleThumb;
+ UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_ToggleBackground;
 private:
  UFUNCTION() void Activate();
  UFUNCTION() void Decrease();

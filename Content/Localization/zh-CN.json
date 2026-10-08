@@ -92,6 +92,15 @@
 	"Settings.Page.MouseKeyboard": "鼠标与键盘",
 	"Settings.Page.Controller": "控制器",
 	"Settings.Page.Favorites": "收藏",
+	"Settings.Section.Game.General": "常规",
+	"Settings.Section.Display.Video": "画面",
+	"Settings.Section.Display.Information": "信息显示",
+	"Settings.Section.Audio.Volume": "音量",
+	"Settings.Section.MouseKeyboard.Camera": "相机",
+	"Settings.Section.MouseKeyboard.Bindings": "按键绑定",
+	"Settings.Section.Controller.Camera": "相机",
+	"Settings.Section.Controller.Bindings": "按钮绑定",
+	"Settings.Section.Controller.Cursor": "菜单光标",
 	"Settings.Value.On": "开启",
 	"Settings.Value.Off": "关闭",
 	"Settings.Value.Basic": "基础",
@@ -175,5 +184,6 @@
 	"Settings.Binding.IA_SettingsAdjustRight": "设置增加",
 	"Settings.Binding.IA_SettingsPreviousPage": "设置上一页",
 	"Settings.Binding.IA_SettingsNextPage": "设置下一页",
-	"Settings.Binding.IA_SettingsFavorite": "设置收藏"
+	"Settings.Binding.IA_SettingsFavorite": "设置收藏",
+	"Settings.Test.ImageLayout.Description": "图文布局测试：横图和竖图都应占满说明栏的可用宽度，高度按原图比例变化；内容较长时可滚动查看。"
 }

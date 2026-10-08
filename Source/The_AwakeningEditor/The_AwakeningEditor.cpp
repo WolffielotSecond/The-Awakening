@@ -14,6 +14,8 @@
 #include "PropertyEditorModule.h"
 #include "Story/TADialogueTypes.h"
 #include "TALocalizationEditor.h"
+#include "TASettingLocationsCustomization.h"
+#include "Settings/TASettingsTypes.h"
 
 namespace
 {
@@ -56,6 +58,8 @@ void FThe_AwakeningEditorModule::StartupModule()
 	PropertyEditor.RegisterCustomPropertyTypeLayout(
 		FTAStoryCondition::StaticStruct()->GetFName(),
 		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FTAStoryConditionCustomization::MakeInstance));
+	PropertyEditor.RegisterCustomPropertyTypeLayout(FTASettingLocations::StaticStruct()->GetFName(),
+		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FTASettingLocationsCustomization::MakeInstance));
 	PropertyEditor.NotifyCustomizationModuleChanged();
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
 	StoryAssetActions = MakeShared<FTAStoryAssetTypeActions>();
@@ -70,6 +74,7 @@ void FThe_AwakeningEditorModule::ShutdownModule()
 	{
 		FPropertyEditorModule& PropertyEditor = FModuleManager::GetModuleChecked<FPropertyEditorModule>(TEXT("PropertyEditor"));
 		PropertyEditor.UnregisterCustomClassLayout(UTAStoryGraphNode::StaticClass()->GetFName());
+		PropertyEditor.UnregisterCustomPropertyTypeLayout(FTASettingLocations::StaticStruct()->GetFName());
 		PropertyEditor.UnregisterCustomPropertyTypeLayout(FTAPortraitEntry::StaticStruct()->GetFName());
 		PropertyEditor.UnregisterCustomPropertyTypeLayout(FTAStoryEvent::StaticStruct()->GetFName());
 		PropertyEditor.UnregisterCustomPropertyTypeLayout(FTAStoryChoice::StaticStruct()->GetFName());

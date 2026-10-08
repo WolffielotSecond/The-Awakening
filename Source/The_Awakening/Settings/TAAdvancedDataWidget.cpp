@@ -25,7 +25,8 @@ void UTAAdvancedDataWidget::NativeTick(const FGeometry& G,float Delta)
 void UTAAdvancedDataWidget::Refresh()
 {
  if (!Text_AdvancedData) return;
- FTASettingValue V; if (!Settings || !Settings->GetValue(TEXT("Display.AdvancedData"),V) || V.Choice==TEXT("Off"))
+ const FName Mode=Settings?Settings->GetChoice(TEXT("Display.AdvancedData")):NAME_None;
+ if (Mode.IsNone() || Mode==TEXT("Off"))
  { Text_AdvancedData->SetText(FText::GetEmpty()); return; }
  const auto* GI=GetGameInstance(); const auto* Loc=GI?GI->GetSubsystem<UTALocalizeSubsystem>():nullptr;
  auto T=[&](const FString& Id){return Loc?Loc->GetText(Id).ToString():Id;};
@@ -33,7 +34,7 @@ void UTAAdvancedDataWidget::Refresh()
  const float Limit=U?U->GetFrameRateLimit():0;
  const int32 FPS=FMath::RoundToInt(Frames/FMath::Max(FPlatformTime::Seconds()-LastSample,0.001));
  FString S=FString::Printf(TEXT("%d（%s）FPS"),FPS,Limit>0?*FString::FromInt(FMath::RoundToInt(Limit)):*T(TEXT("Settings.Value.Unlimited")));
- if (V.Choice==TEXT("Full"))
+ if (Mode==TEXT("Full"))
  {
   FString Version,Build;
   if (GConfig) { GConfig->GetString(TEXT("/Script/EngineSettings.GeneralProjectSettings"),TEXT("ProjectVersion"),Version,GGameIni); GConfig->GetString(TEXT("TheAwakening.Build"),TEXT("BuildId"),Build,GGameIni); }
