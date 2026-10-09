@@ -3,6 +3,7 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
+#include "Components/ButtonSlot.h"
 
 void UTAPauseMenuOptionWidget::NativeOnInitialized()
 {
@@ -32,6 +33,21 @@ void UTAPauseMenuOptionWidget::ConfigureOption(FName InOptionId, const FText& In
 	}
 }
 
+void UTAPauseMenuOptionWidget::ApplyEnglishLayout(bool bEnglish)
+{
+	if (!Text_Option) return;
+	if (auto* ContentSlot=Cast<UButtonSlot>(Text_Option->Slot))
+	{
+		if (!AuthoredContentPadding.IsSet()) AuthoredContentPadding=ContentSlot->GetPadding();
+		FMargin ContentPadding=AuthoredContentPadding.GetValue();
+		if (bEnglish)
+		{
+			ContentPadding.Left=FMath::Max(ContentPadding.Left,16.f);
+			ContentPadding.Right=FMath::Max(ContentPadding.Right,16.f);
+		}
+		ContentSlot->SetPadding(ContentPadding);
+	}
+}
 void UTAPauseMenuOptionWidget::SetHighlighted(bool bHighlighted)
 {
 	if (Button_Option)

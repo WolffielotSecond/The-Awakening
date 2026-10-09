@@ -44,7 +44,17 @@ Language is UE-process-wide: multiple PIE game instances cannot display differen
 font cultures simultaneously. This uses UE's native culture model, without a
 second language state or font manager.
 
-Packaging stages en, zh-CN and zh-TW. ICU uses the built-in EFIGSCJK preset, the
+In same-process PIE, SetCurrentLanguage also refreshes Editor localization.
+The installed UE 5.6 Editor has zh-Hans resources but no zh-Hant/zh-TW resources:
+zh-CN changes the Editor to Simplified Chinese, while zh-TW falls back to native
+English; en also displays English. Neither this subsystem nor the inspected PIE
+lifecycle restores the prior Language on Stop. This is an accepted limitation,
+not an editor preference intentionally saved by the game. UE Game Localization
+Preview isolates game text resources, but not Composite Font culture selection,
+which still reads the process-wide Language. Separate-process Standalone or a
+packaged executable provides process isolation. No workaround is implemented.
+
+Packaging configuration requests en, zh-CN and zh-TW. ICU uses the built-in EFIGSCJK preset, the
 smallest available UE preset containing both English and Chinese; English-only
 data is insufficient for the new runtime Chinese culture selection. This does
 not add selectable game languages or change the JSON language list.
@@ -78,23 +88,79 @@ One-shot migration/render commandlets are removed after execution.
 Regression tests: TheAwakening.Fonts.LanguagePreservesLocale and
 TheAwakening.Fonts.CultureRoutingAndDefault. Real GPU captures of the saved font
 are Saved/GlobalFont_en.png, GlobalFont_zh-CN.png and GlobalFont_zh-TW.png.
-The full project suite has 30/31 successes. The existing Puzzle.Scope test fails
+The latest completed full project suite has 33/34 successes (23 successful and
+10 successful with warnings); the new Dialogue.HistoryEnglishLayout regression
+passes, including language-event refresh, Chinese defaults, spacing and font
+appearance preservation. Settings.EnglishLayout and Settings.EnglishUIBounds
+also pass. Editor Development compilation and History Widget Blueprint
+compilation/loading passed; git diff --check passed. These are completed prior
+verification results, not a new build or test run during documentation closeout.
+The existing Puzzle.Scope test fails
 in headless input/confirmation/timer assertions identically with the pre-migration
 puzzle asset; no existing assertion or gameplay behaviour was changed to hide it.
 
-PIE validation remains required: switch all three languages with UI already open;
-check Scan, Inventory, Dialogue/History, Puzzle, Pause and Settings; confirm long
-text wrapping/clipping and outline/shadow readability. Different font metrics can
-alter text width/height even when size and layout are preserved. Create a fresh
-TextBlock in a scratch WBP after Editor restart and confirm the project font.
-Interactive UI, packaged font cooking and notice staging are not yet validated.
+Manual acceptance reported by the user:
+
+| Area | Accepted result / scope |
+| --- | --- |
+| Global font / language switching | HarmonyOS Sans and English, Simplified Chinese, Traditional Chinese switching work normally. |
+| Settings | English layout basically normal; Dialogue text speed is normal in Standalone Game and PIE New Editor Window. Selected Viewport exception is recorded below. |
+| Pause Menu | Resume Game fits the button; three-language switching accepted. |
+| DialogueHistory | English long-text wrapping, entry spacing and scrolling show no obvious problems. |
+| Inventory | English item names show no current problem; no further layout changes requested. |
+
+This acceptance does not include gamepad UI navigation adaptation or exhaustive
+coverage at every resolution. It does not establish packaged font cooking,
+Culture data completeness, notice staging or packaged UI behavior.
+
+## English settings layout
+
+The existing Settings language refresh applies a local English layout to
+WBP_SettingsMenu, WBP_SettingsPage and the Choice/Slider/Toggle/Submenu row
+templates. Page labels wrap with content-driven height and 12x8 content padding.
+Row names use constrained Fill space, wrapping and a minimum 24-unit gap to the
+authored Auto controls; controls are vertically centered. Footer buttons use a
+minimum 16-unit gap and 12x8 content padding.
+
+The Slider template has a stretch Canvas under a fixed-height SizeBox. English
+therefore reserves at least three font lines plus the actual vertical container
+insets and 12-unit text padding above/below, restoring the authored height for
+Chinese. The value, arrows and slider keep their Auto widths and remain centered.
+English Pause options use the widest current label's desired size plus side
+padding to size the shared VBox; all options fill that width without wrapping.
+The authored Chinese Canvas offsets and button padding are restored on language
+change. Neither adjustment runs in Tick or changes input handling.
+
+Only the affected instance layout properties are retained from the Designer
+defaults, so switching back to zh-CN/zh-TW restores their original values.
+There is no layout polling, second language state, font override or asset
+hierarchy migration. Font, size, letter spacing and localization text are unchanged.
+The English layout regression checks the real six WBP templates and round-trip
+restoration. Settings/Pause wrapping, alignment and three-language switching have
+passed manual PIE acceptance; Settings gamepad navigation was outside that scope.
+
+## English dialogue history layout
+
+WBP_DialogueHistory's dynamic history entries enable AutoWrapText only for the
+existing `en` game language. Their VerticalBox slots fill the current ScrollBox
+width, keep Auto height, and use an 8-unit bottom gap between entries (no extra
+gap after the last entry). Rebuild is already driven by history updates and the
+localization language-change event; no layout Tick or input changes are added.
+Chinese entries are recreated with the original TextBlock/slot defaults, so
+English wrapping and padding cannot leak into zh-CN/zh-TW after a language switch.
+Font, size, letter spacing, text resolution and speaker/choice prefixes are unchanged.
+
+Settings/Pause English layout has passed manual three-language PIE acceptance.
+History English long-text wrapping, spacing and scrolling have passed manual PIE
+acceptance; package validation remains deferred.
 
 ## Distribution and attribution
 
 `Content/ThirdPartyNotices/HarmonyOS/LICENSE-update.txt` is a byte-identical copy
 of the supplied original license, including `Copyright 2021 Huawei Device Co.,
-Ltd.`. `DirectoriesToAlwaysStageAsNonUFS=ThirdPartyNotices` retains it in packaged
-distributions. Verify the actual staged build before release.
+Ltd.`. `DirectoriesToAlwaysStageAsNonUFS=ThirdPartyNotices` is configured to stage
+it in packaged distributions. Actual output and license distribution have not
+been verified; check the staged build before release.
 
 **Outstanding release requirement:** add a prominent, player-visible notice in
 the game's About/Credits page, reachable from Pause/Settings (WBP_SettingsMenu is
@@ -106,3 +172,21 @@ migration; existing layouts and interactions were intentionally preserved.
 Do not instantiate variable fonts into modified files, subset/edit their tables,
 or alter the original font components. The supplied license must remain with the
 fonts; comply with its original terms when distributing the game.
+
+## Closeout and outstanding work
+
+Font migration and the scoped English UI layout work are complete and accepted.
+Do not continue altering accepted Settings, Pause, History or Inventory layouts
+as part of this task. No Windows package was built or validated for this work.
+
+| Outstanding item | Priority / next step |
+| --- | --- |
+| Windows Development packaging and font/Culture/license output verification | Deferred to the complete packaging workflow, together with Wwise audio integration. Check original font faces, TA_GlobalFont loading, three-language switching and staged notices in the actual build. |
+| Prominent in-game HarmonyOS Sans Credits/About/Licenses notice | Required before release; not implemented. Preserve the usage statement, Copyright 2021 Huawei Device Co., Ltd. and original LICENSE-update.txt. The final UI location remains to be agreed. |
+| Selected Viewport Dialogue text speed text compression | Low priority. Three lines work in Standalone and PIE New Editor Window. Investigate viewport size, DPI scale and layout timing only with evidence; no Selected Viewport special case. Raise priority if the packaged version reproduces at the same window size. |
+| Same-process PIE changes Editor Language | Confirmed, accepted limitation; no fix planned now. Independent-process testing isolates language state. |
+| Puzzle.Scope headless failure | Pre-existing issue, outside font migration; not fixed or hidden by changing assertions. |
+
+Future packaged acceptance must include different window sizes/resolutions and
+Settings, Pause, History, Inventory and Scan font/layout checks. Configuration
+and editor/Standalone acceptance are not substitutes for packaged validation.

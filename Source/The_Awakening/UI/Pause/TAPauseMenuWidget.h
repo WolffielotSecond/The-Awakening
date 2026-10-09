@@ -109,6 +109,12 @@ protected:
 	TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;
 
 private:
+	void ApplyLanguageLayout(bool bEnglish);
+	bool UsesEnglishLayout() const;
+	TOptional<FMargin> AuthoredOptionsOffsets;
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTAEnglishUIBoundsTest;
+#endif
 	void BuildOptions();
 	void ValidateInputActions() const;
 	void BuildActionPromptBar();

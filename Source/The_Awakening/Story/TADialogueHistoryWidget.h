@@ -32,6 +32,9 @@ class THE_AWAKENING_API UTADialogueHistoryWidget : public UUserWidget, public IT
 {
 	GENERATED_BODY()
 	friend class FTAUIPlayerIngressTest;
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FTADialogueHistoryEnglishLayoutTest;
+#endif
 
 public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }

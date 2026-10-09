@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "UI/TASelectableMenuOptionWidget.h"
 #include "Settings/TASettingsTypes.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "TASettingRowWidget.generated.h"
 class UButton;
 class UTextBlock;
@@ -16,7 +17,7 @@ class THE_AWAKENING_API UTASettingRowWidget : public UTASelectableMenuOptionWidg
 {
  GENERATED_BODY()
 public:
- void Configure(const FTASettingDefinition& Definition,FText Name,FText Value,int32 Number,bool bFavorite);
+ void Configure(const FTASettingDefinition& Definition,FText Name,FText Value,int32 Number,bool bFavorite,bool bEnglishLayout=false);
  void SetHighlighted(bool B);
  UFUNCTION(BlueprintPure,Category="Settings") FName GetSettingId() const { return Definition.SettingId; }
  UWidget* GetFocusTarget() const;
@@ -41,6 +42,14 @@ protected:
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_ToggleThumb;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_ToggleBackground;
 private:
+ void ApplyLanguageLayout(bool bEnglish);
+ // Instance-local Designer layout defaults, only for the properties overridden in English.
+ struct FNameLayout { FSlateChildSize Size; FMargin Padding; EHorizontalAlignment Horizontal; EVerticalAlignment Vertical; };
+ TOptional<FNameLayout> AuthoredNameLayout;
+ bool bAuthoredNameWrap=false;
+ ESlateVisibility AuthoredSpacerVisibility=ESlateVisibility::Visible;
+ TMap<TWeakObjectPtr<UHorizontalBoxSlot>,EVerticalAlignment> AuthoredControlAlignment;
+ TOptional<float> AuthoredSliderHeight;
  UFUNCTION() void Activate();
  UFUNCTION() void Decrease();
  UFUNCTION() void Increase();

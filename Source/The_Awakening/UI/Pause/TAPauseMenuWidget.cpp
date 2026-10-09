@@ -9,6 +9,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Widgets/SWidget.h"
 #include "Components/PanelWidget.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
@@ -135,9 +137,34 @@ void UTAPauseMenuWidget::BuildOptions()
 		ActionsByOptionId.Add(Option.OptionId, Option.Action);
 		OptionWidgetsById.Add(Option.OptionId, OptionWidget);
 	}
+	ApplyLanguageLayout(UsesEnglishLayout());
 	RefreshOptionHighlights();
 }
 
+bool UTAPauseMenuWidget::UsesEnglishLayout() const
+{
+	if (auto* GI=GetGameInstance())
+		if (auto* Loc=GI->GetSubsystem<UTALocalizeSubsystem>()) return Loc->GetCurrentLanguage()==TEXT("en");
+	return false;
+}
+void UTAPauseMenuWidget::ApplyLanguageLayout(bool bEnglish)
+{
+	if (!Box_Options) return;
+	auto* OptionsSlot=Cast<UCanvasPanelSlot>(Box_Options->Slot);
+	if (!OptionsSlot) return;
+	if (!AuthoredOptionsOffsets.IsSet()) AuthoredOptionsOffsets=OptionsSlot->GetOffsets();
+	for (const auto& Entry:OptionWidgetsById)
+		if (Entry.Value) Entry.Value->ApplyEnglishLayout(bEnglish);
+	FMargin OptionsOffsets=AuthoredOptionsOffsets.GetValue();
+	if (bEnglish)
+	{
+		// The VBox's desired width is the widest current label plus button padding.
+		// Its Fill child slots give every option the same width; no label-length rules.
+		Box_Options->TakeWidget()->SlatePrepass();
+		OptionsOffsets.Right=FMath::Max(OptionsOffsets.Right,Box_Options->GetDesiredSize().X);
+	}
+	OptionsSlot->SetOffsets(OptionsOffsets);
+}
 FText UTAPauseMenuWidget::GetOptionLabel(const FTAPauseMenuOption& Option) const
 {
 	if (!Option.LocalizationId.IsEmpty())
@@ -162,6 +189,7 @@ void UTAPauseMenuWidget::RefreshOptionLabels()
 			Widget->Get()->ConfigureOption(Option.OptionId, GetOptionLabel(Option));
 		}
 	}
+	ApplyLanguageLayout(UsesEnglishLayout());
 }
 
 UWidget* UTAPauseMenuWidget::GetInitialFocusTarget() const

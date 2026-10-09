@@ -7,6 +7,7 @@
 #include "InputAction.h"
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -161,9 +162,14 @@ void UTADialogueHistoryWidget::Rebuild()
 	}
 
 	Box_Entries->ClearChildren();
+	UTALocalizeSubsystem* Localization = LocalizeSubsystem.Get();
+	if (!Localization)
+		if (UGameInstance* GI = GetGameInstance()) Localization = GI->GetSubsystem<UTALocalizeSubsystem>();
+	const bool bEnglish = Localization && Localization->GetCurrentLanguage() == TEXT("en");
 
-	for (const FTAStoryHistoryEntry& Entry : History)
+	for (int32 Index = 0; Index < History.Num(); ++Index)
 	{
+		const FTAStoryHistoryEntry& Entry = History[Index];
 		UTextBlock* Text = NewObject<UTextBlock>(this);
 
 		FString Line;
@@ -183,7 +189,15 @@ void UTADialogueHistoryWidget::Rebuild()
 		}
 
 		Text->SetText(FText::FromString(Line));
-		Box_Entries->AddChildToVerticalBox(Text);
+		UVerticalBoxSlot* EntrySlot = Box_Entries->AddChildToVerticalBox(Text);
+		if (bEnglish)
+		{
+			// Use the existing ScrollBox's available width and content-driven height.
+			// Fresh TextBlocks keep their original defaults in both Chinese languages.
+			Text->SetAutoWrapText(true);
+			EntrySlot->SetHorizontalAlignment(HAlign_Fill);
+			EntrySlot->SetPadding(FMargin(0.f, 0.f, 0.f, Index + 1 < History.Num() ? 8.f : 0.f));
+		}
 	}
 
 	if (ScrollBox_History)

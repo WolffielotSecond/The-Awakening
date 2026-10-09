@@ -18,6 +18,7 @@ class THE_AWAKENING_API UTAPauseMenuOptionWidget : public UTASelectableMenuOptio
 
 public:
 	void ConfigureOption(FName InOptionId, const FText& InLabel);
+	void ApplyEnglishLayout(bool bEnglish);
 	FName GetOptionId() const { return CurrentOptionId; }
 	void SetHighlighted(bool bHighlighted);
 	UWidget* GetFocusTarget() const;
@@ -38,6 +39,7 @@ protected:
 	TObjectPtr<class UImage> Image_Highlight;
 
 private:
+	TOptional<FMargin> AuthoredContentPadding;
 	UFUNCTION()
 	void HandleButtonClicked();
 

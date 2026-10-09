@@ -92,8 +92,13 @@ protected:
  void SelectRow(int32 Index);
  void EnsureRowSelection();
 private:
+ bool UsesEnglishLayout() const;
+ void ApplyLanguageLayout(bool bEnglish);
+ struct FFooterLayout { FMargin OuterPadding; FMargin ContentPadding; EVerticalAlignment Vertical; };
+ TMap<TWeakObjectPtr<UButton>,FFooterLayout> AuthoredFooterLayout;
 #if WITH_DEV_AUTOMATION_TESTS
  friend class FTASettingsMenuInputTest;
+ friend class FTASettingsEnglishLayoutTest;
 #endif
  void BuildPromptBar();
  FString GetSettingCommandTextId(FName Name) const;

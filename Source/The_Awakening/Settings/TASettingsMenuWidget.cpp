@@ -10,6 +10,7 @@
 #include "Engine/GameInstance.h"
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/ScrollBox.h"
@@ -96,7 +97,7 @@ UTASettingRowWidget* UTASettingsMenuWidget::AddRow(const FTASettingDefinition& D
  auto Class=OptionWidgetClass; if (const auto* Specific=RowWidgetClasses.Find(D.Type);Specific && *Specific) Class=*Specific;
  if (!Box_SettingsOptions || !Class) return nullptr;
  auto* W=CreateWidget<UTASettingRowWidget>(this,Class); if (!W) return nullptr;
- W->Configure(D,Text(D.NameTextId),Value,SettingsSubsystem?SettingsSubsystem->GetInteger(D.SettingId,0):0,SettingsSubsystem && SettingsSubsystem->IsFavorite(D.SettingId));
+ W->Configure(D,Text(D.NameTextId),Value,SettingsSubsystem?SettingsSubsystem->GetInteger(D.SettingId,0):0,SettingsSubsystem && SettingsSubsystem->IsFavorite(D.SettingId),UsesEnglishLayout());
  W->OnHovered.AddDynamic(this,&UTASettingsMenuWidget::RowHovered);
  W->OnActivated.AddDynamic(this,&UTASettingsMenuWidget::RowActivated);
  W->OnAdjusted.AddDynamic(this,&UTASettingsMenuWidget::RowAdjusted);
@@ -144,7 +145,7 @@ void UTASettingsMenuWidget::RefreshRows()
  EnsureRowSelection();
  for (int32 I=0;I<Rows.Num();++I) if (auto* R=Rows[I].Get())
  {
-  if (SettingsSubsystem) if (const auto* D=SettingsSubsystem->FindDefinition(R->GetSettingId())) R->Configure(*D,Text(D->NameTextId),SettingsSubsystem->FormatValue(*D),SettingsSubsystem->GetInteger(D->SettingId,0),SettingsSubsystem->IsFavorite(D->SettingId));
+  if (SettingsSubsystem) if (const auto* D=SettingsSubsystem->FindDefinition(R->GetSettingId())) R->Configure(*D,Text(D->NameTextId),SettingsSubsystem->FormatValue(*D),SettingsSubsystem->GetInteger(D->SettingId,0),SettingsSubsystem->IsFavorite(D->SettingId),UsesEnglishLayout());
   R->SetHighlighted(I==SelectedRowIndex);
  }
  const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr;
@@ -277,21 +278,47 @@ void UTASettingsMenuWidget::BuildPageEntries()
   auto* Entry=CreateWidget<UTASettingsPageWidget>(this,PageWidgetClass);
   PageEntries.Add(Entry); if (!Entry) continue;
   Box_Pages->AddChild(Entry);
-  Entry->Configure(D,Text(D.PageId.ToString()),D.PageId==CurrentPageId);
+  Entry->Configure(D,Text(D.PageId.ToString()),D.PageId==CurrentPageId,UsesEnglishLayout());
   Entry->OnPageActivated.AddDynamic(this,&UTASettingsMenuWidget::SelectPage);
  }
 }
 void UTASettingsMenuWidget::RefreshPageLabels()
 {
+ ApplyLanguageLayout(UsesEnglishLayout());
  if (Text_RestoreDefaults) Text_RestoreDefaults->SetText(Text(TEXT("Settings.RestoreDefaults")));
  for (int32 I=0;I<PageEntries.Num();++I)
  {
   if (!PageEntries[I]) continue;
   // Entries are generated in the same order as definitions.
   const auto& D=PageDefinitions[I];
-  PageEntries[I]->Configure(D,Text(D.PageId.ToString()),D.PageId==CurrentPageId);
+  PageEntries[I]->Configure(D,Text(D.PageId.ToString()),D.PageId==CurrentPageId,UsesEnglishLayout());
  }
  if (Text_Title) Text_Title->SetText(Text(MenuDefinition?MenuDefinition->TitleTextId:TEXT("UI_Settings")));
+}
+bool UTASettingsMenuWidget::UsesEnglishLayout() const
+{
+ if (auto* GI=GetGameInstance())
+  if (auto* Loc=GI->GetSubsystem<UTALocalizeSubsystem>()) return Loc->GetCurrentLanguage()==TEXT("en");
+ return false;
+}
+void UTASettingsMenuWidget::ApplyLanguageLayout(bool English)
+{
+ for (UButton* Button:{Button_RestoreDefaults.Get(),Button_ConfirmVideoMode.Get(),Button_RevertVideoMode.Get()})
+ {
+  if (!Button) continue;
+  auto* Outer=Cast<UHorizontalBoxSlot>(Button->Slot);
+  auto* Content=Button->GetContent();
+  auto* Inner=Content?Cast<UButtonSlot>(Content->Slot):nullptr;
+  if (!Outer || !Inner) continue;
+  if (!AuthoredFooterLayout.Contains(Button))
+   AuthoredFooterLayout.Add(Button,FFooterLayout{Outer->GetPadding(),Inner->GetPadding(),Outer->GetVerticalAlignment()});
+  const auto& Original=AuthoredFooterLayout.FindChecked(Button);
+  FMargin OuterPadding=Original.OuterPadding;
+  if (English) OuterPadding.Right=FMath::Max(OuterPadding.Right,16.f);
+  Outer->SetPadding(OuterPadding);
+  Outer->SetVerticalAlignment(English?VAlign_Center:Original.Vertical);
+  Inner->SetPadding(English?FMargin(12.f,8.f):Original.ContentPadding);
+ }
 }
 namespace
 {
