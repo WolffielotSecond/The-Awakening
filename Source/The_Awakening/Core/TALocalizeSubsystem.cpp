@@ -5,6 +5,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "Internationalization/Internationalization.h"
 
 void UTALocalizeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -16,8 +17,17 @@ void UTALocalizeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 bool UTALocalizeSubsystem::SetLanguage(const FString& LanguageCode)
 {
+	FInternationalization& Internationalization = FInternationalization::Get();
+	// Validate before replacing the JSON text map. UE font selection follows
+	// Language; Locale remains unchanged for dates and number formatting.
+	if (!Internationalization.GetCulture(LanguageCode).IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unsupported UE language: %s"), *LanguageCode);
+		return false;
+	}
 	if (LoadLanguageFile(LanguageCode))
 	{
+		Internationalization.SetCurrentLanguage(LanguageCode);
 		CurrentLanguage = LanguageCode;
 		OnLanguageChanged.Broadcast();
 		UE_LOG(LogTemp, Log, TEXT("Localization language set to: %s"), *LanguageCode);
