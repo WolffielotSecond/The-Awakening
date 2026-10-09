@@ -22,4 +22,6 @@ public:
 	virtual bool HandleMenuBackRequested() { return false; }
  virtual bool IsCapturingPlayerInput() const { return false; }
  virtual bool CapturePlayerInput(FKey Key, bool bRepeat) { return false; }
+ virtual bool ShouldShowPlayerCursor() const { return true; }
+ virtual void NotifyPlayerPointerMoved() {}
 };

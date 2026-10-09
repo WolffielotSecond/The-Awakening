@@ -7,10 +7,13 @@
 void UTASettingRowWidget::NativeOnInitialized()
 {
  Super::NativeOnInitialized();
- if (Button_Option) { NormalColor=Button_Option->GetBackgroundColor(); Button_Option->OnClicked.AddDynamic(this,&UTASettingRowWidget::Activate); }
+ if (Button_Option) Button_Option->OnClicked.AddDynamic(this,&UTASettingRowWidget::Activate);
  if (Button_Decrease) Button_Decrease->OnClicked.AddDynamic(this,&UTASettingRowWidget::Decrease);
  if (Button_Increase) Button_Increase->OnClicked.AddDynamic(this,&UTASettingRowWidget::Increase);
  if (Button_Favorite) Button_Favorite->OnClicked.AddDynamic(this,&UTASettingRowWidget::Favorite);
+ // Keep each authored Normal brush for pressed state; selection is a separate highlight.
+ for (UButton* Button:{Button_Option.Get(),Button_Decrease.Get(),Button_Increase.Get(),Button_Favorite.Get()})
+  if (Button) { auto Style=Button->GetStyle(); Style.Pressed=Style.Normal; Style.Hovered=Style.Normal; Button->SetStyle(Style); }
  if (Slider_Value) Slider_Value->OnValueChanged.AddDynamic(this,&UTASettingRowWidget::NumberChanged);
 }
 void UTASettingRowWidget::Configure(const FTASettingDefinition& D,FText Name,FText Value,int32 Number,bool B)
@@ -51,7 +54,6 @@ void UTASettingRowWidget::Configure(const FTASettingDefinition& D,FText Name,FTe
 }
 void UTASettingRowWidget::SetHighlighted(bool B)
 {
- if (Button_Option) Button_Option->SetBackgroundColor(B?FLinearColor(0.12f,0.42f,0.82f,1):NormalColor);
  if (Image_Highlight) Image_Highlight->SetVisibility(B?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
 }
 UWidget* UTASettingRowWidget::GetFocusTarget() const { return Button_Option; }

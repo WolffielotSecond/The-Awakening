@@ -48,7 +48,6 @@ private:
  UFUNCTION() void NumberChanged(float Value);
  FTASettingDefinition Definition;
  bool bRefreshing=false;
- FLinearColor NormalColor=FLinearColor::White;
 };
 // Separate Blueprint templates can be assigned for each type, sharing the interaction contract.
 UCLASS(Abstract,Blueprintable) class THE_AWAKENING_API UTAToggleSettingRowWidget : public UTASettingRowWidget { GENERATED_BODY() };

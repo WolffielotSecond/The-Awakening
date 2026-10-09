@@ -266,6 +266,8 @@ CanvasPanel
 | --- | --- | --- |
 | Box_Pages | VerticalBox | 主菜单必需，左侧动态入口 |
 | Box_SettingsOptions | VerticalBox | 必需，中栏动态子标题与设置行 |
+| ScrollBox_SettingsOptions | ScrollBox | 建议，中栏滚动区域 |
+| ScrollBox_Description | ScrollBox | 建议，右栏说明滚动区域 |
 | Text_Title | TextBlock | 可选，主标题 |
 | Text_SettingTitle | TextBlock | 建议，右栏当前设置名称 |
 | Box_Description | VerticalBox | 图文说明必需，右栏动态内容块 |
@@ -273,6 +275,7 @@ CanvasPanel
 | Text_Empty | TextBlock | 建议，空页提示 |
 | HorizontalBox_Controls | HorizontalBox | 建议，统一按键提示 |
 | Button_RestoreDefaults | Button | 建议，恢复当前页默认值 |
+| Text_RestoreDefaults | TextBlock | 可选，放在恢复默认按钮内；C++ 自动本地化 |
 | Button_ConfirmVideoMode | Button | 建议，确认显示设置 |
 | Button_RevertVideoMode | Button | 建议，撤销显示设置 |
 
@@ -404,15 +407,20 @@ SettingsMenuWidgetClass = WBP_SettingsMenu
 
 确认当前关卡使用的 GameMode 选中了配置好的玩家控制器。现有暂停菜单“设置”入口已经由 C++ 接入，WBP 无需额外创建菜单或实现暂停逻辑。
 
+进入设置后，C++ 会折叠暂停菜单，使上一页不再显示或接收鼠标点击；关闭设置后恢复暂停菜单原本的可见状态与输入。切换期间游戏保持暂停，暂停菜单原有页面状态保留。无需在蓝图里额外 Remove From Parent 或关闭暂停。
+
 停止当前 PIE，保存资产与配置后重新开始游戏，让本地玩家子系统加载 DA_Settings。
 
 ## 14. 设置手动按钮的本地化文字
 
-页面、子标题、设置名称、说明、候选值和统一按键提示由 C++ 填充。你手动创建的静态按钮标签需要使用现有本地化系统：
+页面、子标题、设置名称、说明、候选值和统一按键提示由 C++ 填充。恢复默认按钮中的 TextBlock 命名为 `Text_RestoreDefaults`，C++ 会在打开菜单和切换语言时自动填充 `Settings.RestoreDefaults`，无需蓝图绑定 Text 或单独刷新。
+
+恢复当前页默认值会跳过语言设置（Game.Language 或使用该 ApplyHandlerId 的设置）。即使语言出现在收藏页，也会保留当前语言；其余本页设置照常恢复。
+
+其他手动创建的静态按钮标签需要使用现有本地化系统：
 
 | 按钮 | 传给 GetText 的 ID |
 | --- | --- |
-| 恢复默认 | Settings.RestoreDefaults |
 | 确认显示设置 | Settings.ConfirmVideo |
 | 撤销显示设置 | Settings.RevertVideo |
 | 取消输入捕获 | Settings.CancelCapture |
@@ -461,7 +469,7 @@ DA_Settings 通过配置字符串加载。到 Project Settings → Packaging →
 
 1. 打开暂停菜单，点击“设置”，确认出现新主菜单。
 2. 左侧第一项是收藏，其后是游戏、显示、声音、鼠标与键盘、控制器。首次没有收藏时，收藏页为空属于正常行为。
-3. 切换普通页面，确认子标题和对应设置行正确出现，键盘／控制器导航跳过子标题。
+3. 切换普通页面，确认子标题和对应设置行正确出现；手柄上一项／下一项跳过子标题，键鼠使用悬停选中。
 4. 调整开关、选择项、滑块，确认显示和实际效果一致。
 5. 收藏几个不同页面的设置，确认收藏页按大页面分组；取消收藏后同步移除。
 6. 打开亮度、键鼠绑定、控制器绑定三个菜单，检查返回能恢复父菜单输入。
@@ -553,3 +561,55 @@ Choice 默认候选数组：
 高级数据显示的实际 HUD 效果还需要放置 WBP_AdvancedData；对话文字速度通过下一次对话检查。已有玩家保存值不会因这批资产创建而重置。
 
 创建脚本保存在 `Tools/Settings/create_settings_test_assets.py`，再次运行会拒绝覆盖已经存在的 DA_Settings。后续请直接编辑这个 DA 的 Definitions。
+
+## 21. 设置菜单输入与交互（当前规则）
+
+设置菜单使用独立 `/Game/Input/IMC_Settings`，操作资产位于 `/Game/Input/Actions/Settings`。玩家控制器 SettingsInputMappingContext 默认指向该 IMC；设置打开时以优先级 20 启用，退出设置后停用。共享 IMC_UI 保留用于其他菜单，C++ 不再运行时创建设置按键映射。按键修改和重绑定后的路由、统一按键提示均读取实际 IMC 映射。
+
+| 操作／Action 名称后缀 | 默认键鼠 | 默认手柄 |
+| --- | --- | --- |
+| PreviousPage／NextPage | PageUp／PageDown | LB／RB |
+| PreviousItem／NextItem | 不配置 | 十字键上／下 |
+| AdjustLeft／AdjustRight | 左／右箭头 | 十字键左／右 |
+| Confirm | 不配置 | A／底部面键 |
+| Favorite | F | X／左侧面键 |
+| ResetPage | R | Y／顶部面键 |
+| Back | Esc | B／右侧面键 |
+| ScrollUp／ScrollDown | 不配置，鼠标使用滚轮 | LT／RT |
+| PointerMove | 原生鼠标移动 | 左摇杆，Axis2D，带死区 |
+| PointerClick | 原生鼠标左键 | 右摇杆按下 |
+
+手柄按键文字以 Xbox 命名展示，其他设备的提示由现有统一系统转换。可以直接在 IMC_Settings 编辑这些默认映射。PreviousItem、NextItem、Confirm、ScrollUp、ScrollDown 与 PointerClick 为手柄操作，给它们添加键盘键也不会启用键鼠确认或项目导航。
+
+提示栏随当前选中项目变化：开关、子菜单不显示减少／增加，手柄显示确认；选择、滑块不显示确认。选择的 AdjustLeft／AdjustRight 提示文字为“上一项／下一项”，滑块仍为“减少／增加”。这里选择候选的上一项／下一项仍使用 AdjustLeft／AdjustRight，手柄切换设置行的 PreviousItem／NextItem 独立保留。键鼠不显示确认或设置行导航；指针移动、点击和手柄上下滚动不占用提示栏，滚动操作仍保留。
+
+主设置界面为键鼠和手柄显示“长按3秒重置当前页面”。`IA_SettingsResetPage` 默认绑定 R／Y，可在 IMC_Settings 编辑，Action 保持 Boolean，无需添加 Hold Trigger。持续按住对应按键或鼠标按住 Button_RestoreDefaults 满 3 秒才触发，每次长按只重置一次；短按及单击提示栏不会重置。只重置当前页面包含的设置，始终保留语言；收藏页也遵守此规则，不清空收藏。切换页面、进入二级菜单或失去输入权限会取消当前长按，需要松开重新按住。此操作不会隐藏鼠标，二级菜单不显示或接受该页面操作。
+
+重置按钮进度由 C++ 驱动，不需要创建蓝图 Widget Animation。优先使用菜单蓝图中名为 ProgressBar_ResetHold 的 Progress Bar（勾选 Is Variable，并编译保存蓝图），保留它的颜色、Brush、填充样式、Padding 与布局；C++ 只更新 Percent，并设置为不拦截点击。手动控件的 Bar Fill Type 请设为 Left to Right。找不到控件时，系统才自动在 Button_RestoreDefaults 内包裹 Overlay：底层是左到右填充的 ProgressBar_ResetHold，上层保留原有内容和文字，填充覆盖按钮内部全宽。Settings／Style 中的 ResetHoldFillColor 只控制自动生成版本。自定义外观时把进度层放在按钮背景之上、文字之下，横纵 Fill、Padding=0；不要放在文字上方或添加不透明的前景背景遮挡进度。
+
+长按进度线性从 0 到 1，松开后以 `释放进度 × (1 - t)³` 在 1 秒内回到 0，先快后慢。回退途中再次按住时，不清零显示：回退继续，新长按从 0 重新计时，显示两条进度的较大值。旧回退进度不会抵扣新的 3 秒确认时间。
+
+恢复默认完成后立即从满进度播放同样的 1 秒回退动画，无需松开按键。继续按住不会重新填充或再次触发；中途松开不会重启动画，必须重新按住满 3 秒才能再次重置。
+
+上述 3 秒和 1 秒是默认值。打开 WBP_SettingsMenu 的 Class Defaults，在 Settings／Reset 中调整 Reset Hold Duration（ResetHoldDuration，长按确认秒数）和 Reset Return Duration（ResetReturnDuration，回退动画秒数），两项最小值均为 0.01 秒。按键提示中的长按秒数会自动读取 ResetHoldDuration，并随语言切换刷新；无需修改本地化文本或 IMC。三份 UI_Settings_ResetPage 文本中的 `{0}` 是时长占位符，请保留。
+
+填充仍有空隙时，检查 Button 的 Style／Normal Padding 和 Pressed Padding；它们会与内容 Slot 的 Padding 相加。自动生成版本由 C++ 将这些 Padding 清零并使用 Scale 填充及无透明边缘的纯色 Brush。手动提供进度条时请自行设置相关 Padding 与布局；若 Fill Image 纹理自身带透明边缘，请换成无透明边缘的图片或纯色 Brush。
+
+滑块支持长按 IMC 中的 AdjustLeft／AdjustRight：按下立即调整一次，持续按住 0.35 秒后每 0.08 秒调整一次，使用设置定义的 Step，并限制在 1–100。键盘和手柄均支持；松开、切换选中项、失去输入权限或同时按住两个方向时停止连续调整。选择类型只在按下时切换一次，不连续循环。
+
+| 类型 | 大按钮点击（鼠标／手柄指针） | 手柄确认 | 减少／增加 |
+| --- | --- | --- | --- |
+| Toggle | 切换开关 | 切换当前开关 | 无效 |
+| Choice | 只选中，不改值 | 不改值 | 切换当前候选；也可点箭头 |
+| Slider | 只选中，不改值 | 不改值 | 调整当前值；也可点箭头或拖动 |
+| Submenu | 打开目标菜单 | 打开当前目标菜单 | 无效 |
+
+所有设置行取消按钮按下／悬停的默认深色效果，保留 Normal 外观。行选中使用 Image_Highlight，建议四种行模板都包含这个控件；左侧页面按钮则由 C++ 将当前页背景设为蓝色，其余页恢复原背景色。不要在蓝图点击事件里另行改变按钮颜色或设置值。
+
+仅在手柄执行上一页、下一页、上一项、下一项时隐藏鼠标，并关闭悬停选择，防止旧鼠标位置覆盖导航选择。手柄摇杆移动指针后恢复鼠标显示和悬停选择；输入设备切换为键鼠时也立即恢复显示。键鼠翻页不会隐藏鼠标。增减、确认、收藏和滚动不主动改变指针显隐。
+
+上一项／下一项选择中栏设置行，自动将目标行滚入可见区域；子标题不参与选择。减少、增加和收藏作用于当前选中行。悬停用于选中，点击大按钮还会执行表中的对应行为。
+
+手柄滚动根据指针位置选择中栏或右栏 ScrollBox，不主动改变选中项；持续按住会连续滚动。没有指向两栏之一时不滚动。建议将两个 ScrollBox 命名为 `ScrollBox_SettingsOptions` 和 `ScrollBox_Description`；旧模板未命名时，C++ 会沿 Box_SettingsOptions、Box_Description（或旧 Text_Description）的父容器查找最近的 ScrollBox，无需重新摆放布局。
+
+运行检查：分别使用键鼠和手柄确认提示数量；手柄翻页／选项导航后，静止指针不得重新选择旧行；按键盘键应立即显示指针；移动摇杆后恢复悬停。把指针放在两栏中分别按 LT／RT，检查各自滚动；将 IMC 的一个按键改到其他键，检查旧键失效、新键和提示同步生效。

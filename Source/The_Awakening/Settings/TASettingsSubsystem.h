@@ -38,6 +38,7 @@ public:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
  friend class FTASettingsStateTest;
+ friend class FTASettingsMenuInputTest;
 #endif
  void LoadSavedValues();
  void SaveValues() const;

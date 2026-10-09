@@ -7,6 +7,7 @@
 #include "Framework/Application/IInputProcessor.h"
 #include "Core/TAInputRouter.h"
 #include "Core/TAInputOwnershipAdapter.h"
+#include "Components/SlateWrapperTypes.h"
 #include "The_AwakeningPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -115,6 +116,8 @@ protected:
 	/** Shared UI mappings (inventory, dialogue, pause, and future menus), active for this local player. */
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
 	TObjectPtr<UInputMappingContext> UIInputMappingContext;
+	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
+	TObjectPtr<UInputMappingContext> SettingsInputMappingContext;
 	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
 	TObjectPtr<UInputAction> UIBackAction;
 	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
@@ -163,7 +166,7 @@ private:
 	bool ObserveAnalogInput(FKey Key, float Value, int32 UserIndex, TAInputOwnershipAdapter::EState State);
 	// Pure consumer interpretation of Held axes; no second physical-axis state.
 	FVector2D ReadCursorStick(FKey PairedAxisKey) const;
-	FVector2D GetCursorInputAxis() const;
+	FVector2D GetCursorInputAxis();
 	// Observation invalidation is not a physical release or a capability decision.
 	// Processor Down/Up pairing survives both paths until its matching Up/teardown.
 	void InvalidatePhysicalObservationForExternalOwnership();
@@ -173,11 +176,16 @@ private:
 	void ObservePlayerInputOwnership(TAInputOwnershipAdapter::EState State);
 	void SynchronizeUIInputMappingContext(const FTAInputRouter::FWinner& Winner);
 	bool bUIInputMappingContextActive = false;
+	bool bSettingsInputMappingContextActive = false;
+	TOptional<FVector2D> LastVirtualCursorPosition;
 	// Lifecycle edge memory (loss notification/invalidation), never an authorization source.
 	TOptional<TAInputOwnershipAdapter::EState> LastDefinitiveInputOwnership;
 	FTAInputRouter::FHandle PauseInputRequestHandle = 0;
+	// Retain the pause page and its input request while Settings is presented.
+	ESlateVisibility PauseVisibilityBeforeSettings = ESlateVisibility::Visible;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTAExternalInputOwnershipTest;
+	friend class FTASettingsMenuInputTest;
 	friend class FTAHeldObservationLifecycleTest;
 	friend class FTAVirtualCursorAxesTest;
 	friend class FTASyntheticClickSurfaceTest;

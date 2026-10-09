@@ -43,6 +43,8 @@ AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
 	{
 		UIInputMappingContext = UIContextAsset.Object;
 	}
+	static ConstructorHelpers::FObjectFinder<UInputMappingContext> SettingsContextAsset(TEXT("/Game/Input/IMC_Settings.IMC_Settings"));
+	SettingsInputMappingContext = SettingsContextAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UInputAction> UIBackActionAsset(
 		TEXT("/Game/Input/Actions/IA_UIBack.IA_UIBack"));
 	if (UIBackActionAsset.Succeeded())
@@ -143,7 +145,11 @@ bool FTAInputDeviceDetector::HandleMouseMoveEvent(FSlateApplication& SoftApp, co
 	if (!Owner || !Owner->OwnsPlayerInput(&Position)) return false;
 	if (Owner && MouseEvent.GetCursorDelta().SizeSquared() > 0.0f)
 	{
+		if (Owner->LastVirtualCursorPosition.IsSet() && Position.Equals(Owner->LastVirtualCursorPosition.GetValue(),1.f))
+		{ Owner->LastVirtualCursorPosition.Reset(); return false; }
+		Owner->LastVirtualCursorPosition.Reset();
 		Owner->NotifyRawInputKey(EKeys::MouseX);
+		if (auto* Receiver=Cast<ITAPlayerInputReceiver>(Owner->GetInputWinner().Request.Owner.Get())) Receiver->NotifyPlayerPointerMoved();
 	}
 	return false;
 }
@@ -363,22 +369,14 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 		{
    auto* Bindings=GetLocalPlayer()->GetSubsystem<UTAKeyBindingService>();
-   if (UIInputMappingContext && SettingsActions.IsEmpty())
+   if (SettingsInputMappingContext && SettingsActions.IsEmpty())
    {
-    UIInputMappingContext=DuplicateObject<UInputMappingContext>(UIInputMappingContext,this,TEXT("IMC_UI"));
-    auto Add=[&](const TCHAR* Name,FKey Keyboard,FKey Gamepad)
-    {
-     auto* Action=NewObject<UInputAction>(this,FName(*(FString(TEXT("IA_Settings"))+Name)));
-     Action->bTriggerWhenPaused=true; SettingsActions.Add(Name,Action);
-     UIInputMappingContext->MapKey(Action,Keyboard); UIInputMappingContext->MapKey(Action,Gamepad);
-    };
-    Add(TEXT("AdjustLeft"),EKeys::Left,EKeys::Gamepad_DPad_Left);
-    Add(TEXT("AdjustRight"),EKeys::Right,EKeys::Gamepad_DPad_Right);
-    Add(TEXT("PreviousPage"),EKeys::PageUp,EKeys::Gamepad_LeftShoulder);
-    Add(TEXT("NextPage"),EKeys::PageDown,EKeys::Gamepad_RightShoulder);
-    Add(TEXT("Favorite"),EKeys::F,EKeys::Gamepad_FaceButton_Left);
-    if (Bindings) UIInputMappingContext=Bindings->PrepareContext(UIInputMappingContext);
+    if (Bindings) SettingsInputMappingContext=Bindings->PrepareContext(SettingsInputMappingContext);
+    for (const auto& Mapping:SettingsInputMappingContext->GetMappings())
+     if (Mapping.Action && Mapping.Action->GetName().StartsWith(TEXT("IA_Settings")))
+      SettingsActions.Add(FName(*Mapping.Action->GetName().RightChop(11)),const_cast<UInputAction*>(Mapping.Action.Get()));
    }
+   if (UIInputMappingContext && Bindings) UIInputMappingContext=Bindings->PrepareContext(UIInputMappingContext);
 			for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
 			{
 				Subsystem->AddMappingContext(Bindings?Bindings->PrepareContext(CurrentContext):CurrentContext, 0);
@@ -449,8 +447,13 @@ FVector2D AThe_AwakeningPlayerController::ReadCursorStick(FKey PairedAxisKey) co
 	return FVector2D(Remap(Observed.X), Remap(Observed.Y));
 }
 
-FVector2D AThe_AwakeningPlayerController::GetCursorInputAxis() const
+FVector2D AThe_AwakeningPlayerController::GetCursorInputAxis()
 {
+	if (Cast<UTASettingsMenuWidget>(GetInputWinner().Request.Owner.Get()))
+	{
+		const UInputAction* Action=GetSettingsAction(TEXT("PointerMove"));
+		return Action && Action->ValueType==EInputActionValueType::Axis2D?ReadHeldAction(Action).Get<FVector2D>().GetClampedToMaxSize(1.f):FVector2D::ZeroVector;
+	}
 	return (ReadCursorStick(EKeys::Gamepad_Left2D) +
 		(UsesCursorLook() ? ReadCursorStick(EKeys::Gamepad_Right2D) : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
 }
@@ -493,7 +496,10 @@ void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 	CursorPosition += FVector2D(CursorAxis.X, -CursorAxis.Y) * CursorSpeed * DeltaTime;
 	CursorPosition.X = FMath::Clamp(CursorPosition.X, ViewportOrigin.X, ViewportOrigin.X + ViewportSize.X - 1.0f);
 	CursorPosition.Y = FMath::Clamp(CursorPosition.Y, ViewportOrigin.Y, ViewportOrigin.Y + ViewportSize.Y - 1.0f);
+	LastVirtualCursorPosition=CursorPosition;
 	SlateApp.SetCursorPos(CursorPosition);
+	if (auto* Receiver=Cast<ITAPlayerInputReceiver>(GetInputWinner().Request.Owner.Get())) Receiver->NotifyPlayerPointerMoved();
+	SynchronizeInputPresentation();
 	// Slate time keeps both controls responsive while the character is frozen.
 	// The character suppresses the normal gamepad Look callback during scanning.
 	if (IsCursorStickLookActive() && PlayerCharacter)
@@ -633,15 +639,17 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 	}
 	SynchronizeUIInputMappingContext(Winner);
 	const auto& Presentation = Winner.Request.Presentation;
+	const auto* Receiver=Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
+	const bool ShowCursor=Presentation.bShowCursor && (!Receiver || Receiver->ShouldShowPlayerCursor());
 	UWidget* CursorOwner = Cast<UWidget>(Winner.Request.Owner.Get());
-	if (PresentedCursorOwner != CursorOwner || bShowMouseCursor != Presentation.bShowCursor)
+	if (PresentedCursorOwner != CursorOwner || bShowMouseCursor != ShowCursor)
 	{
 		if (PresentedCursorOwner != CursorOwner)
 			if (auto* Old = PresentedCursorOwner.Get()) Old->ResetCursor();
 		PresentedCursorOwner = CursorOwner;
-		SetShowMouseCursor(Presentation.bShowCursor);
+		SetShowMouseCursor(ShowCursor);
 		// Slate queries UMG before the controller; both use the same winning policy.
-		if (CursorOwner) CursorOwner->SetCursor(Presentation.bShowCursor ? EMouseCursor::Default : EMouseCursor::None);
+		if (CursorOwner) CursorOwner->SetCursor(ShowCursor ? EMouseCursor::Default : EMouseCursor::None);
 	}
 
 	auto* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
@@ -686,7 +694,8 @@ void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAI
 	}
 
 	const bool bShouldBeActive = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get()) != nullptr;
-	if (bShouldBeActive == bUIInputMappingContextActive)
+	const bool SettingsActive=Cast<UTASettingsMenuWidget>(Winner.Request.Owner.Get())!=nullptr;
+	if (bShouldBeActive == bUIInputMappingContextActive && SettingsActive==bSettingsInputMappingContextActive)
 	{
 		return;
 	}
@@ -706,19 +715,24 @@ void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAI
 
 	FModifyContextOptions Options;
 	Options.bForceImmediately = true;
-	if (bShouldBeActive)
+	if (SettingsActive!=bSettingsInputMappingContextActive && SettingsInputMappingContext)
+	{
+		if (SettingsActive) Subsystem->AddMappingContext(SettingsInputMappingContext,20,Options);
+		else Subsystem->RemoveMappingContext(SettingsInputMappingContext,Options);
+		bSettingsInputMappingContextActive=SettingsActive;
+	}
+	if (bShouldBeActive && !bUIInputMappingContextActive)
 	{
 		Subsystem->AddMappingContext(UIInputMappingContext, 10, Options);
 	}
-	else
+	else if (!bShouldBeActive && bUIInputMappingContextActive)
 	{
 		Subsystem->RemoveMappingContext(UIInputMappingContext, Options);
 	}
 	bUIInputMappingContextActive = bShouldBeActive;
 	// Widgets are already constructed when their menu acquires input. Refresh only
 	// after the immediate rebuild so their first visible frame has valid icons.
-	if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>())
-		Icons->NotifyInputPromptsChanged();
+	if (GetGameInstance()) if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>()) Icons->NotifyInputPromptsChanged();
 }
 
 bool AThe_AwakeningPlayerController::IsKeyMappedToAction(FKey Key, const UInputAction* Action) const
@@ -835,11 +849,15 @@ void AThe_AwakeningPlayerController::OpenSettingsMenu()
 		return;
 	}
 	SettingsMenuInstance->SetPlayerInputRequest(this, Handle);
+	PauseVisibilityBeforeSettings = PauseMenuInstance->GetVisibility();
+	PauseMenuInstance->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void AThe_AwakeningPlayerController::CloseSettingsMenu()
 {
 	if (!SettingsMenuInstance) return;
+	// Restore the page before releasing Settings' request so focus can return to it.
+	if (PauseMenuInstance) PauseMenuInstance->SetVisibility(PauseVisibilityBeforeSettings);
 	SettingsMenuInstance->RemoveFromParent();
 	SettingsMenuInstance = nullptr;
 }

@@ -25,4 +25,6 @@ protected:
 private:
  UFUNCTION() void Clicked();
  UPROPERTY(Transient) FTASettingsPageDefinition PageDefinition;
+ FLinearColor NormalColor=FLinearColor::White;
+ bool bColorInitialized=false;
 };

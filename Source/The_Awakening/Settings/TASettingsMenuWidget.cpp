@@ -12,6 +12,15 @@
 #include "Components/HorizontalBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ScrollBox.h"
+#include "Components/ProgressBar.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Components/ButtonSlot.h"
+#include "Brushes/SlateColorBrush.h"
+#include "Blueprint/WidgetTree.h"
+#include "Core/TAInputIconSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
 #include "UI/TAActionPromptWidget.h"
 #include "UI/TAPromptWidgetUtils.h"
 #include "InputAction.h"
@@ -20,10 +29,6 @@
 UTASettingsMenuWidget::UTASettingsMenuWidget(const FObjectInitializer& O):Super(O)
 {
  SetIsFocusable(true);
- static ConstructorHelpers::FObjectFinder<UInputAction> Prev(TEXT("/Game/Input/Actions/IA_ChoicePrevious"));
- static ConstructorHelpers::FObjectFinder<UInputAction> Next(TEXT("/Game/Input/Actions/IA_ChoiceNext"));
- static ConstructorHelpers::FObjectFinder<UInputAction> Confirm(TEXT("/Game/Input/Actions/IA_ChoiceConfirm"));
- PreviousAction=Prev.Object; NextAction=Next.Object; ConfirmAction=Confirm.Object;
 }
 void UTASettingsMenuWidget::InitializeMenu(AThe_AwakeningPlayerController* PC,UTASettingsMenuWidget* Parent,UTASettingsMenuDefinitionAsset* Menu)
 {
@@ -41,14 +46,24 @@ void UTASettingsMenuWidget::NativeConstruct()
  if (GetOwningLocalPlayer()) SettingsSubsystem=GetOwningLocalPlayer()->GetSubsystem<UTASettingsSubsystem>();
  if (SettingsSubsystem) { SettingsSubsystem->OnSettingValueChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::ValueChanged); SettingsSubsystem->OnFavoritesChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::FavoritesChanged); }
  if (auto* GI=GetGameInstance()) if (auto* Loc=GI->GetSubsystem<UTALocalizeSubsystem>()) Loc->OnLanguageChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::LanguageChanged);
- if (Button_RestoreDefaults) Button_RestoreDefaults->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::RestoreClicked);
+ if (Button_RestoreDefaults) Button_RestoreDefaults->OnPressed.AddUniqueDynamic(this,&UTASettingsMenuWidget::ResetPressed);
+ InitializeResetHoldVisual();
  if (Button_ConfirmVideoMode) Button_ConfirmVideoMode->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::ConfirmVideo);
  if (Button_RevertVideoMode) Button_RevertVideoMode->OnClicked.AddUniqueDynamic(this,&UTASettingsMenuWidget::RevertVideo);
+ auto FindScroll=[](UWidget* Content)->UScrollBox* { for (UWidget* Parent=Content?Content->GetParent():nullptr;Parent;Parent=Parent->GetParent()) if (auto* Scroll=Cast<UScrollBox>(Parent)) return Scroll; return nullptr; };
+ if (!ScrollBox_SettingsOptions) ScrollBox_SettingsOptions=FindScroll(Box_SettingsOptions);
+ if (!ScrollBox_Description) ScrollBox_Description=FindScroll(Box_Description?static_cast<UWidget*>(Box_Description.Get()):Text_Description.Get());
+ if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>())
+ {
+  Icons->OnInputPromptsChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::InputPresentationChanged);
+  bGamepadDevice=Icons->GetCurrentDeviceType()!=EInputDeviceType::KeyboardMouse;
+ }
  BuildPageEntries(); RefreshPageLabels(); BuildSettingRows(); BuildPromptBar();
 }
 void UTASettingsMenuWidget::NativeDestruct()
 {
  ReleaseRequest();
+ if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>()) Icons->OnInputPromptsChanged.RemoveDynamic(this,&UTASettingsMenuWidget::InputPresentationChanged);
  if (SettingsSubsystem) { SettingsSubsystem->OnSettingValueChanged.RemoveDynamic(this,&UTASettingsMenuWidget::ValueChanged); SettingsSubsystem->OnFavoritesChanged.RemoveDynamic(this,&UTASettingsMenuWidget::FavoritesChanged); }
  if (auto* GI=GetGameInstance()) if (auto* Loc=GI->GetSubsystem<UTALocalizeSubsystem>()) Loc->OnLanguageChanged.RemoveDynamic(this,&UTASettingsMenuWidget::LanguageChanged);
  if (ActiveSubmenu) { auto* Child=ActiveSubmenu.Get(); ActiveSubmenu=nullptr; Child->RemoveFromParent(); }
@@ -57,6 +72,7 @@ void UTASettingsMenuWidget::NativeDestruct()
 }
 void UTASettingsMenuWidget::ReleaseRequest()
 {
+ CancelResetHold();
  const auto H=InputRequestHandle; InputRequestHandle=0;
  if (H && InputController.IsValid()) InputController->ReleaseInputRequest(H);
 }
@@ -132,6 +148,7 @@ void UTASettingsMenuWidget::RefreshRows()
   R->SetHighlighted(I==SelectedRowIndex);
  }
  const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr;
+ if (PromptSettingId!=SelectedSettingId) BuildPromptBar();
  RefreshSettingDetails(D);
  const bool Pending=SettingsSubsystem && SettingsSubsystem->HasPendingVideoMode();
  if (Button_ConfirmVideoMode) Button_ConfirmVideoMode->SetVisibility(Pending?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
@@ -172,7 +189,7 @@ void UTASettingsMenuWidget::RefreshSettingDetails(const FTASettingDefinition* D)
 void UTASettingsMenuWidget::SelectPage(FName PageId)
 {
  if (MenuDefinition || !Allows(ETAInputCapability::Navigate) || !PageDefinitions.ContainsByPredicate([&](const auto& D){return D.PageId==PageId;})) return;
- CurrentPageId=PageId; SelectedSettingId=NAME_None; SelectedRowIndex=INDEX_NONE; BuildSettingRows(); RefreshPageLabels();
+ CancelResetHold(); CurrentPageId=PageId; bSuppressHoverAfterScroll=false; SelectedSettingId=NAME_None; SelectedRowIndex=INDEX_NONE; BuildSettingRows(); RefreshPageLabels();
 }
 void UTASettingsMenuWidget::MovePage(int32 Dir)
 {
@@ -192,19 +209,26 @@ void UTASettingsMenuWidget::EnsureRowSelection()
 void UTASettingsMenuWidget::SelectRow(int32 Index)
 {
  if (!Rows.IsValidIndex(Index)) return;
+ if (SelectedSettingId!=Rows[Index]->GetSettingId()) SliderRepeatDirection=0;
  SelectedRowIndex=Index; SelectedSettingId=Rows[Index]->GetSettingId();
+ if (PromptSettingId!=SelectedSettingId) BuildPromptBar();
 }
 void UTASettingsMenuWidget::MoveSelection(int32 Dir)
 {
  if (Rows.IsEmpty()) return;
  EnsureRowSelection(); SelectRow((SelectedRowIndex+Dir+Rows.Num())%Rows.Num()); RefreshRows();
+ if (ScrollBox_SettingsOptions && Rows.IsValidIndex(SelectedRowIndex)) ScrollBox_SettingsOptions->ScrollWidgetIntoView(Rows[SelectedRowIndex],false);
 }
-void UTASettingsMenuWidget::AdjustSelectedValue(int32 Dir) { if (SettingsSubsystem) SettingsSubsystem->AdjustValue(SelectedSettingId,Dir); }
+void UTASettingsMenuWidget::AdjustSelectedValue(int32 Dir)
+{
+ const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr;
+ if (D && (D->Type==ETASettingType::Choice || D->Type==ETASettingType::Slider)) SettingsSubsystem->AdjustValue(SelectedSettingId,Dir);
+}
 void UTASettingsMenuWidget::ConfirmSelection()
 {
  const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr; if (!D) return;
  if (D->Type==ETASettingType::Submenu) OpenSubmenu(*D);
- else if (D->Type==ETASettingType::Toggle || D->Type==ETASettingType::Choice) SettingsSubsystem->AdjustValue(D->SettingId,1);
+ else if (D->Type==ETASettingType::Toggle) SettingsSubsystem->AdjustValue(D->SettingId,1);
 }
 void UTASettingsMenuWidget::OpenSubmenu(const FTASettingDefinition& D)
 {
@@ -227,18 +251,18 @@ bool UTASettingsMenuWidget::HandleMenuBackRequested()
  if (InputController.IsValid()) { InputController->CloseSettingsMenu(); return true; } return false;
 }
 void UTASettingsMenuWidget::RowHovered(UTASelectableMenuOptionWidget* W)
-{ if (Allows(ETAInputCapability::Navigate)) if (auto* R=Cast<UTASettingRowWidget>(W)) { SelectRow(Rows.IndexOfByKey(R)); RefreshRows(); } }
+{ if (bPointerSelectionEnabled && !bSuppressHoverAfterScroll && Allows(ETAInputCapability::Navigate)) if (auto* R=Cast<UTASettingRowWidget>(W)) { SelectRow(Rows.IndexOfByKey(R)); RefreshRows(); } }
 void UTASettingsMenuWidget::RowActivated(UTASettingRowWidget* R)
-{ if (!R || IsCapturingPlayerInput() || !Allows(ETAInputCapability::Confirm)) return; SelectRow(Rows.IndexOfByKey(R)); ConfirmSelection(); RefreshRows(); }
+{ if (!R || IsCapturingPlayerInput() || !Allows(ETAInputCapability::Confirm)) return; bSuppressHoverAfterScroll=false; SelectRow(Rows.IndexOfByKey(R)); ConfirmSelection(); RefreshRows(); }
 void UTASettingsMenuWidget::RowAdjusted(UTASettingRowWidget* R,int32 Dir)
-{ if (!R || !Allows(ETAInputCapability::Navigate)) return; SelectRow(Rows.IndexOfByKey(R)); AdjustSelectedValue(Dir); }
+{ if (!R || !Allows(ETAInputCapability::Navigate)) return; bSuppressHoverAfterScroll=false; SelectRow(Rows.IndexOfByKey(R)); AdjustSelectedValue(Dir); }
 void UTASettingsMenuWidget::RowNumberChanged(UTASettingRowWidget* R,int32 N)
 { if (R && Allows(ETAInputCapability::Navigate) && SettingsSubsystem) { SelectRow(Rows.IndexOfByKey(R)); SettingsSubsystem->SetValue(R->GetSettingId(),N); } }
 void UTASettingsMenuWidget::RowFavorite(UTASettingRowWidget* R)
 { if (R && Allows(ETAInputCapability::ToggleFavorite) && SettingsSubsystem) SettingsSubsystem->SetFavorite(R->GetSettingId(),!SettingsSubsystem->IsFavorite(R->GetSettingId())); }
 void UTASettingsMenuWidget::ValueChanged(FName) { RefreshRows(); }
 void UTASettingsMenuWidget::FavoritesChanged() { if (CurrentPageId==FTASettingsCatalog::FavoritesPageId()) BuildSettingRows(); else RefreshRows(); }
-void UTASettingsMenuWidget::LanguageChanged() { RefreshPageLabels(); for (int32 I=0;I<SectionHeadings.Num();++I) SectionHeadings[I]->SetTitle(Text(SectionHeadingIds[I].ToString())); RefreshRows(); }
+void UTASettingsMenuWidget::LanguageChanged() { RefreshPageLabels(); for (int32 I=0;I<SectionHeadings.Num();++I) SectionHeadings[I]->SetTitle(Text(SectionHeadingIds[I].ToString())); RefreshRows(); BuildPromptBar(); }
 void UTASettingsMenuWidget::BuildPageEntries()
 {
  PageEntries.Reset(); PageDefinitions.Reset();
@@ -259,6 +283,7 @@ void UTASettingsMenuWidget::BuildPageEntries()
 }
 void UTASettingsMenuWidget::RefreshPageLabels()
 {
+ if (Text_RestoreDefaults) Text_RestoreDefaults->SetText(Text(TEXT("Settings.RestoreDefaults")));
  for (int32 I=0;I<PageEntries.Num();++I)
  {
   if (!PageEntries[I]) continue;
@@ -268,60 +293,271 @@ void UTASettingsMenuWidget::RefreshPageLabels()
  }
  if (Text_Title) Text_Title->SetText(Text(MenuDefinition?MenuDefinition->TitleTextId:TEXT("UI_Settings")));
 }
+namespace
+{
+ struct FSettingsCommand { const TCHAR* Name; ETAInputCapability Capability; bool GamepadOnly; bool Navigation; };
+ const FSettingsCommand SettingsCommands[]={
+  {TEXT("PreviousPage"),ETAInputCapability::Navigate,false,true},
+  {TEXT("NextPage"),ETAInputCapability::Navigate,false,true},
+  {TEXT("PreviousItem"),ETAInputCapability::Navigate,true,true},
+  {TEXT("NextItem"),ETAInputCapability::Navigate,true,true},
+  {TEXT("AdjustLeft"),ETAInputCapability::Navigate,false,false},
+  {TEXT("AdjustRight"),ETAInputCapability::Navigate,false,false},
+  {TEXT("Confirm"),ETAInputCapability::Confirm,true,false},
+  {TEXT("Favorite"),ETAInputCapability::ToggleFavorite,false,false},
+  {TEXT("ResetPage"),ETAInputCapability::Confirm,false,false},
+  {TEXT("Back"),ETAInputCapability::Close,false,false},
+  {TEXT("ScrollUp"),ETAInputCapability::Navigate,true,false},
+  {TEXT("ScrollDown"),ETAInputCapability::Navigate,true,false},
+  {TEXT("PointerClick"),ETAInputCapability::Confirm,true,false}
+ };
+}
+FString UTASettingsMenuWidget::GetSettingCommandTextId(FName Name) const
+{
+ if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown") || (Name==TEXT("ResetPage") && MenuDefinition)) return {};
+ const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr;
+ if (Name==TEXT("AdjustLeft") || Name==TEXT("AdjustRight"))
+ {
+  if (!D || (D->Type!=ETASettingType::Choice && D->Type!=ETASettingType::Slider)) return {};
+  if (D->Type==ETASettingType::Choice) return Name==TEXT("AdjustLeft")?TEXT("UI_Settings_PreviousChoice"):TEXT("UI_Settings_NextChoice");
+ }
+ if (Name==TEXT("Confirm") && (!D || (D->Type!=ETASettingType::Toggle && D->Type!=ETASettingType::Submenu))) return {};
+ return FString(TEXT("UI_Settings_"))+Name.ToString();
+}
 void UTASettingsMenuWidget::BuildPromptBar()
 {
- if (!HorizontalBox_Controls || !Prompts.IsEmpty() || !InputController.IsValid()) return;
- auto Add=[&](UInputAction* A,const TCHAR* Id) { if (auto* P=FTAPromptWidgetUtils::AddActionPrompt(this,HorizontalBox_Controls,ActionPromptWidgetClass,A,Id)) { P->OnPromptClicked.AddDynamic(this,&UTASettingsMenuWidget::PromptClicked); Prompts.Add(P); } };
- Add(PreviousAction,TEXT("UI_Settings_Previous")); Add(NextAction,TEXT("UI_Settings_Next")); Add(ConfirmAction,TEXT("UI_Settings_Confirm"));
+ PromptSettingId=SelectedSettingId;
+ if (!HorizontalBox_Controls || !InputController.IsValid()) return;
+ HorizontalBox_Controls->ClearChildren(); Prompts.Reset();
  const bool BindingMenu=MenuDefinition && (MenuDefinition->MenuKind==ETASettingSubmenuTarget::KeyBindings || MenuDefinition->MenuKind==ETASettingSubmenuTarget::ControllerKeyBindings);
- if (!BindingMenu) for (const TCHAR* Name:{TEXT("AdjustLeft"),TEXT("AdjustRight")}) Add(InputController->GetSettingsAction(Name),*(FString(TEXT("UI_Settings_"))+Name));
- if (!MenuDefinition) for (const TCHAR* Name:{TEXT("PreviousPage"),TEXT("NextPage"),TEXT("Favorite")}) Add(InputController->GetSettingsAction(Name),*(FString(TEXT("UI_Settings_"))+Name));
- Add(InputController->GetUIBackAction(),TEXT("UI_Settings_Back"));
+ for (const auto& Command:SettingsCommands)
+ {
+  const FName Name(Command.Name);
+  if (Command.GamepadOnly && !bGamepadDevice) continue;
+  if (Name==TEXT("PointerClick")) continue;
+  if (MenuDefinition && (Name==TEXT("PreviousPage") || Name==TEXT("NextPage"))) continue;
+  if (BindingMenu && (Name==TEXT("AdjustLeft") || Name==TEXT("AdjustRight") || Name==TEXT("Favorite"))) continue;
+  const FString Label=GetSettingCommandTextId(Name);
+  if (Label.IsEmpty()) continue;
+  if (auto* P=FTAPromptWidgetUtils::AddActionPrompt(this,HorizontalBox_Controls,ActionPromptWidgetClass,InputController->GetSettingsAction(Name),*Label))
+  {
+   if (Name==TEXT("ResetPage"))
+   {
+    FNumberFormattingOptions Format; Format.SetMaximumFractionalDigits(2);
+    const float Seconds=FMath::IsFinite(ResetHoldDuration)?FMath::Max(0.01f,ResetHoldDuration):3.f;
+    P->ConfigurePrompt(InputController->GetSettingsAction(Name),FText::Format(Text(Label),FText::AsNumber(Seconds,&Format)));
+   }
+   P->OnPromptClicked.AddDynamic(this,&UTASettingsMenuWidget::PromptClicked); Prompts.Add(P);
+  }
+ }
 }
 void UTASettingsMenuWidget::PromptClicked(UTAActionPromptWidget* P)
 {
  if (!P || !InputController.IsValid()) return;
- auto* A=P->GetPromptAction();
- if (A==InputController->GetUIBackAction()) { HandleMenuBackRequested(); return; }
- if (IsCapturingPlayerInput()) return;
- if (A==ConfirmAction) { if (Allows(ETAInputCapability::Confirm)) ConfirmSelection(); return; }
- if (A==InputController->GetSettingsAction(TEXT("Favorite"))) { RowFavorite(Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr); return; }
- if (!Allows(ETAInputCapability::Navigate)) return;
- if (A==PreviousAction) MoveSelection(-1); else if (A==NextAction) MoveSelection(1);
- else if (A==InputController->GetSettingsAction(TEXT("AdjustLeft"))) AdjustSelectedValue(-1);
- else if (A==InputController->GetSettingsAction(TEXT("AdjustRight"))) AdjustSelectedValue(1);
- else if (A==InputController->GetSettingsAction(TEXT("PreviousPage"))) MovePage(-1);
- else if (A==InputController->GetSettingsAction(TEXT("NextPage"))) MovePage(1);
+ // A prompt click is not a three-second hold; use the reset button or IMC key.
+ if (P->GetPromptAction()==InputController->GetSettingsAction(TEXT("ResetPage"))) return;
+ for (const auto& Command:SettingsCommands)
+  if (P->GetPromptAction()==InputController->GetSettingsAction(Command.Name) && Allows(Command.Capability))
+  { ExecuteSettingsAction(Command.Name,false); return; }
 }
 TOptional<ETAInputCapability> UTASettingsMenuWidget::ResolvePlayerInput(FKey K) const
 {
  if (!InputController.IsValid() || K.IsMouseButton()) return {};
- auto M=[&](const UInputAction* A){return InputController->IsKeyMappedToAction(K,A);};
- if (M(ConfirmAction)) return ETAInputCapability::Confirm;
- if (M(InputController->GetSettingsAction(TEXT("Favorite")))) return ETAInputCapability::ToggleFavorite;
- if (M(PreviousAction) || M(NextAction)) return ETAInputCapability::Navigate;
- for (const TCHAR* N:{TEXT("AdjustLeft"),TEXT("AdjustRight"),TEXT("PreviousPage"),TEXT("NextPage")}) if (M(InputController->GetSettingsAction(N))) return ETAInputCapability::Navigate;
+ for (const auto& Command:SettingsCommands)
+  if (!(MenuDefinition && FName(Command.Name)==TEXT("ResetPage")) && (!Command.GamepadOnly || K.IsGamepadKey()) && InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(Command.Name))) return Command.Capability;
  return {};
 }
 void UTASettingsMenuWidget::ExecutePlayerInput(FKey K,ETAInputCapability C)
 {
  if (!Allows(C)) return;
- if (C==ETAInputCapability::Confirm) { ConfirmSelection(); return; }
- if (C==ETAInputCapability::ToggleFavorite) { RowFavorite(Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr); return; }
- if (C!=ETAInputCapability::Navigate) return;
- if (InputController->IsKeyMappedToAction(K,PreviousAction)) MoveSelection(-1);
- else if (InputController->IsKeyMappedToAction(K,NextAction)) MoveSelection(1);
- else if (InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(TEXT("AdjustLeft")))) AdjustSelectedValue(-1);
- else if (InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(TEXT("AdjustRight")))) AdjustSelectedValue(1);
- else if (InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(TEXT("PreviousPage")))) MovePage(-1);
- else MovePage(1);
+ for (const auto& Command:SettingsCommands)
+  if (Command.Capability==C && (!Command.GamepadOnly || K.IsGamepadKey()) && InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(Command.Name)))
+  { ExecuteSettingsAction(Command.Name,K.IsGamepadKey() && Command.Navigation); return; }
+}
+void UTASettingsMenuWidget::ExecuteSettingsAction(FName Name,bool GamepadNavigation)
+{
+ if (Name==TEXT("Back")) { HandleMenuBackRequested(); return; }
+ if (IsCapturingPlayerInput()) return;
+ if (GamepadNavigation) BeginGamepadNavigation();
+ if (Name==TEXT("PreviousPage")) MovePage(-1);
+ else if (Name==TEXT("NextPage")) MovePage(1);
+ else if (Name==TEXT("PreviousItem")) MoveSelection(-1);
+ else if (Name==TEXT("NextItem")) MoveSelection(1);
+ else if (Name==TEXT("AdjustLeft") || Name==TEXT("AdjustRight"))
+ {
+  const int32 Direction=Name==TEXT("AdjustLeft")?-1:1;
+  SliderRepeatDirection=Direction; SliderRepeatSettingId=SelectedSettingId; SliderRepeatDelay=0.35f;
+  AdjustSelectedValue(Direction);
+ }
+ else if (Name==TEXT("Confirm")) ConfirmSelection();
+ else if (Name==TEXT("ResetPage") && !MenuDefinition) ResetPressed();
+ else if (Name==TEXT("Favorite")) RowFavorite(Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr);
+ else if (Name==TEXT("PointerClick")) { if (bPointerSelectionEnabled && InputController.IsValid()) InputController->SimulateSyntheticLeftMouseClick(); }
+ else if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown")) { ScrollAtPointer(Name==TEXT("ScrollUp")?-1:1); ScrollRepeatDelay=0.35f; }
+}
+void UTASettingsMenuWidget::BeginGamepadNavigation()
+{
+ bPointerSelectionEnabled=false;
+ if (InputController.IsValid()) InputController->SynchronizeInputPresentation();
+}
+void UTASettingsMenuWidget::InputPresentationChanged()
+{
+ if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>()) bGamepadDevice=Icons->GetCurrentDeviceType()!=EInputDeviceType::KeyboardMouse;
+ if (!bGamepadDevice) { bPointerSelectionEnabled=true; bSuppressHoverAfterScroll=false; }
+ BuildPromptBar();
+ if (InputController.IsValid()) InputController->SynchronizeInputPresentation();
+}
+void UTASettingsMenuWidget::NotifyPlayerPointerMoved()
+{
+ if (!Allows(ETAInputCapability::Cursor)) return;
+ bPointerSelectionEnabled=true;
+ bSuppressHoverAfterScroll=false;
+ SelectPointerRow();
+ if (InputController.IsValid()) InputController->SynchronizeInputPresentation();
+}
+void UTASettingsMenuWidget::SelectPointerRow()
+{
+ if (!bPointerSelectionEnabled || bSuppressHoverAfterScroll || !Allows(ETAInputCapability::Navigate) || !FSlateApplication::IsInitialized()) return;
+ const FVector2D Position=FSlateApplication::Get().GetCursorPos();
+ for (int32 I=0;I<Rows.Num();++I)
+  if (Rows[I]->IsVisible() && Rows[I]->GetCachedGeometry().IsUnderLocation(Position) &&
+      (!ScrollBox_SettingsOptions || ScrollBox_SettingsOptions->GetCachedGeometry().IsUnderLocation(Position)))
+  { if (SelectedRowIndex!=I) { SelectRow(I); RefreshRows(); } return; }
+}
+void UTASettingsMenuWidget::ScrollAtPointer(int32 Direction)
+{
+ if (!Allows(ETAInputCapability::Navigate) || !FSlateApplication::IsInitialized()) return;
+ const FVector2D Position=FSlateApplication::Get().GetCursorPos();
+ for (UScrollBox* Scroll:{ScrollBox_SettingsOptions.Get(),ScrollBox_Description.Get()})
+  if (Scroll && Scroll->IsVisible() && Scroll->GetCachedGeometry().IsUnderLocation(Position))
+  { bSuppressHoverAfterScroll=true; Scroll->SetScrollOffset(FMath::Clamp(Scroll->GetScrollOffset()+Direction*60.f,0.f,Scroll->GetScrollOffsetOfEnd())); return; }
+}
+void UTASettingsMenuWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
+{
+ Super::NativeTick(Geometry,DeltaTime);
+ TickResetHold(DeltaTime);
+ if (!InputController.IsValid() || !Allows(ETAInputCapability::Navigate) || IsCapturingPlayerInput()) { SliderRepeatDirection=0; return; }
+ TickSliderAdjustment(DeltaTime,
+  InputController->ReadHeldAction(InputController->GetSettingsAction(TEXT("AdjustLeft"))).Get<bool>(),
+  InputController->ReadHeldAction(InputController->GetSettingsAction(TEXT("AdjustRight"))).Get<bool>());
+ if (!bGamepadDevice) return;
+ const bool Up=InputController->ReadHeldAction(InputController->GetSettingsAction(TEXT("ScrollUp"))).Get<bool>();
+ const bool Down=InputController->ReadHeldAction(InputController->GetSettingsAction(TEXT("ScrollDown"))).Get<bool>();
+ if (Up==Down) { ScrollRepeatDelay=0; return; }
+ ScrollRepeatDelay-=DeltaTime;
+ if (ScrollRepeatDelay<=0) { ScrollAtPointer(Up?-1:1); ScrollRepeatDelay=0.12f; }
+}
+void UTASettingsMenuWidget::TickSliderAdjustment(float DeltaTime,bool Left,bool Right)
+{
+ const auto* D=SettingsSubsystem?SettingsSubsystem->FindDefinition(SelectedSettingId):nullptr;
+ const int32 Direction=Left==Right?0:(Left?-1:1);
+ if (!D || D->Type!=ETASettingType::Slider || SliderRepeatSettingId!=SelectedSettingId || Direction!=SliderRepeatDirection || !Direction)
+ { SliderRepeatDirection=0; return; }
+ SliderRepeatDelay-=DeltaTime;
+ while (SliderRepeatDelay<=0)
+ {
+  SliderRepeatDelay+=0.08f;
+  AdjustSelectedValue(Direction);
+ }
+}
+FReply UTASettingsMenuWidget::NativeOnPreviewKeyDown(const FGeometry&,const FKeyEvent&)
+{
+ // The controller's IMC router runs before Slate. Prevent its unbound fallback
+ // from navigating buttons or activating a choice/slider via Enter or Space.
+ return FReply::Handled();
 }
 void UTASettingsMenuWidget::RestoreCurrentDefaults()
 {
  if (!SettingsSubsystem) return;
- TArray<FName> Ids; for (const UTASettingRowWidget* R:Rows) Ids.AddUnique(R->GetSettingId());
+ TArray<FName> Ids;
+ for (const UTASettingRowWidget* R:Rows)
+ {
+  const FName Id=R->GetSettingId();
+  const auto* D=SettingsSubsystem->FindDefinition(Id);
+  // A page reset must preserve the player's language, including language in Favorites.
+  if (Id==TEXT("Game.Language") || (D && D->ApplyHandlerId==TEXT("Game.Language"))) continue;
+  Ids.AddUnique(Id);
+ }
  for(FName Id:Ids) SettingsSubsystem->RestoreSettingDefault(Id);
 }
-void UTASettingsMenuWidget::RestoreClicked() { if (Allows(ETAInputCapability::Confirm)) RestoreCurrentDefaults(); }
+void UTASettingsMenuWidget::InitializeResetHoldVisual()
+{
+ // Prefer the authored widget even if the optional generated binding was stale.
+ if (!ProgressBar_ResetHold)
+ {
+  if (UWidget* Authored=GetWidgetFromName(TEXT("ProgressBar_ResetHold")))
+  {
+   ProgressBar_ResetHold=Cast<UProgressBar>(Authored);
+   if (!ProgressBar_ResetHold)
+   { UE_LOG(LogTemp,Error,TEXT("ProgressBar_ResetHold must be a ProgressBar; refusing to create a duplicate.")); return; }
+  }
+ }
+ if (!ProgressBar_ResetHold && Button_RestoreDefaults && WidgetTree)
+ {
+  UWidget* Content=Button_RestoreDefaults->GetContent();
+  const auto* OldSlot=Content?Cast<UButtonSlot>(Content->Slot):nullptr;
+  const EHorizontalAlignment Alignment=OldSlot?OldSlot->GetHorizontalAlignment():HAlign_Center;
+  const EVerticalAlignment VerticalAlignment=OldSlot?OldSlot->GetVerticalAlignment():VAlign_Center;
+  const FMargin ContentPadding=OldSlot?OldSlot->GetPadding():FMargin(0);
+  Button_RestoreDefaults->ClearChildren();
+  auto* Overlay=WidgetTree->ConstructWidget<UOverlay>();
+  Overlay->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+  ProgressBar_ResetHold=WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(),TEXT("ProgressBar_ResetHold"));
+  bGeneratedResetHoldVisual=true;
+  auto FillStyle=ProgressBar_ResetHold->GetWidgetStyle();
+  FillStyle.FillImage=FSlateColorBrush(FLinearColor::White);
+  ProgressBar_ResetHold->SetWidgetStyle(FillStyle);
+  auto* FillSlot=Overlay->AddChildToOverlay(ProgressBar_ResetHold);
+  FillSlot->SetHorizontalAlignment(HAlign_Fill); FillSlot->SetVerticalAlignment(VAlign_Fill);
+  if (Content) { auto* ContentSlot=Overlay->AddChildToOverlay(Content); ContentSlot->SetHorizontalAlignment(Alignment); ContentSlot->SetVerticalAlignment(VerticalAlignment); ContentSlot->SetPadding(ContentPadding); }
+  Button_RestoreDefaults->SetContent(Overlay);
+  if (auto* ButtonSlot=Cast<UButtonSlot>(Overlay->Slot)) { ButtonSlot->SetHorizontalAlignment(HAlign_Fill); ButtonSlot->SetVerticalAlignment(VAlign_Fill); ButtonSlot->SetPadding(FMargin(0)); }
+ }
+ if (ProgressBar_ResetHold && bGeneratedResetHoldVisual)
+ {
+  // SButton adds style padding to its content slot padding. Both must be zero.
+  if (Button_RestoreDefaults)
+  {
+   auto ButtonStyle=Button_RestoreDefaults->GetStyle();
+   ButtonStyle.NormalPadding=FMargin(0); ButtonStyle.PressedPadding=FMargin(0);
+   Button_RestoreDefaults->SetStyle(ButtonStyle);
+   if (UWidget* Content=Button_RestoreDefaults->GetContent()) if (auto* ContentSlot=Cast<UButtonSlot>(Content->Slot))
+   { ContentSlot->SetHorizontalAlignment(HAlign_Fill); ContentSlot->SetVerticalAlignment(VAlign_Fill); ContentSlot->SetPadding(FMargin(0)); }
+  }
+  if (auto* FillSlot=Cast<UOverlaySlot>(ProgressBar_ResetHold->Slot))
+  { FillSlot->SetHorizontalAlignment(HAlign_Fill); FillSlot->SetVerticalAlignment(VAlign_Fill); FillSlot->SetPadding(FMargin(0)); }
+  auto Style=ProgressBar_ResetHold->GetWidgetStyle();
+  Style.BackgroundImage.DrawAs=ESlateBrushDrawType::NoDrawType;
+  ProgressBar_ResetHold->SetWidgetStyle(Style);
+  ProgressBar_ResetHold->SetBarFillType(EProgressBarFillType::LeftToRight);
+  ProgressBar_ResetHold->SetBarFillStyle(EProgressBarFillStyle::Scale);
+  ProgressBar_ResetHold->SetBorderPadding(FVector2D::ZeroVector);
+  ProgressBar_ResetHold->SetFillColorAndOpacity(ResetHoldFillColor);
+ }
+ if (ProgressBar_ResetHold)
+ {
+  // Authored colors, brushes, fill style and layout belong to the Blueprint.
+  ProgressBar_ResetHold->SetVisibility(ESlateVisibility::HitTestInvisible);
+  ProgressBar_ResetHold->SetPercent(0);
+ }
+ ResetHold={}; bResetHoldArmed=false;
+}
+void UTASettingsMenuWidget::ResetPressed()
+{
+ if (!MenuDefinition && !IsCapturingPlayerInput() && Allows(ETAInputCapability::Confirm)) bResetHoldArmed=true;
+}
+void UTASettingsMenuWidget::CancelResetHold()
+{
+ bResetHoldArmed=false; ResetHold.Tick(0,false,ResetHoldDuration,ResetReturnDuration);
+}
+void UTASettingsMenuWidget::TickResetHold(float DeltaTime)
+{
+ const bool Allowed=!MenuDefinition && !IsCapturingPlayerInput() && Allows(ETAInputCapability::Confirm);
+ const bool Held=Allowed && bResetHoldArmed && ((Button_RestoreDefaults && Button_RestoreDefaults->IsPressed()) ||
+  (InputController.IsValid() && InputController->ReadHeldAction(InputController->GetSettingsAction(TEXT("ResetPage"))).Get<bool>()));
+ if (!Held) bResetHoldArmed=false;
+ if (ResetHold.Tick(DeltaTime,Held,ResetHoldDuration,ResetReturnDuration)) { SliderRepeatDirection=0; RestoreCurrentDefaults(); }
+ if (ProgressBar_ResetHold) ProgressBar_ResetHold->SetPercent(ResetHold.Display);
+}
 void UTASettingsMenuWidget::ConfirmVideo() { if (Allows(ETAInputCapability::Confirm) && SettingsSubsystem) SettingsSubsystem->ConfirmVideoMode(); }
 void UTASettingsMenuWidget::RevertVideo() { if (Allows(ETAInputCapability::Confirm) && SettingsSubsystem) SettingsSubsystem->RevertVideoMode(); }
