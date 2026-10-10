@@ -8,6 +8,7 @@
 #include "Core/TAInputRouter.h"
 #include "Core/TAInputOwnershipAdapter.h"
 #include "Components/SlateWrapperTypes.h"
+#include "UI/Cursor/TACursorSettings.h"
 #include "The_AwakeningPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -22,6 +23,7 @@ class UTAPauseMenuWidget;
 class UTASettingsMenuWidget;
 struct FInputActionValue;
 struct FInputKeyEventArgs;
+class FTAGameCursor;
 /**
  * 输入设备检测器
  */
@@ -40,6 +42,7 @@ public:
 	virtual bool HandleAnalogInputEvent(FSlateApplication& SoftApp, const FAnalogInputEvent& InAnalogInputEvent) override;
 	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 	virtual bool HandleMouseButtonUpEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
+	virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 	virtual bool HandleMouseMoveEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent) override;
 
 private:
@@ -57,6 +60,15 @@ class AThe_AwakeningPlayerController : public APlayerController
 
 public:
 	AThe_AwakeningPlayerController();
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="UI|Cursor")
+	FTACursorStyleSettings CursorStyle;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="HOVER PULSE SETTINGS")
+	FTACursorPulseSettings HoverPulseSettings;
+	/** Console command: TACursorTest toggles the interactive tuning screen. */
+	UFUNCTION(Exec)
+	void TACursorTest();
+	void UpdateGameCursor();
+	void NotifyCursorButton(bool bDown);
 	bool OwnsPlayerInput(const FVector2D* Pointer = nullptr) const;
 	bool AllowsInput(ETAInputCapability Capability) const;
 	bool AllowsInputFor(FTAInputRouter::FHandle Handle, const UObject* RequestOwner, ETAInputCapability Capability) const;
@@ -134,6 +146,7 @@ protected:
  TMap<FName,TObjectPtr<UInputAction>> SettingsActions;
 
 	TSharedPtr<FTAInputDeviceDetector> InputDeviceDetector;
+	TSharedPtr<FTAGameCursor> GameCursor;
 	FDelegateHandle ApplicationActivationHandle;
 	FDelegateHandle DeviceConnectionHandle;
 	TMap<FKey, FVector> HeldKeyValues;

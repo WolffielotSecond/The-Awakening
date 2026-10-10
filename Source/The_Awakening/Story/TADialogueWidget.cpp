@@ -744,6 +744,14 @@ FReply UTADialogueWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, con
 	return Super::NativeOnMouseButtonDown(Geometry, Event);
 }
 
+bool UTADialogueWidget::NativeIsInteractable() const
+{
+	const auto* PC = InputRequestController.Get();
+	return GetIsEnabled() && PC && Controller && !Controller->IsChoiceNode()
+		&& PC->IsKeyMappedToAction(EKeys::LeftMouseButton, AdvanceAction)
+		&& AllowsPlayerInput(ETAInputCapability::Advance);
+}
+
 void UTADialogueWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
 {
 	if (!AllowsPlayerInput(Capability)) return;

@@ -56,6 +56,7 @@ public:
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
 	virtual bool HandleMenuBackRequested() override;
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
+	virtual bool NativeIsInteractable() const override;
 	virtual void RemoveFromParent() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;

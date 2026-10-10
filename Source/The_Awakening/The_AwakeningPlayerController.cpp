@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "The_AwakeningPlayerController.h"
+#include "UI/Cursor/TAGameCursor.h"
 #include "Scan/TAScanningComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -69,6 +70,21 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 	return false;
 }
 
+void AThe_AwakeningPlayerController::UpdateGameCursor()
+{
+	if (GameCursor) GameCursor->Update();
+}
+
+void AThe_AwakeningPlayerController::NotifyCursorButton(bool bDown)
+{
+	if (GameCursor) GameCursor->Button(bDown);
+}
+
+void AThe_AwakeningPlayerController::TACursorTest()
+{
+	if (GameCursor) GameCursor->ToggleTest();
+}
+
 bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& Event)
 {
 	if (Owner) Owner->RecordHeldInput(Event.GetKey(), 0.f, Event.GetUserIndex());
@@ -106,6 +122,7 @@ void FTAInputDeviceDetector::Tick(const float DeltaTime, FSlateApplication& Soft
 	{
 		Owner->RefreshInputOwnership();
 		Owner->TickVirtualCursor(DeltaTime);
+		Owner->UpdateGameCursor();
   if (Owner->GetLocalPlayer())
    if (auto* Settings=Owner->GetLocalPlayer()->GetSubsystem<UTASettingsSubsystem>()) Settings->CheckVideoModeTimeout();
 	}
@@ -122,6 +139,7 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 	if (Owner)
 	{
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
+		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton) Owner->NotifyCursorButton(true);
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
 		if (Owner->RoutePlayerInputKey(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()))
 		{ ConsumedPresses.Add(MouseEvent.GetEffectingButton()); return true; }
@@ -136,7 +154,19 @@ bool FTAInputDeviceDetector::HandleMouseButtonUpEvent(FSlateApplication&, const 
 		return false;
 	}
 	if (Owner) Owner->RecordHeldInput(Event.GetEffectingButton(), 0.f, Event.GetUserIndex());
+	if (Owner && Event.GetEffectingButton() == EKeys::LeftMouseButton) Owner->NotifyCursorButton(false);
 	return ConsumedPresses.Remove(Event.GetEffectingButton()) > 0;
+}
+
+bool FTAInputDeviceDetector::HandleMouseButtonDoubleClickEvent(FSlateApplication&, const FPointerEvent& Event)
+{
+	// Slate reports the second physical press separately from MouseButtonDown.
+	// Observe its visual press without changing the existing double-click routing.
+	const FVector2D Position = Event.GetScreenSpacePosition();
+	if (Owner && !Owner->IsSimulatingSyntheticLeftMouseClick() && Owner->OwnsPlayerInput(&Position)
+		&& Event.GetEffectingButton() == EKeys::LeftMouseButton)
+		Owner->NotifyCursorButton(true);
+	return false;
 }
 
 bool FTAInputDeviceDetector::HandleMouseMoveEvent(FSlateApplication& SoftApp, const FPointerEvent& MouseEvent)
@@ -163,6 +193,8 @@ void AThe_AwakeningPlayerController::BeginPlay()
 		if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>(); Icons && GetLocalPlayer())
 			Icons->RefreshCurrentDeviceForUser(GetLocalPlayer()->GetPlatformUserId());
 		InputDeviceDetector = MakeShared<FTAInputDeviceDetector>(this);
+		GameCursor = MakeShared<FTAGameCursor>(this);
+		GameCursor->Install(GetWorld() ? GetWorld()->GetGameViewport() : nullptr);
 		DeviceConnectionHandle = IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().AddWeakLambda(this,
 			[this](EInputDeviceConnectionState State, FPlatformUserId User, FInputDeviceId)
 			{
@@ -183,6 +215,7 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (GameCursor) { GameCursor->Shutdown(); GameCursor.Reset(); }
 	FTAInputRouter::FWinner BaseInputOwner;
 	SynchronizeUIInputMappingContext(BaseInputOwner);
 	IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().Remove(DeviceConnectionHandle);
@@ -255,9 +288,11 @@ void AThe_AwakeningPlayerController::SimulateSyntheticLeftMouseClick()
 		User, 0, CursorPosition, CursorPosition, ReleasedButtons, EKeys::LeftMouseButton, 0.0f, Modifiers);
 
 	const auto NativeWindow = HitPath.GetWindow()->GetNativeWindow();
+	NotifyCursorButton(true);
 	SlateApp.ProcessMouseButtonDownEvent(NativeWindow, MouseDownEvent);
 	// Always finish an emitted Down, even if its handler closes the originating UI.
 	SlateApp.ProcessMouseButtonUpEvent(MouseUpEvent);
+	NotifyCursorButton(false);
 }
 
 void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int32 UserIndex)
@@ -395,6 +430,7 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIsActive)
 {
 	bApplicationInputActive = bIsActive;
+	if (!bIsActive && GameCursor) GameCursor->Animation.Hide();
 	// Activation can precede Slate's updated focus state. Inactivity is definitive;
 	// activation only requests a fresh observation, never synthesizes a key release.
 	ObservePlayerInputOwnership(GetPlayerInputOwnershipState());
@@ -651,6 +687,7 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 		// Slate queries UMG before the controller; both use the same winning policy.
 		if (CursorOwner) CursorOwner->SetCursor(ShowCursor ? EMouseCursor::Default : EMouseCursor::None);
 	}
+	if (!ShowCursor && GameCursor) GameCursor->Animation.Hide();
 
 	auto* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
 	const auto Viewport = Client ? Client->GetGameViewportWidget() : TSharedPtr<SViewport>();

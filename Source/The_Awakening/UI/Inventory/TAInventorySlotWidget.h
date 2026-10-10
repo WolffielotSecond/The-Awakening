@@ -24,6 +24,7 @@ class THE_AWAKENING_API UTAInventorySlotWidget : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
+	virtual bool NativeIsInteractable() const override { return GetIsEnabled() && !IsEmpty() && AllowsPlayerDrag(); }
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;

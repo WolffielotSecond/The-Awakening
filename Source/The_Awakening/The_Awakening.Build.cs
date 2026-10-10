@@ -28,10 +28,12 @@ public class The_Awakening : ModuleRules
 			"Niagara",
 			"Paper2D",
 			"PaperZD",
-			"AssetRegistry"
+			"AssetRegistry",
+            "OnlineSubsystem",
+			"OnlineSubsystemUtils"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore", "RenderCore", "RHI" });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"The_Awakening"

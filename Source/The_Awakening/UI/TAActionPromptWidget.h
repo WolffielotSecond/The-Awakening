@@ -26,6 +26,7 @@ class THE_AWAKENING_API UTAActionPromptWidget : public UUserWidget
 
 public:
 	virtual void NativeOnInitialized() override;
+	virtual bool NativeIsInteractable() const override { return GetIsEnabled() && OnPromptClicked.IsBound(); }
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
