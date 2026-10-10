@@ -20,6 +20,11 @@
 #include "UI/Pause/TAPauseMenuOptionWidget.h"
 #include "Layout/ArrangedChildren.h"
 #include "Widgets/SWidget.h"
+#include "Widgets/SWindow.h"
+#include "Types/PaintArgs.h"
+#include "Rendering/DrawElements.h"
+#include "Internationalization/Internationalization.h"
+#include "Internationalization/Culture.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsEnglishLayoutTest,"TheAwakening.Settings.EnglishLayout",
  EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
@@ -57,11 +62,18 @@ bool FTASettingsEnglishLayoutTest::RunTest(const FString&)
    TestTrue(TEXT("Spacer no longer competes with English name"),Spacer->GetVisibility()==ESlateVisibility::Collapsed);
    for (const auto& Control:Controls)
    {
-    TestTrue(TEXT("Auto controls remain Auto"),Control.Key->GetSize().SizeRule==ESlateSizeRule::Automatic);
+    const bool SliderOperations=Definition.Type==ETASettingType::Slider && Control.Key->Content==Row->GetWidgetFromName(TEXT("Overlay_125"));
+    TestTrue(TEXT("Slider operations share width; other controls retain Auto"),Control.Key->GetSize().SizeRule==(SliderOperations?ESlateSizeRule::Fill:ESlateSizeRule::Automatic));
     TestTrue(TEXT("Controls stay vertically centered"),Control.Key->GetVerticalAlignment()==VAlign_Center);
    }
    TestTrue(TEXT("Complete font appearance preserved"),Text->GetFont()==Font);
    Row->Configure(Definition,FText::FromString(TEXT("中文")),FText::GetEmpty(),75,true,false);
+   if (Definition.Type==ETASettingType::Slider)
+   {
+    TestTrue(TEXT("Chinese slider uses the same constrained name slot"),Slot->GetSize().SizeRule==ESlateSizeRule::Fill && Text->GetAutoWrapText());
+    TestFalse(TEXT("Chinese slider propagates content height"),Cast<USizeBox>(Row->GetRootWidget())->IsHeightOverride());
+    continue;
+   }
    TestTrue(TEXT("Chinese name slot size restored"),Slot->GetSize().SizeRule==Size.SizeRule && Slot->GetSize().Value==Size.Value);
    TestEqual(TEXT("Chinese padding restored"),Slot->GetPadding(),Padding);
    TestTrue(TEXT("Chinese alignment and wrapping restored"),Slot->GetHorizontalAlignment()==Horizontal && Slot->GetVerticalAlignment()==Vertical && Text->GetAutoWrapText()==Wrapped);
@@ -140,34 +152,72 @@ bool FTAEnglishUIBoundsTest::RunTest(const FString&)
  if (!TestNotNull(TEXT("Real slider row"),Row)) return false;
  auto* Name=Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Name")));
  auto* Value=Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Value")));
- auto* Root=Cast<USizeBox>(Row->GetRootWidget()); const float OriginalHeight=Root->GetHeightOverride();
+ auto* Root=Cast<USizeBox>(Row->GetRootWidget());
  const auto Font=Name->GetFont();
  FTASettingDefinition Definition; Definition.Type=ETASettingType::Slider;
- // Explicit line breaks exercise the reported three-line bounds deterministically,
- // independent of a particular viewport/DPI's automatic wrapping decisions.
- Row->Configure(Definition,FText::FromString(TEXT("Dialogue\ntext\nspeed")),FText::FromString(TEXT("75 characters/s")),75,true,true);
- auto SlateRow=Row->TakeWidget(); SlateRow->SlatePrepass();
- const FGeometry RowGeometry=FGeometry::MakeRoot(FVector2D(900,Root->GetHeightOverride()),FSlateLayoutTransform());
- auto NameGeometry=FindLayoutGeometry(SlateRow,RowGeometry,Name->GetCachedWidget());
- auto ValueGeometry=FindLayoutGeometry(SlateRow,RowGeometry,Value->GetCachedWidget());
- auto ButtonGeometry=FindLayoutGeometry(SlateRow,RowGeometry,Row->GetWidgetFromName(TEXT("Button_Option"))->GetCachedWidget());
- if (!TestTrue(TEXT("Arranged text and button found"),NameGeometry.IsSet() && ValueGeometry.IsSet() && ButtonGeometry.IsSet())) return false;
- const double NameBottom=NameGeometry->LocalToAbsolute(FVector2D(0,NameGeometry->GetLocalSize().Y)).Y;
- const double ButtonBottom=ButtonGeometry->LocalToAbsolute(FVector2D(0,ButtonGeometry->GetLocalSize().Y)).Y;
- TestTrue(TEXT("Three lines plus bottom padding stay inside gray button"),NameBottom+12<=ButtonBottom+0.1);
- TestTrue(TEXT("Slider row grows beyond old fixed height"),Root->GetHeightOverride()>OriginalHeight);
- TestTrue(TEXT("Name and characters/s have distinct horizontal space"),NameGeometry->LocalToAbsolute(FVector2D(NameGeometry->GetLocalSize().X,0)).X+24<=ValueGeometry->GetAbsolutePosition().X+0.1);
- const double ButtonCenter=ButtonGeometry->LocalToAbsolute(ButtonGeometry->GetLocalSize()*0.5).Y;
- for (const TCHAR* ControlName:{TEXT("Text_Value"),TEXT("Slider_Value"),TEXT("Button_Decrease"),TEXT("Button_Increase")})
+ const auto OriginalValueFont=Value->GetFont();
+ auto& Intl=FInternationalization::Get();
+ const FString OriginalLanguage=Intl.GetCurrentLanguage()->GetName();
+ ON_SCOPE_EXIT { Intl.SetCurrentLanguage(OriginalLanguage); };
+ auto Window=SNew(SWindow);
+ // Slate Paint supplies AutoWrap's available width; subsequent native prepasses
+ // propagate the wrapped desired height. No explicit line breaks or runtime polling.
+ for (int32 LanguageCycle=0;LanguageCycle<2;++LanguageCycle)
+ for (const TCHAR* Language:{TEXT("en"),TEXT("zh-CN"),TEXT("zh-TW"),TEXT("en")})
+ for (float Width:{600.f,741.215f,896.930f,1100.f})
+ for (float Scale:{0.6883f,1.3620f})
+ for (int32 Number:{10,75,100})
  {
-  auto* Control=Row->GetWidgetFromName(ControlName);
-  auto Geometry=FindLayoutGeometry(SlateRow,RowGeometry,Control->GetCachedWidget());
-  if (!TestTrue(TEXT("Arranged slider control found"),Geometry.IsSet())) return false;
-  TestTrue(TEXT("Slider controls remain centered in taller row"),FMath::IsNearlyEqual(Geometry->LocalToAbsolute(Geometry->GetLocalSize()*0.5).Y,ButtonCenter,0.1));
+  const bool English=FString(Language)==TEXT("en");
+  Intl.SetCurrentLanguage(Language);
+  const FString Label=English?TEXT("Dialogue text speed"):FString(Language)==TEXT("zh-CN")?TEXT("对话文字速度"):TEXT("對話文字速度");
+  const FString Unit=English?TEXT("characters/s"):FString(Language)==TEXT("zh-CN")?TEXT("字符/秒"):TEXT("字元/秒");
+  Row->Configure(Definition,FText::FromString(Label),FText::FromString(FString::Printf(TEXT("%d %s"),Number,*Unit)),Number,true,English);
+  auto SlateRow=Row->TakeWidget();
+  FGeometry RowGeometry;
+  for (int32 Pass=0;Pass<8;++Pass)
+  {
+   SlateRow->SlatePrepass(Scale);
+   RowGeometry=FGeometry::MakeRoot(FVector2D(Width+8.f,SlateRow->GetDesiredSize().Y),FSlateLayoutTransform(Scale));
+   FSlateWindowElementList Elements(Window);
+   SlateRow->Paint(FPaintArgs(nullptr,Window->GetHittestGrid(),FVector2D::ZeroVector,0,0),RowGeometry,
+    FSlateRect(-100000,-100000,100000,100000),Elements,0,FWidgetStyle(),true);
+  }
+  auto NameGeometry=FindLayoutGeometry(SlateRow,RowGeometry,Name->GetCachedWidget());
+  auto ValueGeometry=FindLayoutGeometry(SlateRow,RowGeometry,Value->GetCachedWidget());
+  auto ButtonGeometry=FindLayoutGeometry(SlateRow,RowGeometry,Row->GetWidgetFromName(TEXT("Button_Option"))->GetCachedWidget());
+  if (!TestTrue(TEXT("Arranged text and button found"),NameGeometry.IsSet() && ValueGeometry.IsSet() && ButtonGeometry.IsSet())) return false;
+  TestFalse(TEXT("All languages use content height"),Root->IsHeightOverride());
+  TestTrue(TEXT("Label gets a nonzero proportional width"),NameGeometry->GetLocalSize().X>100);
+  if (English && Width<900) TestTrue(TEXT("Actual automatic wrapping occurs"),Name->GetDesiredSize().Y>Value->GetFont().Size);
+  TestTrue(TEXT("Allocated height contains wrapped label"),NameGeometry->GetLocalSize().Y+1>=Name->GetDesiredSize().Y);
+  TestTrue(TEXT("Allocated height contains wrapped value"),ValueGeometry->GetLocalSize().Y+1>=Value->GetDesiredSize().Y);
+  TestTrue(TEXT("Wrapped name fits its allocated width"),NameGeometry->GetLocalSize().X+1>=Name->GetDesiredSize().X);
+  TestTrue(TEXT("Wrapped value fits its allocated width"),ValueGeometry->GetLocalSize().X+1>=Value->GetDesiredSize().X);
+  const double NameBottom=NameGeometry->LocalToAbsolute(FVector2D(0,NameGeometry->GetLocalSize().Y)).Y;
+  const double ButtonBottom=ButtonGeometry->LocalToAbsolute(ButtonGeometry->GetLocalSize()).Y;
+  TestTrue(TEXT("Label plus padding fits button"),NameBottom+12*Scale<=ButtonBottom+1);
+  TestTrue(TEXT("Name and value have distinct horizontal space"),NameGeometry->LocalToAbsolute(FVector2D(NameGeometry->GetLocalSize().X,0)).X+24*Scale<=ValueGeometry->GetAbsolutePosition().X+1);
+  const double ButtonCenter=ButtonGeometry->LocalToAbsolute(ButtonGeometry->GetLocalSize()*0.5).Y;
+  TOptional<FGeometry> Last;
+  for (const TCHAR* ControlName:{TEXT("Text_Value"),TEXT("Button_Decrease"),TEXT("Slider_Value"),TEXT("Button_Increase")})
+  {
+   auto* Control=Row->GetWidgetFromName(ControlName);
+   auto Geometry=FindLayoutGeometry(SlateRow,RowGeometry,Control->GetCachedWidget());
+   if (!TestTrue(TEXT("Arranged slider control found"),Geometry.IsSet())) return false;
+   TestTrue(TEXT("Controls stay vertically centered"),FMath::IsNearlyEqual(Geometry->LocalToAbsolute(Geometry->GetLocalSize()*0.5).Y,ButtonCenter,1));
+   TestTrue(TEXT("Control has positive width"),Geometry->GetLocalSize().X>0);
+   TestTrue(TEXT("Every control stays within the button right edge"),Geometry->LocalToAbsolute(FVector2D(Geometry->GetLocalSize().X,0)).X<=ButtonGeometry->LocalToAbsolute(FVector2D(ButtonGeometry->GetLocalSize().X,0)).X+1);
+   if (Last.IsSet()) TestTrue(TEXT("Operations do not overlap horizontally"),Last->LocalToAbsolute(FVector2D(Last->GetLocalSize().X,0)).X<=Geometry->GetAbsolutePosition().X+1);
+   Last=Geometry;
+  }
+  TestTrue(TEXT("Both fonts unchanged"),Name->GetFont()==Font && Value->GetFont()==OriginalValueFont);
+  if (!English && Width>=1100)
+  {
+   TestTrue(TEXT("Chinese name stays single line when space is sufficient"),Name->GetDesiredSize().Y<2*Name->GetFont().Size);
+   TestTrue(TEXT("Chinese value stays single line when space is sufficient"),Value->GetDesiredSize().Y<2*Value->GetFont().Size);
+  }
  }
- TestTrue(TEXT("Font appearance unchanged"),Name->GetFont()==Font);
- Row->Configure(Definition,FText::GetEmpty(),FText::GetEmpty(),75,true,false);
- TestEqual(TEXT("Chinese slider height restored"),Root->GetHeightOverride(),OriginalHeight);
 
  auto* MenuClass=LoadClass<UTAPauseMenuWidget>(nullptr,TEXT("/Game/UI/Pause/WBP_PauseMenu.WBP_PauseMenu_C"));
  auto* Menu=MenuClass?CreateWidget<UTAPauseMenuWidget>(PC,MenuClass):nullptr;

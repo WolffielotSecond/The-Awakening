@@ -34,20 +34,7 @@ public class The_Awakening : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore" });
 
 		PublicIncludePaths.AddRange(new string[] {
-			"The_Awakening",
-			"The_Awakening/Variant_Platforming",
-			"The_Awakening/Variant_Platforming/Animation",
-			"The_Awakening/Variant_Combat",
-			"The_Awakening/Variant_Combat/AI",
-			"The_Awakening/Variant_Combat/Animation",
-			"The_Awakening/Variant_Combat/Gameplay",
-			"The_Awakening/Variant_Combat/Interfaces",
-			"The_Awakening/Variant_Combat/UI",
-			"The_Awakening/Variant_SideScrolling",
-			"The_Awakening/Variant_SideScrolling/AI",
-			"The_Awakening/Variant_SideScrolling/Gameplay",
-			"The_Awakening/Variant_SideScrolling/Interfaces",
-			"The_Awakening/Variant_SideScrolling/UI"
+			"The_Awakening"
 		});
 
 		// 剧情编辑器模块（The_AwakeningEditor）需要引用本模块头文件（Story/...、Core/... 等）

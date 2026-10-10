@@ -88,7 +88,7 @@ One-shot migration/render commandlets are removed after execution.
 Regression tests: TheAwakening.Fonts.LanguagePreservesLocale and
 TheAwakening.Fonts.CultureRoutingAndDefault. Real GPU captures of the saved font
 are Saved/GlobalFont_en.png, GlobalFont_zh-CN.png and GlobalFont_zh-TW.png.
-The latest completed full project suite has 33/34 successes (23 successful and
+The latest completed full project suite has 34/35 successes (24 successful and
 10 successful with warnings); the new Dialogue.HistoryEnglishLayout regression
 passes, including language-event refresh, Chinese defaults, spacing and font
 appearance preservation. Settings.EnglishLayout and Settings.EnglishUIBounds
@@ -122,22 +122,49 @@ Row names use constrained Fill space, wrapping and a minimum 24-unit gap to the
 authored Auto controls; controls are vertically centered. Footer buttons use a
 minimum 16-unit gap and 12x8 content padding.
 
-The Slider template has a stretch Canvas under a fixed-height SizeBox. English
-therefore reserves at least three font lines plus the actual vertical container
-insets and 12-unit text padding above/below, restoring the authored height for
-Chinese. The value, arrows and slider keep their Auto widths and remain centered.
+Slider rows now use one width-constrained, content-driven layout in all three
+languages. The same Button and highlight are reused in a native Overlay; the
+root height override and slider width override are cleared. After the favorite
+button, label/operations receive 1:2 Fill shares. Within operations arrows retain
+Auto widths, and value/slider receive 2:1 shares of the remainder. Labels and
+values wrap only when their allocated space requires it (long values also allow
+per-character fallback). The parent propagates wrapped height and operations stay
+vertically centered. The previous Chinese Canvas/Auto-width restoration path was
+removed because it could overflow; language changes no longer swap Slider
+containers or restore unbounded widths. No font or input change.
 English Pause options use the widest current label's desired size plus side
 padding to size the shared VBox; all options fill that width without wrapping.
 The authored Chinese Canvas offsets and button padding are restored on language
 change. Neither adjustment runs in Tick or changes input handling.
 
-Only the affected instance layout properties are retained from the Designer
-defaults, so switching back to zh-CN/zh-TW restores their original values.
+For non-slider settings, only the affected instance layout properties are retained
+from Designer defaults, so zh-CN/zh-TW restore their original values. Sliders use
+the shared constraints described above, preserving single-line Chinese when room
+is sufficient and allowing wrapping when it is not.
 There is no layout polling, second language state, font override or asset
 hierarchy migration. Font, size, letter spacing and localization text are unchanged.
 The English layout regression checks the real six WBP templates and round-trip
-restoration. Settings/Pause wrapping, alignment and three-language switching have
-passed manual PIE acceptance; Settings gamepad navigation was outside that scope.
+restoration. Slider bounds tests use actual automatic wrapping at row widths
+600/741.215/896.930/1100, scales 0.6883/1.3620, values 10/75/100 and en/zh-CN/zh-TW
+round trips with their language-specific units. Native Slate paint/prepass exercises the wrapping/height propagation;
+production code has no layout polling or forced prepass. The shared Slider layout
+has passed player visual acceptance in Windows Development: English, Simplified
+Chinese and Traditional Chinese Settings show no obvious overlap or overflow;
+sliders, arrows and other setting options work normally.
+The subsequent Chinese Slider overflow fix passed Editor Development compilation
+and a fresh full-project automation run: 34/35 tests passed; only the accepted
+Puzzle.Scope headless failure remains. EnglishUIBounds passed the three-language
+width/scale/value matrix above. The temporary layout dump command and its diagnostic
+translation unit were removed after packaged visual acceptance. No runtime layout
+behavior was changed during cleanup.
+Post-fix cleanup verification on 2026-10-10: Editor Development compilation passed;
+the full TheAwakening suite again passed 34/35 tests (24 successful and 10 with
+warnings), with only the existing Puzzle.Scope headless failure. Settings.EnglishLayout,
+Settings.EnglishUIBounds and Input.IconResources passed. git diff --check passed.
+The nonexistent Variant_Platforming/Combat/SideScrolling include-directory entries
+were removed; module dependencies and accepted UI behavior were retained.
+The earlier Settings/Pause acceptance remains recorded below; Settings gamepad
+navigation was outside that scope.
 
 ## English dialogue history layout
 
@@ -177,13 +204,18 @@ fonts; comply with its original terms when distributing the game.
 
 Font migration and the scoped English UI layout work are complete and accepted.
 Do not continue altering accepted Settings, Pause, History or Inventory layouts
-as part of this task. No Windows package was built or validated for this work.
+as part of this task. A Windows Development package has subsequently passed player
+acceptance for three-language Settings layout and Input Icons. The explicit
+`/Game/Textures/Keys` cook rule remains necessary for dynamic icon paths; representative
+keyboard, mouse, Xbox and PlayStation resources are covered by
+`TheAwakening.Input.IconResources`. The prior cook verification included all 266
+Keys assets. This scoped acceptance does not prove complete font/Culture/license
+staging or every other packaged screen.
 
 | Outstanding item | Priority / next step |
 | --- | --- |
-| Windows Development packaging and font/Culture/license output verification | Deferred to the complete packaging workflow, together with Wwise audio integration. Check original font faces, TA_GlobalFont loading, three-language switching and staged notices in the actual build. |
+| Complete font/Culture/license output verification | A Windows Development build now exists and Settings/Input Icons passed player acceptance. Still audit original font faces, TA_GlobalFont references, Culture data and staged notices before release; these were not established by the scoped UI acceptance. |
 | Prominent in-game HarmonyOS Sans Credits/About/Licenses notice | Required before release; not implemented. Preserve the usage statement, Copyright 2021 Huawei Device Co., Ltd. and original LICENSE-update.txt. The final UI location remains to be agreed. |
-| Selected Viewport Dialogue text speed text compression | Low priority. Three lines work in Standalone and PIE New Editor Window. Investigate viewport size, DPI scale and layout timing only with evidence; no Selected Viewport special case. Raise priority if the packaged version reproduces at the same window size. |
 | Same-process PIE changes Editor Language | Confirmed, accepted limitation; no fix planned now. Independent-process testing isolates language state. |
 | Puzzle.Scope headless failure | Pre-existing issue, outside font migration; not fixed or hidden by changing assertions. |
 

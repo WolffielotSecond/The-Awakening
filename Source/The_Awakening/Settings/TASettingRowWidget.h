@@ -43,13 +43,15 @@ protected:
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UImage> Image_ToggleBackground;
 private:
  void ApplyLanguageLayout(bool bEnglish);
- // Instance-local Designer layout defaults, only for the properties overridden in English.
+ void ApplySliderLayout();
+ // Instance-local Designer defaults for shared slider constraints and English-only non-slider adjustments.
  struct FNameLayout { FSlateChildSize Size; FMargin Padding; EHorizontalAlignment Horizontal; EVerticalAlignment Vertical; };
  TOptional<FNameLayout> AuthoredNameLayout;
  bool bAuthoredNameWrap=false;
  ESlateVisibility AuthoredSpacerVisibility=ESlateVisibility::Visible;
  TMap<TWeakObjectPtr<UHorizontalBoxSlot>,EVerticalAlignment> AuthoredControlAlignment;
- TOptional<float> AuthoredSliderHeight;
+ // One content-driven slider container for every language; no layout swapping.
+ UPROPERTY(Transient) TObjectPtr<class UOverlay> SliderContentLayout;
  UFUNCTION() void Activate();
  UFUNCTION() void Decrease();
  UFUNCTION() void Increase();

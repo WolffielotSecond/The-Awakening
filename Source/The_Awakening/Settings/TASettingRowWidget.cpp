@@ -8,11 +8,10 @@
 #include "Components/Spacer.h"
 #include "Components/SizeBox.h"
 #include "Components/SizeBoxSlot.h"
-#include "Components/ButtonSlot.h"
 #include "Components/CanvasPanelSlot.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Rendering/SlateRenderer.h"
-#include "Fonts/FontMeasure.h"
+#include "Components/CanvasPanel.h"
+#include "Components/Overlay.h"
+#include "Blueprint/WidgetTree.h"
 void UTASettingRowWidget::NativeOnInitialized()
 {
  Super::NativeOnInitialized();
@@ -68,8 +67,9 @@ void UTASettingRowWidget::ApplyLanguageLayout(bool bEnglish)
  auto* NameSlot=Cast<UHorizontalBoxSlot>(Text_Name->Slot);
  auto* Row=Cast<UHorizontalBox>(Text_Name->GetParent());
  if (!NameSlot || !Row) return;
- // The existing row has an Auto name, a Fill spacer and Auto controls. Constrain
- // only the English name; controls retain their authored widths and slot sizing.
+ // Sliders use the same width constraints in every language. Other row types
+ // retain their existing English-only adjustments.
+ const bool bConstrained=bEnglish || Slider_Value!=nullptr;
  auto* Spacer=Cast<USpacer>(GetWidgetFromName(TEXT("Spacer_143")));
  if (!AuthoredNameLayout.IsSet())
  {
@@ -81,41 +81,65 @@ void UTASettingRowWidget::ApplyLanguageLayout(bool bEnglish)
     if (auto* ControlSlot=Cast<UHorizontalBoxSlot>(Child->Slot)) AuthoredControlAlignment.Add(ControlSlot,ControlSlot->GetVerticalAlignment());
  }
  const auto& Original=AuthoredNameLayout.GetValue();
- Text_Name->SetAutoWrapText(bEnglish || bAuthoredNameWrap);
- NameSlot->SetSize(bEnglish?FSlateChildSize(ESlateSizeRule::Fill):Original.Size);
+ Text_Name->SetAutoWrapText(bConstrained || bAuthoredNameWrap);
+ NameSlot->SetSize(bConstrained?FSlateChildSize(ESlateSizeRule::Fill):Original.Size);
  FMargin NamePadding=Original.Padding;
- if (bEnglish) NamePadding.Right=FMath::Max(NamePadding.Right,24.f);
- if (bEnglish && Slider_Value)
+ if (bConstrained) NamePadding.Right=FMath::Max(NamePadding.Right,24.f);
+ if (Slider_Value)
  {
   NamePadding.Top=FMath::Max(NamePadding.Top,12.f);
   NamePadding.Bottom=FMath::Max(NamePadding.Bottom,12.f);
  }
  NameSlot->SetPadding(NamePadding);
- NameSlot->SetHorizontalAlignment(bEnglish?HAlign_Fill:Original.Horizontal);
- NameSlot->SetVerticalAlignment(bEnglish?VAlign_Center:Original.Vertical);
- if (Spacer) Spacer->SetVisibility(bEnglish?ESlateVisibility::Collapsed:AuthoredSpacerVisibility);
+ NameSlot->SetHorizontalAlignment(bConstrained?HAlign_Fill:Original.Horizontal);
+ NameSlot->SetVerticalAlignment(bConstrained?VAlign_Center:Original.Vertical);
+ if (Spacer) Spacer->SetVisibility(bConstrained?ESlateVisibility::Collapsed:AuthoredSpacerVisibility);
  for (const auto& Entry:AuthoredControlAlignment)
-  if (auto* ControlSlot=Entry.Key.Get()) ControlSlot->SetVerticalAlignment(bEnglish?VAlign_Center:Entry.Value);
- // The stretch Canvas does not propagate its text's desired height. Reserve
- // three font lines in the existing slider SizeBox; keep the control widths.
- if (Slider_Value)
-  if (auto* Root=Cast<USizeBox>(GetRootWidget()); Root && Root->IsHeightOverride())
-  {
-   if (!AuthoredSliderHeight.IsSet()) AuthoredSliderHeight=Root->GetHeightOverride();
-   float Height=AuthoredSliderHeight.GetValue();
-   if (bEnglish && FSlateApplication::IsInitialized())
-   {
-    const auto Measure=FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
-    float Insets=NamePadding.Top+NamePadding.Bottom;
-    if (auto* RootSlot=Cast<USizeBoxSlot>(Root->GetContent()->Slot)) Insets+=RootSlot->GetPadding().Top+RootSlot->GetPadding().Bottom;
-    if (auto* CanvasSlot=Cast<UCanvasPanelSlot>(Button_Option->Slot)) Insets+=CanvasSlot->GetOffsets().Top+CanvasSlot->GetOffsets().Bottom;
-    if (auto* ContentSlot=Cast<UButtonSlot>(Row->Slot)) Insets+=ContentSlot->GetPadding().Top+ContentSlot->GetPadding().Bottom;
-    Insets+=Button_Option->GetStyle().NormalPadding.Top+Button_Option->GetStyle().NormalPadding.Bottom;
-    const float LineHeight=Measure->GetMaxCharacterHeight(Text_Name->GetFont());
-    Height=FMath::Max(Height,3.f*LineHeight+Insets);
-   }
-   Root->SetHeightOverride(Height);
-  }
+  if (auto* ControlSlot=Entry.Key.Get()) ControlSlot->SetVerticalAlignment(bConstrained?VAlign_Center:Entry.Value);
+ if (Slider_Value) ApplySliderLayout();
+}
+void UTASettingRowWidget::ApplySliderLayout()
+{
+ auto* Root=Cast<USizeBox>(GetRootWidget());
+ auto* Operations=Cast<UOverlay>(GetWidgetFromName(TEXT("Overlay_125")));
+ auto* Controls=Cast<UHorizontalBox>(GetWidgetFromName(TEXT("HorizontalBox_150")));
+ auto* SliderBox=Cast<USizeBox>(GetWidgetFromName(TEXT("SizeBox_2")));
+ auto* OperationsSlot=Operations?Cast<UHorizontalBoxSlot>(Operations->Slot):nullptr;
+ auto* ControlsSlot=Controls?Cast<UOverlaySlot>(Controls->Slot):nullptr;
+ auto* ValueSlot=Text_Value?Cast<UHorizontalBoxSlot>(Text_Value->Slot):nullptr;
+ auto* SliderSlot=SliderBox?Cast<UHorizontalBoxSlot>(SliderBox->Slot):nullptr;
+ if (!Root || !OperationsSlot || !ControlsSlot || !ValueSlot || !SliderSlot || !Image_Highlight || !WidgetTree) return;
+ if (!SliderContentLayout)
+ {
+  auto* Canvas=Cast<UCanvasPanel>(Root->GetContent());
+  auto* ButtonSlot=Cast<UCanvasPanelSlot>(Button_Option->Slot);
+  auto* HighlightSlot=Cast<UCanvasPanelSlot>(Image_Highlight->Slot);
+  if (!Canvas || !ButtonSlot || !HighlightSlot) return;
+  const auto ButtonOffsets=ButtonSlot->GetOffsets();
+  const auto RootPadding=Cast<USizeBoxSlot>(Root->GetContent()->Slot)->GetPadding();
+  SliderContentLayout=WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(),TEXT("SliderContentLayout"));
+  SliderContentLayout->SetVisibility(Canvas->GetVisibility());
+  SliderContentLayout->SetCursor(Canvas->GetCursor());
+  Button_Option->RemoveFromParent(); Image_Highlight->RemoveFromParent();
+  auto* NewHighlightSlot=SliderContentLayout->AddChildToOverlay(Image_Highlight);
+  NewHighlightSlot->SetHorizontalAlignment(HAlign_Fill); NewHighlightSlot->SetVerticalAlignment(VAlign_Fill);
+  auto* ButtonOverlaySlot=SliderContentLayout->AddChildToOverlay(Button_Option);
+  ButtonOverlaySlot->SetHorizontalAlignment(HAlign_Fill); ButtonOverlaySlot->SetVerticalAlignment(VAlign_Fill);
+  ButtonOverlaySlot->SetPadding(FMargin(ButtonOffsets.Left,ButtonOffsets.Top,ButtonOffsets.Right,ButtonOffsets.Bottom));
+  Root->SetContent(SliderContentLayout);
+  Cast<USizeBoxSlot>(Root->GetContent()->Slot)->SetPadding(RootPadding);
+ }
+  // Split the space after the star: label 1 share, operations 2 shares.
+  // Within operations, arrows remain Auto; value gets two shares and slider one.
+  FSlateChildSize OperationsFill(ESlateSizeRule::Fill); OperationsFill.Value=2.f;
+  OperationsSlot->SetSize(OperationsFill);
+  ControlsSlot->SetHorizontalAlignment(HAlign_Fill);
+  FSlateChildSize ValueFill(ESlateSizeRule::Fill); ValueFill.Value=2.f;
+  ValueSlot->SetSize(ValueFill); SliderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+  ValueSlot->SetHorizontalAlignment(HAlign_Fill); SliderSlot->SetHorizontalAlignment(HAlign_Fill);
+  Text_Value->SetAutoWrapText(true);
+  Text_Value->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
+  SliderBox->ClearWidthOverride(); Root->ClearHeightOverride();
 }
 void UTASettingRowWidget::SetHighlighted(bool B)
 {
