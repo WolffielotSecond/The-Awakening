@@ -33,8 +33,8 @@ assert lib.save_loaded_asset(settings, False)
 dialog = data('IMC_CommonDialog', '/Game/Input', unreal.InputMappingContext)
 assert dialog
 for slot, keys in enumerate((('Enter', 'Gamepad_FaceButton_Bottom'),
-                             ('Delete', 'Gamepad_FaceButton_Left'),
-                             ('Escape', 'Gamepad_FaceButton_Right'),
+                             ('Delete', 'Gamepad_FaceButton_Right'),
+                             ('Escape', 'Gamepad_FaceButton_Left'),
                              ('SpaceBar', 'Gamepad_FaceButton_Top')), 1):
     seed(dialog, 'IA_DialogOption' + str(slot), keys, '/Game/Input/Actions/Dialog')
 assert lib.save_loaded_asset(dialog, False)

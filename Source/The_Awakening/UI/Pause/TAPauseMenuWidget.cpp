@@ -63,7 +63,12 @@ void UTAPauseMenuWidget::NativeConstruct()
 		{
 			Localize->OnLanguageChanged.AddUniqueDynamic(this, &UTAPauseMenuWidget::HandleLanguageChanged);
 		}
+		if (auto* Icons=GameInstance->GetSubsystem<UTAInputIconSubsystem>())
+		{
+			Icons->OnInputPromptsChanged.AddUniqueDynamic(this,&UTAPauseMenuWidget::InputPresentationChanged);
+		}
 	}
+	InputPresentationChanged();
 }
 
 void UTAPauseMenuWidget::NativeDestruct()
@@ -74,6 +79,8 @@ void UTAPauseMenuWidget::NativeDestruct()
 		{
 			Localize->OnLanguageChanged.RemoveDynamic(this, &UTAPauseMenuWidget::HandleLanguageChanged);
 		}
+		if (auto* Icons=GameInstance->GetSubsystem<UTAInputIconSubsystem>())
+			Icons->OnInputPromptsChanged.RemoveDynamic(this,&UTAPauseMenuWidget::InputPresentationChanged);
 	}
 	Super::NativeDestruct();
 }
@@ -208,6 +215,22 @@ void UTAPauseMenuWidget::HandleLanguageChanged()
 {
 	RefreshOptionLabels();
 }
+void UTAPauseMenuWidget::InputPresentationChanged()
+{
+	if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>())
+		bGamepadDevice=Icons->GetCurrentDeviceType()!=EInputDeviceType::KeyboardMouse;
+	if (auto* PC=InputRequestController.Get()) PC->SynchronizeInputPresentation();
+}
+UWidget* UTAPauseMenuWidget::GetPlayerPointerTarget() const
+{
+	int32 Index=0;
+	for (const auto& Option:Options)
+		if (const auto* Widget=OptionWidgetsById.Find(Option.OptionId); Widget && Widget->Get())
+		{
+			if (Index++==SelectedOptionIndex) return Widget->Get()->GetFocusTarget();
+		}
+	return nullptr;
+}
 
 void UTAPauseMenuWidget::HandleOptionSelected(FName OptionId)
 {
@@ -244,6 +267,7 @@ void UTAPauseMenuWidget::HandleOptionSelected(FName OptionId)
 
 void UTAPauseMenuWidget::HandleOptionHovered(UTASelectableMenuOptionWidget* OptionWidget)
 {
+	if (bGamepadDevice) return;
 	if (const UTAPauseMenuOptionWidget* PauseOption = Cast<UTAPauseMenuOptionWidget>(OptionWidget))
 	{
 		SelectOptionById(PauseOption->GetOptionId());

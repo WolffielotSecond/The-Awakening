@@ -28,6 +28,8 @@ struct THE_AWAKENING_API FTACommonDialogDefinition
  UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FTACommonDialogOption> Options;
  UPROPERTY(EditAnywhere,BlueprintReadWrite,meta=(ClampMin="0")) float TimeoutSeconds=0;
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FName TimeoutResultId;
+ /** False for menus using mapped buttons rather than a gamepad pointer. */
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) bool bAllowGamepadCursor=true;
  bool IsValid() const;
 };
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTACommonDialogResult,FName,ResultId);
@@ -62,6 +64,9 @@ public:
  virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
  virtual void ExecutePlayerInput(FKey Key,ETAInputCapability Capability) override;
  virtual bool UsesSharedBackAction() const override { return false; }
+ virtual bool AllowsVirtualCursor() const override { return Data.bAllowGamepadCursor; }
+ virtual bool ShouldShowPlayerCursor() const override;
+ virtual UWidget* GetPlayerPointerTarget() const override;
  virtual void RemoveFromParent() override;
 protected:
  virtual void NativeOnInitialized() override;
@@ -82,6 +87,7 @@ private:
  #endif
  UFUNCTION() void Choose(FName Result);
  UFUNCTION() void RefreshText();
+ UFUNCTION() void InputPresentationChanged();
  void ReleaseRequest();
  void Complete(FName Result);
  UPROPERTY(Transient) FTACommonDialogDefinition Data;

@@ -64,6 +64,9 @@ public:
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
 	virtual bool HandleMenuBackRequested() override;
+	virtual bool ShouldShowPlayerCursor() const override { return !bGamepadDevice; }
+	virtual bool AllowsVirtualCursor() const override { return false; }
+	virtual UWidget* GetPlayerPointerTarget() const override;
 	void SetPlayerInputRequest(AThe_AwakeningPlayerController* Controller, FTAInputRouter::FHandle Handle);
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void RemoveFromParent() override;
@@ -114,6 +117,7 @@ private:
 	TOptional<FMargin> AuthoredOptionsOffsets;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTAEnglishUIBoundsTest;
+	friend class FTASettingsMenuInputTest;
 #endif
 	void BuildOptions();
 	void ValidateInputActions() const;
@@ -134,6 +138,8 @@ private:
 
 	UFUNCTION()
 	void HandleLanguageChanged();
+	UFUNCTION() void InputPresentationChanged();
+	bool bGamepadDevice=false;
 
 	UFUNCTION()
 	void HandleActionPromptClicked(UTAActionPromptWidget* Prompt);

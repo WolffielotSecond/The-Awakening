@@ -13,8 +13,8 @@ def factory(cls):
     return result
 mapping = tools.create_asset("IMC_Settings", "/Game/Input", unreal.InputMappingContext, factory(unreal.InputMappingContext))
 bindings = {
-    "PreviousPage": ["PageUp", "Gamepad_LeftShoulder"],
-    "NextPage": ["PageDown", "Gamepad_RightShoulder"],
+    "PreviousPage": ["PageUp"],
+    "NextPage": ["PageDown"],
     "PreviousItem": ["Gamepad_DPad_Up"],
     "NextItem": ["Gamepad_DPad_Down"],
     "AdjustLeft": ["Left", "Gamepad_DPad_Left"],
@@ -23,10 +23,9 @@ bindings = {
     "Favorite": ["F", "Gamepad_FaceButton_Left"],
     "ResetPage": ["R", "Gamepad_FaceButton_Top"],
     "Back": ["Escape", "Gamepad_FaceButton_Right"],
-    "ScrollUp": ["Gamepad_LeftTrigger"],
-    "ScrollDown": ["Gamepad_RightTrigger"],
-    "PointerClick": ["Gamepad_RightThumbstick"],
-    "PointerMove": ["Gamepad_Left2D"],
+    "ScrollUp": ["Gamepad_RightStick_Up"],
+    "ScrollDown": ["Gamepad_RightStick_Down"],
+    "CancelCapture": ["Escape", "Gamepad_Special_Right"],
 }
 for name, keys in bindings.items():
     path = folder + "/IA_Settings" + name
@@ -34,14 +33,10 @@ for name, keys in bindings.items():
     if not action:
         action = tools.create_asset("IA_Settings" + name, folder, unreal.InputAction, factory(unreal.InputAction))
     action.set_editor_property("trigger_when_paused", True)
-    if name == "PointerMove":
-        action.set_editor_property("value_type", unreal.InputActionValueType.AXIS2D)
-        deadzone = unreal.new_object(unreal.InputModifierDeadZone, outer=action)
-        action.set_editor_property("modifiers", [deadzone])
     for key in keys:
         mapped_key = unreal.Key()
         mapped_key.import_text(key)
         mapping.map_key(action, mapped_key)
     assert library.save_loaded_asset(action)
 assert library.save_loaded_asset(mapping)
-unreal.log("SETTINGS_INPUT_ASSETS_SUCCESS: 14 actions in IMC_Settings")
+unreal.log("SETTINGS_INPUT_ASSETS_SUCCESS: settings actions in IMC_Settings")

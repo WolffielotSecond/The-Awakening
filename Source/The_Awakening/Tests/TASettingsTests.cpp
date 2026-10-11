@@ -3,6 +3,9 @@
 #include "Settings/TASettingsTypes.h"
 #include "Settings/TASettingsSubsystem.h"
 #include "UI/TACommonDialog.h"
+#include "UI/TAActionPromptWidget.h"
+#include "UI/Pause/TAPauseMenuWidget.h"
+#include "UI/Pause/TAPauseMenuOptionWidget.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/FileManager.h"
@@ -33,6 +36,9 @@
 #include "Components/ProgressBar.h"
 #include "Components/Overlay.h"
 #include "Components/TextBlock.h"
+#include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Blueprint/WidgetTree.h"
 #include "Brushes/SlateColorBrush.h"
 #include "Settings/TADisplaySettingsService.h"
@@ -67,6 +73,8 @@ bool FTASettingsCatalogTest::RunTest(const FString&)
   FString Json; TestTrue(TEXT("Localization file"),FFileHelper::LoadFileToString(Json,*(FPaths::ProjectContentDir()/TEXT("Localization")/(FString(Language)+TEXT(".json")))));
   TSharedPtr<FJsonObject> Object; TestTrue(TEXT("Valid localization JSON"),FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json),Object));
   if (!Object) continue;
+  for (const TCHAR* Id:{TEXT("UI_Settings_ScrollDescriptionUp"),TEXT("UI_Settings_ScrollDescriptionDown"),TEXT("UI_Settings_ScrollListUp"),TEXT("UI_Settings_ScrollListDown")})
+   TestTrue(TEXT("Description scroll prompt exists in each language"),Object->HasField(Id) && !Object->GetStringField(Id).IsEmpty());
   for (const auto& P:Pages) { TestTrue(*P.PageId.ToString(),Object->HasField(P.PageId.ToString())); for (const auto& S:P.Sections) TestTrue(*S.SectionId.ToString(),Object->HasField(S.SectionId.ToString())); }
   for(const auto& D:Definitions)
   {
@@ -379,6 +387,8 @@ bool FTASettingsMenuInputTest::RunTest(const FString&)
  Menu->RestoreCurrentDefaults();
  TestEqual(TEXT("Page reset preserves the selected language"),State->GetEditableInteger(TEXT("Game.Language")),2);
  TestEqual(TEXT("Page reset still restores other settings"),State->GetEditableInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ TestEqual(TEXT("Page reset immediately applies defaults"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ TestFalse(TEXT("Restored page has no unsaved reset draft"),State->IsSettingDirty(TEXT("MouseKeyboard.CameraSensitivity")));
  const FName InitialPage=Menu->CurrentPageId;
  State->SetDraftValue(TEXT("Controller.InvertCameraX"),1);
  Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Page; Menu->PendingTarget=TEXT("Settings.Page.Display");
@@ -440,6 +450,227 @@ bool FTASettingsMenuInputTest::RunTest(const FString&)
  Input.RemoveMappingContext(Context); Input.AddMappingContext(Remapped,20); Input.RequestRebuildControlMappings(Options);
  TestFalse(TEXT("Removed PageDown no longer navigates"),Menu->ResolvePlayerInput(EKeys::PageDown).IsSet());
  TestTrue(TEXT("Remapped page key navigates"),Menu->ResolvePlayerInput(EKeys::P).IsSet());
+ // Two-area navigation executes through the same owner/handle authorization.
+ State->DiscardDraft(); State->Pages=FTASettingsCatalog::BuildPages();
+ Menu->CurrentPageId=FTASettingsCatalog::FavoritesPageId();
+ Menu->SelectionArea=UTASettingsMenuWidget::ESelectionArea::Categories;
+ Menu->BuildPageEntries(); Menu->BuildSettingRows();
+ Menu->bGamepadDevice=true; Menu->BeginGamepadNavigation();
+ FTAInputRequest Request; Request.Owner=Menu; Request.Priority=600;
+ Request.Allowed={ETAInputCapability::Navigate,ETAInputCapability::Confirm,ETAInputCapability::Close,ETAInputCapability::ToggleFavorite};
+ Menu->SetPlayerInputRequest(PC,PC->AcquireInputRequest(Request));
+ TestEqual(TEXT("Main menu starts on Favorites"),Menu->CurrentPageId,FTASettingsCatalog::FavoritesPageId());
+ // Left-column reset remains an IMC command and commits only the displayed page.
+ Menu->CurrentPageId=TEXT("Settings.Page.MouseKeyboard"); Menu->BuildSettingRows();
+ State->SetValue(TEXT("MouseKeyboard.CameraSensitivity"),66);
+ State->SetValue(TEXT("Controller.InvertCameraX"),1); State->SetDraftValue(TEXT("Controller.InvertCameraX"),0);
+ TestEqual(TEXT("Sidebar includes reset prompt"),Menu->GetSettingCommandTextId(TEXT("ResetPage")),FString(TEXT("UI_Settings_ResetPage")));
+ PC->RecordHeldInput(EKeys::Gamepad_FaceButton_Top,1.f,Local->GetControllerId());
+ TestTrue(TEXT("Y reset routes from sidebar"),PC->RoutePlayerInputKey(EKeys::Gamepad_FaceButton_Top,false,Local->GetControllerId()));
+ Menu->TickResetHold(1.f);
+ TestEqual(TEXT("Short sidebar hold does not reset"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),66);
+ Menu->TickResetHold(2.f);
+ TestEqual(TEXT("Sidebar hold applies page defaults"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ TestTrue(TEXT("Sidebar reset preserves navigation area"),Menu->SelectionArea==UTASettingsMenuWidget::ESelectionArea::Categories);
+ TestTrue(TEXT("Sidebar reset leaves another page draft pending"),State->GetBoolean(TEXT("Controller.InvertCameraX")) && State->IsSettingDirty(TEXT("Controller.InvertCameraX")));
+ State->DiscardDraft();
+ TestEqual(TEXT("Discard cannot undo applied reset"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ State->SetValue(TEXT("MouseKeyboard.CameraSensitivity"),66);
+ Menu->TickResetHold(4.f);
+ TestEqual(TEXT("One continuous hold cannot reset twice"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),66);
+ PC->RecordHeldInput(EKeys::Gamepad_FaceButton_Top,0.f,Local->GetControllerId()); Menu->TickResetHold(0.f);
+ PC->RecordHeldInput(EKeys::Gamepad_FaceButton_Top,1.f,Local->GetControllerId());
+ PC->RoutePlayerInputKey(EKeys::Gamepad_FaceButton_Top,false,Local->GetControllerId()); Menu->TickResetHold(3.f);
+ TestEqual(TEXT("Release and press permits another reset"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ PC->RecordHeldInput(EKeys::Gamepad_FaceButton_Top,0.f,Local->GetControllerId()); Menu->TickResetHold(0.f);
+ Menu->CurrentPageId=FTASettingsCatalog::FavoritesPageId(); Menu->BuildSettingRows();
+ TestEqual(TEXT("Sidebar has category confirmation prompt"),Menu->GetSettingCommandTextId(TEXT("Confirm")),FString(TEXT("UI_Settings_EnterCategory")));
+ TestTrue(TEXT("Sidebar has no adjustment prompt"),Menu->GetSettingCommandTextId(TEXT("AdjustRight")).IsEmpty());
+ TestTrue(TEXT("LB removed from category navigation"),!Menu->ResolvePlayerInput(EKeys::Gamepad_LeftShoulder).IsSet());
+ TestTrue(TEXT("RB removed from category navigation"),!Menu->ResolvePlayerInput(EKeys::Gamepad_RightShoulder).IsSet());
+ TestTrue(TEXT("Down routes to current menu"),PC->RoutePlayerInputKey(EKeys::Gamepad_DPad_Down,false,Local->GetControllerId()));
+ TestEqual(TEXT("Down in sidebar chooses Game"),Menu->CurrentPageId,FName(TEXT("Settings.Page.Game")));
+ TestTrue(TEXT("A enters details"),PC->RoutePlayerInputKey(EKeys::Gamepad_FaceButton_Bottom,false,Local->GetControllerId()));
+ TestTrue(TEXT("Details region selected"),Menu->SelectionArea==UTASettingsMenuWidget::ESelectionArea::Details);
+ const FName DetailPage=Menu->CurrentPageId;
+ PC->RoutePlayerInputKey(EKeys::Gamepad_DPad_Down,false,Local->GetControllerId());
+ TestEqual(TEXT("Down in details never changes category"),Menu->CurrentPageId,DetailPage);
+ const auto* Slider=State->FindDefinition(TEXT("Game.DialogueTextSpeed"));
+ if (TestNotNull(TEXT("Real Game slider"),Slider))
+ {
+  Menu->SelectedSettingId=Slider->SettingId; Menu->EnsureRowSelection();
+  const int32 Before=State->GetEditableInteger(Slider->SettingId);
+  PC->RoutePlayerInputKey(EKeys::Gamepad_DPad_Right,false,Local->GetControllerId());
+  TestTrue(TEXT("Right in details adjusts draft"),State->GetEditableInteger(Slider->SettingId)!=Before);
+  // A real popup requires a LocalPlayer subsystem in interactive play. Exercise
+  // the same result continuation without pretending this headless fixture owns one.
+  Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Categories;
+  Menu->DialogResult(TEXT("Discard"));
+  TestFalse(TEXT("B discard clears draft"),State->HasDraftChanges());
+  TestTrue(TEXT("Discard returns to categories"),Menu->SelectionArea==UTASettingsMenuWidget::ESelectionArea::Categories);
+  TestEqual(TEXT("Returning retains the selected category"),Menu->CurrentPageId,DetailPage);
+  Menu->ExecuteSettingsAction(TEXT("Confirm"),true);
+  State->SetDraftValue(TEXT("Controller.InvertCameraX"),0);
+  Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Categories;
+  Menu->DialogResult(TEXT("Apply"));
+  TestFalse(TEXT("A applies draft to runtime"),State->GetBoolean(TEXT("Controller.InvertCameraX")));
+  TestTrue(TEXT("Apply returns to categories"),Menu->SelectionArea==UTASettingsMenuWidget::ESelectionArea::Categories);
+  Menu->ExecuteSettingsAction(TEXT("Confirm"),true);
+  TestTrue(TEXT("B returns clean details without a popup"),Menu->HandleMenuBackRequested());
+  TestTrue(TEXT("Clean B selects categories"),Menu->SelectionArea==UTASettingsMenuWidget::ESelectionArea::Categories && !Menu->ActiveDialog);
+ }
+ // RS targets the next column, based on logical selection rather than pointer hit testing.
+ // Physical keys still resolve through the current IMC and exact owner authorization.
+ auto* DescriptionScroll=Menu->WidgetTree->ConstructWidget<UScrollBox>();
+ auto* LongContent=Menu->WidgetTree->ConstructWidget<USizeBox>(); LongContent->SetHeightOverride(600.f);
+ DescriptionScroll->AddChild(LongContent);
+ Menu->ScrollBox_Description=DescriptionScroll;
+ const auto SlateDescription=StaticCastSharedRef<SScrollBox>(DescriptionScroll->TakeWidget());
+ SlateDescription->SlatePrepass();
+ const FGeometry DescriptionGeometry=FGeometry::MakeRoot(FVector2D(300,100),FSlateLayoutTransform());
+ SlateDescription->Tick(DescriptionGeometry,0,0);
+ TestTrue(TEXT("Description fixture has real scrollable overflow"),DescriptionScroll->GetScrollOffsetOfEnd()>100.f);
+ auto* OptionsScroll=Menu->WidgetTree->ConstructWidget<UScrollBox>();
+ auto* LongOptions=Menu->WidgetTree->ConstructWidget<USizeBox>(); LongOptions->SetHeightOverride(600.f);
+ OptionsScroll->AddChild(LongOptions); Menu->ScrollBox_SettingsOptions=OptionsScroll;
+ const auto SlateOptions=StaticCastSharedRef<SScrollBox>(OptionsScroll->TakeWidget());
+ SlateOptions->SlatePrepass(); SlateOptions->Tick(DescriptionGeometry,0,0);
+ Menu->SelectedSettingId=TEXT("MouseKeyboard.CameraSensitivity");
+ Menu->bGamepadDevice=true;
+ Menu->BuildPromptBar();
+ TestTrue(TEXT("Categories target only the middle list"),Menu->GetScrollTarget()==OptionsScroll);
+ TestEqual(TEXT("Categories show list scrolling hint"),Menu->GetSettingCommandTextId(TEXT("ScrollDown")),FString(TEXT("UI_Settings_ScrollListDown")));
+ PC->RoutePlayerInputKey(EKeys::Gamepad_RightStick_Down,false,Local->GetControllerId());
+ TestEqual(TEXT("RS does not jump immediately"),OptionsScroll->GetScrollOffset(),0.f);
+ Menu->TickScrollInterpolation(0.016f);
+ TestTrue(TEXT("RS interpolation advances partway"),OptionsScroll->GetScrollOffset()>0.f && OptionsScroll->GetScrollOffset()<60.f);
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("Categories scroll middle list"),OptionsScroll->GetScrollOffset(),60.f);
+ TestEqual(TEXT("Categories cannot scroll description"),DescriptionScroll->GetScrollOffset(),0.f);
+ PC->RecordHeldInput(EKeys::Gamepad_RightStick_Down,1.f,Local->GetControllerId());
+ Menu->NativeTick(DescriptionGeometry,0.36f);
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("Held RS in categories repeats on middle list"),OptionsScroll->GetScrollOffset(),120.f);
+ TestEqual(TEXT("Held RS in categories cannot touch description"),DescriptionScroll->GetScrollOffset(),0.f);
+ PC->RecordHeldInput(EKeys::Gamepad_RightStick_Down,0.f,Local->GetControllerId());
+ PC->RoutePlayerInputKey(EKeys::Gamepad_FaceButton_Bottom,false,Local->GetControllerId());
+ TestTrue(TEXT("A moves RS target to description"),Menu->GetScrollTarget()==DescriptionScroll);
+ TestEqual(TEXT("Gamepad up scroll hint is localized"),Menu->GetSettingCommandTextId(TEXT("ScrollUp")),FString(TEXT("UI_Settings_ScrollDescriptionUp")));
+ TestEqual(TEXT("Gamepad down scroll hint is localized"),Menu->GetSettingCommandTextId(TEXT("ScrollDown")),FString(TEXT("UI_Settings_ScrollDescriptionDown")));
+ Menu->bGamepadDevice=false;
+ TestTrue(TEXT("Keyboard hides description scroll hints"),Menu->GetSettingCommandTextId(TEXT("ScrollUp")).IsEmpty() && Menu->GetSettingCommandTextId(TEXT("ScrollDown")).IsEmpty());
+ Menu->bGamepadDevice=true;
+ const float OptionsOffset=Menu->ScrollBox_SettingsOptions?Menu->ScrollBox_SettingsOptions->GetScrollOffset():0.f;
+ TestTrue(TEXT("RS down routed through IMC"),PC->RoutePlayerInputKey(EKeys::Gamepad_RightStick_Down,false,Local->GetControllerId()));
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("RS down scrolls description without pointer hit testing"),DescriptionScroll->GetScrollOffset(),60.f);
+ PC->RoutePlayerInputKey(EKeys::Gamepad_RightStick_Up,false,Local->GetControllerId());
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("RS up scrolls description back"),DescriptionScroll->GetScrollOffset(),0.f);
+ PC->RecordHeldInput(EKeys::Gamepad_RightStick_Down,1.f,Local->GetControllerId());
+ Menu->NativeTick(DescriptionGeometry,0.36f);
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("Held RS continues description scrolling"),DescriptionScroll->GetScrollOffset(),60.f);
+ PC->RecordHeldInput(EKeys::Gamepad_RightStick_Down,0.f,Local->GetControllerId());
+ Menu->NativeTick(DescriptionGeometry,0.36f);
+ TestEqual(TEXT("Real RS release stops scrolling"),DescriptionScroll->GetScrollOffset(),60.f);
+ PC->RoutePlayerInputKey(EKeys::Gamepad_RightStick_Up,false,Local->GetControllerId());
+ Menu->TickScrollInterpolation(1.f);
+ if (Menu->ScrollBox_SettingsOptions) TestEqual(TEXT("RS does not scroll settings list"),Menu->ScrollBox_SettingsOptions->GetScrollOffset(),OptionsOffset);
+ const auto ScrollHint=[&]()->UTAActionPromptWidget*
+ {
+  for (UTAActionPromptWidget* Prompt:Menu->Prompts)
+   if (Prompt && Prompt->GetPromptAction()==PC->GetSettingsAction(TEXT("ScrollDown"))) return Prompt;
+  return nullptr;
+ };
+ auto* Hint=ScrollHint();
+ if (TestNotNull(TEXT("Scroll hint exists after layout"),Hint))
+ {
+  TestTrue(TEXT("Scrollable description shows hint"),Hint->GetVisibility()==ESlateVisibility::Visible);
+  // Resize so the same content fits: no hidden fallback to the middle column.
+  SlateDescription->Tick(FGeometry::MakeRoot(FVector2D(300,1000),FSlateLayoutTransform()),0,0);
+  Menu->RefreshScrollPromptVisibility();
+  TestFalse(TEXT("Description without overflow cannot scroll"),Menu->CanScrollCurrentRegion());
+  TestTrue(TEXT("Description without overflow hides hint"),Hint->GetVisibility()==ESlateVisibility::Collapsed);
+  PC->RoutePlayerInputKey(EKeys::Gamepad_RightStick_Down,false,Local->GetControllerId());
+  TestEqual(TEXT("Non-scrollable description remains still"),DescriptionScroll->GetScrollOffset(),0.f);
+  TestEqual(TEXT("Non-scrollable description does not scroll middle list instead"),OptionsScroll->GetScrollOffset(),OptionsOffset);
+  SlateDescription->Tick(DescriptionGeometry,0,0); Menu->RefreshScrollPromptVisibility();
+  TestTrue(TEXT("Overflow restored by resizing shows hint again"),Hint->GetVisibility()==ESlateVisibility::Visible);
+ }
+ PC->RecordHeldInput(EKeys::Gamepad_RightStick_Down,1.f,Local->GetControllerId());
+ TestTrue(TEXT("B returns to categories"),Menu->HandleMenuBackRequested());
+ TestTrue(TEXT("B restores middle-list target"),Menu->GetScrollTarget()==OptionsScroll);
+ Menu->NativeTick(DescriptionGeometry,0.36f);
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("Held RS after B scrolls only middle list"),OptionsScroll->GetScrollOffset(),OptionsOffset+60.f);
+ TestEqual(TEXT("B cannot leave held scrolling on description"),DescriptionScroll->GetScrollOffset(),0.f);
+ PC->RecordHeldInput(EKeys::Gamepad_RightStick_Down,0.f,Local->GetControllerId());
+ SlateOptions->Tick(FGeometry::MakeRoot(FVector2D(300,1000),FSlateLayoutTransform()),0,0);
+ Menu->RefreshScrollPromptVisibility();
+ TestFalse(TEXT("Categories without list overflow cannot scroll"),Menu->CanScrollCurrentRegion());
+ if (auto* ListHint=ScrollHint()) TestTrue(TEXT("Categories without list overflow hide hint"),ListHint->GetVisibility()==ESlateVisibility::Collapsed);
+ SlateOptions->Tick(DescriptionGeometry,0,0);
+ FTAInputRequest Cover; Cover.Owner=PC; Cover.Priority=1000; Cover.Allowed={ETAInputCapability::Navigate,ETAInputCapability::Confirm};
+ const auto CoverHandle=PC->AcquireInputRequest(Cover);
+ const FName CoveredPage=Menu->CurrentPageId;
+ Menu->ExecutePlayerInput(EKeys::Gamepad_DPad_Down,ETAInputCapability::Navigate);
+ TestEqual(TEXT("Covered menu cannot navigate with another winner's permission"),Menu->CurrentPageId,CoveredPage);
+ Menu->ExecutePlayerInput(EKeys::Gamepad_RightStick_Down,ETAInputCapability::Navigate);
+ TestEqual(TEXT("Covered menu cannot scroll description"),DescriptionScroll->GetScrollOffset(),0.f);
+ PC->ReleaseInputRequest(CoverHandle);
+ // Changing the mapped key changes behavior; the removed physical key has no fallback.
+ auto* NextItem=PC->GetSettingsAction(TEXT("NextItem"));
+ Remapped->UnmapKey(NextItem,EKeys::Gamepad_DPad_Down); Remapped->MapKey(NextItem,EKeys::Gamepad_LeftTrigger);
+ Input.RequestRebuildControlMappings(Options);
+ TestFalse(TEXT("Removed Down no longer resolves"),Menu->ResolvePlayerInput(EKeys::Gamepad_DPad_Down).IsSet());
+ TestTrue(TEXT("Rebound category navigation resolves"),PC->RoutePlayerInputKey(EKeys::Gamepad_LeftTrigger,false,Local->GetControllerId()));
+ TestTrue(TEXT("Rebound action moves the selected category"),Menu->CurrentPageId!=CoveredPage);
+ Menu->EnterDetails();
+ auto* ScrollDown=PC->GetSettingsAction(TEXT("ScrollDown"));
+ Remapped->UnmapKey(ScrollDown,EKeys::Gamepad_RightStick_Down); Remapped->MapKey(ScrollDown,EKeys::Gamepad_RightTrigger);
+ Input.RequestRebuildControlMappings(Options);
+ TestFalse(TEXT("Removed RS down has no hardcoded scroll fallback"),Menu->ResolvePlayerInput(EKeys::Gamepad_RightStick_Down).IsSet());
+ TestTrue(TEXT("Remapped scroll action routes"),PC->RoutePlayerInputKey(EKeys::Gamepad_RightTrigger,false,Local->GetControllerId()));
+ Menu->TickScrollInterpolation(1.f);
+ TestEqual(TEXT("Remapped scroll action scrolls description"),DescriptionScroll->GetScrollOffset(),60.f);
+ TestFalse(TEXT("Settings never enables virtual cursor"),Menu->AllowsVirtualCursor());
+ TestFalse(TEXT("Settings no longer resolves synthetic pointer clicks"),Menu->ResolvePlayerInput(EKeys::Gamepad_RightThumbstick).IsSet());
+ PC->RecordHeldInput(EKeys::Gamepad_Left2D,0.8f,Local->GetControllerId());
+ TestTrue(TEXT("Settings LS cannot produce cursor motion"),PC->GetCursorInputAxis().IsNearlyZero());
+ const FName PreservedSetting=Menu->SelectedSettingId;
+ Menu->NotifyPlayerPointerMoved();
+ TestEqual(TEXT("Hidden pointer cannot change selection"),Menu->SelectedSettingId,PreservedSetting);
+ Menu->bGamepadDevice=false;
+ TestTrue(TEXT("Settings real pointer is visible"),Menu->ShouldShowPlayerCursor());
+ TestNotNull(TEXT("Settings supplies selected row pointer target"),Menu->GetPlayerPointerTarget());
+ Menu->bGamepadDevice=true;
+ TestFalse(TEXT("Settings gamepad pointer is hidden"),Menu->ShouldShowPlayerCursor());
+ const float BeforeHandoff=DescriptionScroll->GetScrollOffset();
+ Menu->ScrollCurrentRegion(1);
+ Menu->SelectionArea=UTASettingsMenuWidget::ESelectionArea::Categories;
+ Menu->TickScrollInterpolation(0.1f);
+ TestEqual(TEXT("Region change cancels old scroll target"),DescriptionScroll->GetScrollOffset(),BeforeHandoff);
+ Menu->SelectionArea=UTASettingsMenuWidget::ESelectionArea::Details;
+ Menu->ScrollCurrentRegion(1); Menu->bGamepadDevice=false;
+ Menu->TickScrollInterpolation(0.1f);
+ TestEqual(TEXT("Real-pointer handoff stops gamepad scroll interpolation"),DescriptionScroll->GetScrollOffset(),BeforeHandoff);
+ Menu->ReleaseRequest();
+ auto* PauseClass=LoadClass<UTAPauseMenuWidget>(nullptr,TEXT("/Game/UI/Pause/WBP_PauseMenu.WBP_PauseMenu_C"));
+ auto* Pause=PauseClass?CreateWidget<UTAPauseMenuWidget>(PC,PauseClass):nullptr;
+ if (TestNotNull(TEXT("Pause template"),Pause))
+ {
+  Pause->BuildOptions(); Pause->bGamepadDevice=true;
+  TestFalse(TEXT("Pause disables virtual cursor"),Pause->AllowsVirtualCursor());
+  TestFalse(TEXT("Pause gamepad hides cursor"),Pause->ShouldShowPlayerCursor());
+  auto* First=Pause->GetPlayerPointerTarget();
+  Pause->MoveSelection(1); auto* Selected=Pause->GetPlayerPointerTarget();
+  TestTrue(TEXT("Pause pointer return target follows selection"),Selected && Selected!=First);
+  if (auto* Option=Pause->OptionWidgetsById.Find(TEXT("Resume"))) Pause->HandleOptionHovered(Option->Get());
+  TestTrue(TEXT("Hidden pause pointer cannot override navigation"),Pause->GetPlayerPointerTarget()==Selected);
+  Pause->bGamepadDevice=false;
+  TestTrue(TEXT("Pause mouse displays cursor without resetting selection"),Pause->ShouldShowPlayerCursor() && Pause->GetPlayerPointerTarget()==Selected);
+ }
  return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsResetHoldTest,"TheAwakening.Settings.ResetHold",
@@ -556,6 +787,17 @@ bool FTASettingsDraftTest::RunTest(const FString&)
  S->StageDefault(Slider); TestEqual(TEXT("Reset stages default"),S->GetEditableInteger(Slider),S->FindDefinition(Slider)->DefaultValue);
  TestEqual(TEXT("Reset leaves runtime slider intact"),S->GetInteger(Slider),50);
  S->DiscardDraft();
+ S->SetDraftValue(Slider,75); S->SetDraftValue(Toggle,0); S->StageDefault(Slider);
+ TestTrue(TEXT("Scoped default commits without applying the whole session"),S->ApplyDraftForSettings({Slider}));
+ const int32 Default=S->FindDefinition(Slider)->DefaultValue;
+ TestEqual(TEXT("Scoped reset changes runtime immediately"),S->GetInteger(Slider),Default);
+ TestFalse(TEXT("Scoped reset clears its own dirty state"),S->IsSettingDirty(Slider));
+ TestTrue(TEXT("Unrelated draft remains pending"),S->GetBoolean(Toggle) && S->IsSettingDirty(Toggle));
+ auto* ResetSaved=NewObject<UTASettingsSubsystem>(Local); ResetSaved->Definitions=S->Definitions; ResetSaved->LoadSavedValues();
+ TestEqual(TEXT("Scoped default is persisted"),ResetSaved->GetInteger(Slider),Default);
+ TestTrue(TEXT("Unrelated draft is not persisted"),ResetSaved->GetBoolean(Toggle));
+ S->DiscardDraft();
+ TestEqual(TEXT("Discard does not undo completed reset"),S->GetInteger(Slider),Default);
  const auto Before=FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors());
  const auto* Mode=S->FindEditableDefinition(TEXT("Display.WindowMode"));
  if (TestNotNull(TEXT("Video mode definition"),Mode))
@@ -567,6 +809,11 @@ bool FTASettingsDraftTest::RunTest(const FString&)
   TestEqual(TEXT("Staging does not apply screen mode"),After.WindowMode,Before.WindowMode);
   TestEqual(TEXT("Staging does not resize screen"),After.Resolution,Before.Resolution);
   TestFalse(TEXT("Staging has no video confirmation deadline"),S->HasPendingVideoMode());
+  S->SetValue(Slider,50); S->StageDefault(Slider);
+  TestTrue(TEXT("Reset of a non-video page succeeds with a video draft present"),S->ApplyDraftForSettings({Slider}));
+  TestFalse(TEXT("Non-video reset does not start video confirmation"),S->HasPendingVideoMode());
+  TestTrue(TEXT("Unrelated video draft remains dirty after reset"),S->IsSettingDirty(ModeId));
+  TestEqual(TEXT("Non-video reset does not apply drafted screen mode"),FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors()).WindowMode,Before.WindowMode);
   S->RefreshDisplayCandidates(); TestTrue(TEXT("Hardware refresh preserves video draft"),S->IsSettingDirty(ModeId));
  }
  S->DiscardDraft();
@@ -612,7 +859,17 @@ bool FTASettingsDialogTest::RunTest(const FString&)
  for (const auto& M:IMC->GetMappings()) PC->DialogActions.Add(FCString::Atoi(*M.Action->GetName().RightChop(15)),const_cast<UInputAction*>(M.Action.Get()));
  Input.AddMappingContext(IMC,30); FModifyContextOptions Options; Options.bForceImmediately=true; Input.RequestRebuildControlMappings(Options);
  Popup->Data=D; Popup->Controller=PC;
+ TestTrue(TEXT("Existing dialogs retain virtual cursor by default"),Popup->AllowsVirtualCursor());
+ Popup->Data.bAllowGamepadCursor=false;
+ TestFalse(TEXT("Navigation-only dialog disables virtual cursor"),Popup->AllowsVirtualCursor());
+ TestNotNull(TEXT("Navigation-only dialog provides a real-pointer return target"),Popup->GetPlayerPointerTarget());
  TestTrue(TEXT("Popup key is resolved from its IMC"),Popup->ResolvePlayerInput(EKeys::Enter).IsSet());
+ // Returning from details has two results, using the authored A/B slots.
+ Popup->Data.Options={D.Options[0],D.Options[1]};
+ TestTrue(TEXT("Details popup accepts mapped A"),Popup->ResolvePlayerInput(EKeys::Gamepad_FaceButton_Bottom).IsSet());
+ TestTrue(TEXT("Details popup accepts mapped B"),Popup->ResolvePlayerInput(EKeys::Gamepad_FaceButton_Right).IsSet());
+ TestFalse(TEXT("Details popup does not borrow unused X slot"),Popup->ResolvePlayerInput(EKeys::Gamepad_FaceButton_Left).IsSet());
+ Popup->Data=D;
  auto* Remapped=DuplicateObject<UInputMappingContext>(IMC,GetTransientPackage());
  Remapped->UnmapKey(PC->GetDialogAction(1),EKeys::Enter); Remapped->MapKey(PC->GetDialogAction(1),EKeys::P);
  Input.RemoveMappingContext(IMC); Input.AddMappingContext(Remapped,30); Input.RequestRebuildControlMappings(Options);

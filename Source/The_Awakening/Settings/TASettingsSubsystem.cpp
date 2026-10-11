@@ -310,14 +310,41 @@ void UTASettingsSubsystem::DiscardDraft()
 }
 bool UTASettingsSubsystem::ApplyDraft()
 {
+ TArray<FName> Ids;
+ for (const auto& D:GetEditableDefinitions()) Ids.Add(D.SettingId);
+ return ApplyDraftForSettings(Ids);
+}
+bool UTASettingsSubsystem::ApplyDraftForSettings(const TArray<FName>& SettingIds)
+{
  if (!bEditing || HasPendingVideoMode()) return false;
  // Copy definitions: language application invokes UI refresh synchronously.
  const auto ToApply=EditableDefinitions;
  bool VideoChanged=false;
+ const auto Monitors=FTADisplaySettingsService::GetMonitors();
+ const auto CurrentDisplay=FTADisplaySettingsService::GetCurrentState(Monitors);
+ auto TargetDisplay=CurrentDisplay;
+ bool AllVideoSelected=true;
+ for (const auto& D:ToApply)
+  if (FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId) && !SettingIds.Contains(D.SettingId)) AllVideoSelected=false;
+ // Display fields are coupled. Build only requested changes from applied state,
+ // never apply an unrelated video draft just because a page is being reset.
  for (const auto& D:ToApply)
  {
-  if (!IsSettingDirty(D.SettingId)) continue;
-  if (FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId)) { VideoChanged=true; continue; }
+  if (!SettingIds.Contains(D.SettingId) || !IsSettingDirty(D.SettingId) || !FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId)) continue;
+  if (AllVideoSelected) TargetDisplay=DraftDisplayState;
+  else
+  {
+   FTADisplayState Next;
+   const FName Choice=FTADisplaySettingsService::ReadChoice(D.ApplyHandlerId,Monitors,DraftDisplayState);
+   if (!FTADisplaySettingsService::BuildChange(D.ApplyHandlerId,Choice,Monitors,TargetDisplay,Next)) return false;
+   TargetDisplay=Next;
+  }
+  VideoChanged=true;
+ }
+ for (const auto& D:ToApply)
+ {
+  if (!SettingIds.Contains(D.SettingId) || !IsSettingDirty(D.SettingId)) continue;
+  if (FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId)) continue;
   const int32 V=GetEditableInteger(D.SettingId);
   if (!FTASettingsApplyService::Apply(GetLocalPlayer(),D,V)) { SaveValues(); return false; }
   CurrentValues.Add(D.SettingId,V); DraftValues.Remove(D.SettingId); DraftChoices.Remove(D.SettingId);
@@ -325,11 +352,18 @@ bool UTASettingsSubsystem::ApplyDraft()
  }
  if (VideoChanged)
  {
-  PreviousDisplayState=FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors());
-  if (!FTADisplaySettingsService::ApplyState(DraftDisplayState)) { SaveValues(); return false; }
+  if (!FTADisplaySettingsService::ApplyState(TargetDisplay)) { SaveValues(); return false; }
+  PreviousDisplayState=CurrentDisplay;
   VideoDeadline=FPlatformTime::Seconds()+15;
  }
- bDraftVideo=false; DraftValues.Reset(); DraftChoices.Reset();
+ for (FName Id:SettingIds) { DraftValues.Remove(Id); DraftChoices.Remove(Id); }
+ // Retain an unrelated video edit. Missing permissions/selection are not discard.
+ bDraftVideo=false;
+ for (const auto& D:ToApply)
+  if (FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId) &&
+      FTADisplaySettingsService::ReadChoice(D.ApplyHandlerId,Monitors,DraftDisplayState)!=
+      FTADisplaySettingsService::ReadChoice(D.ApplyHandlerId,Monitors,TargetDisplay))
+  { bDraftVideo=true; break; }
  RefreshDisplayCandidates(); SaveValues();
  if (!HasPendingVideoMode()) if (auto* U=UGameUserSettings::GetGameUserSettings()) U->SaveSettings();
  TArray<FName> Ids; for (const auto& D:Definitions) Ids.Add(D.SettingId);

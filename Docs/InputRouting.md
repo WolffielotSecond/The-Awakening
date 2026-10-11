@@ -719,6 +719,16 @@ target falls back within the same winning request. Owner expiry recomputes reque
 GameAndUI/UIOnly currently use DoNotLock; GameAndUI preserves cursor during capture.
 Pointer motion and guarded game-surface synthetic clicks are separate from ownership.
 
+Settings and Pause receivers disable the virtual cursor through
+`AllowsVirtualCursor()` without changing physical observation or Router capabilities.
+Their device notification controls `ShouldShowPlayerCursor()`; PC remains the sole
+Presentation writer. On a hidden-to-visible cursor transition for the same owner,
+PC uses the receiver's `GetPlayerPointerTarget()` to position the real pointer over
+the selected control, provided its cached geometry is valid and inside the viewport.
+The existing warp marker suppresses device feedback and delivery of a stale mouse
+move position during that handoff. Other receivers retain their existing virtual
+cursor behavior; this policy does not introduce Settings/Pause type branches in PC.
+
 ### Read-only extension checks
 
 | New UI | Request declaration | Receiver / execution |

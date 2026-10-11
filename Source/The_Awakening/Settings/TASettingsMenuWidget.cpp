@@ -40,6 +40,7 @@ void UTASettingsMenuWidget::InitializeMenu(AThe_AwakeningPlayerController* PC,UT
   MenuDefinition=NewObject<UTASettingsMenuDefinitionAsset>(this);
   MenuDefinition->MenuId=TEXT("Menu.Custom"); MenuDefinition->TitleTextId=TEXT("UI_Settings");
  }
+ SelectionArea=MenuDefinition?ESelectionArea::Details:ESelectionArea::Categories;
 }
 void UTASettingsMenuWidget::NativeConstruct()
 {
@@ -60,6 +61,7 @@ void UTASettingsMenuWidget::NativeConstruct()
   Icons->OnInputPromptsChanged.AddUniqueDynamic(this,&UTASettingsMenuWidget::InputPresentationChanged);
   bGamepadDevice=Icons->GetCurrentDeviceType()!=EInputDeviceType::KeyboardMouse;
  }
+ if (bGamepadDevice) bPointerSelectionEnabled=false;
  BuildPageEntries(); RefreshPageLabels(); BuildSettingRows(); BuildPromptBar();
 }
 void UTASettingsMenuWidget::NativeDestruct()
@@ -154,7 +156,7 @@ void UTASettingsMenuWidget::RefreshRows()
  {
   if (SettingsSubsystem) if (const auto* D=SettingsSubsystem->FindEditableDefinition(R->GetSettingId())) R->Configure(*D,Text(D->NameTextId),SettingsSubsystem->FormatValue(*D),SettingsSubsystem->GetEditableInteger(D->SettingId,0),SettingsSubsystem->IsFavorite(D->SettingId),UsesEnglishLayout());
   R->SetDirty(SettingsSubsystem && SettingsSubsystem->IsSettingDirty(R->GetSettingId()));
-  R->SetHighlighted(I==SelectedRowIndex);
+  R->SetHighlighted(I==SelectedRowIndex && (bPointerSelectionEnabled || SelectionArea==ESelectionArea::Details));
  }
  const auto* D=SettingsSubsystem?SettingsSubsystem->FindEditableDefinition(SelectedSettingId):nullptr;
  if (PromptSettingId!=SelectedSettingId) BuildPromptBar();
@@ -240,6 +242,12 @@ void UTASettingsMenuWidget::ConfirmSelection()
  if (D->Type==ETASettingType::Submenu) RequestExit(EPendingExit::Submenu,D->SettingId);
  else if (D->Type==ETASettingType::Toggle) SettingsSubsystem->AdjustDraftValue(D->SettingId,1);
 }
+void UTASettingsMenuWidget::EnterDetails()
+{
+ SelectionArea=ESelectionArea::Details;
+ EnsureRowSelection(); RefreshRows(); BuildPromptBar();
+ if (ScrollBox_SettingsOptions && Rows.IsValidIndex(SelectedRowIndex)) ScrollBox_SettingsOptions->ScrollWidgetIntoView(Rows[SelectedRowIndex],false);
+}
 void UTASettingsMenuWidget::OpenSubmenu(const FTASettingDefinition& D)
 {
  if (!InputController.IsValid() || ActiveSubmenu) return;
@@ -257,18 +265,20 @@ void UTASettingsMenuWidget::OpenSubmenu(const FTASettingDefinition& D)
 bool UTASettingsMenuWidget::HandleMenuBackRequested()
 {
  if (!Allows(ETAInputCapability::Close)) return false;
+ if (!MenuDefinition && bGamepadDevice && SelectionArea==ESelectionArea::Details)
+ { RequestExit(EPendingExit::Categories); return true; }
  RequestClose(); return true;
 }
 void UTASettingsMenuWidget::RowHovered(UTASelectableMenuOptionWidget* W)
-{ if (bPointerSelectionEnabled && !bSuppressHoverAfterScroll && Allows(ETAInputCapability::Navigate)) if (auto* R=Cast<UTASettingRowWidget>(W)) { SelectRow(Rows.IndexOfByKey(R)); RefreshRows(); } }
+{ if (bPointerSelectionEnabled && !bSuppressHoverAfterScroll && Allows(ETAInputCapability::Navigate)) if (auto* R=Cast<UTASettingRowWidget>(W)) { SelectionArea=ESelectionArea::Details; SelectRow(Rows.IndexOfByKey(R)); RefreshRows(); BuildPromptBar(); } }
 void UTASettingsMenuWidget::RowActivated(UTASettingRowWidget* R)
-{ if (!R || IsCapturingPlayerInput() || !Allows(ETAInputCapability::Confirm)) return; bSuppressHoverAfterScroll=false; SelectRow(Rows.IndexOfByKey(R)); ConfirmSelection(); RefreshRows(); }
+{ if (!R || IsCapturingPlayerInput() || !Allows(ETAInputCapability::Confirm)) return; SelectionArea=ESelectionArea::Details; bSuppressHoverAfterScroll=false; SelectRow(Rows.IndexOfByKey(R)); ConfirmSelection(); RefreshRows(); BuildPromptBar(); }
 void UTASettingsMenuWidget::RowAdjusted(UTASettingRowWidget* R,int32 Dir)
-{ if (!R || !Allows(ETAInputCapability::Navigate)) return; bSuppressHoverAfterScroll=false; SelectRow(Rows.IndexOfByKey(R)); AdjustSelectedValue(Dir); }
+{ if (!R || !Allows(ETAInputCapability::Navigate)) return; SelectionArea=ESelectionArea::Details; bSuppressHoverAfterScroll=false; SelectRow(Rows.IndexOfByKey(R)); AdjustSelectedValue(Dir); }
 void UTASettingsMenuWidget::RowNumberChanged(UTASettingRowWidget* R,int32 N)
-{ if (R && Allows(ETAInputCapability::Navigate) && SettingsSubsystem) { SelectRow(Rows.IndexOfByKey(R)); SettingsSubsystem->SetDraftValue(R->GetSettingId(),N); } }
+{ if (R && Allows(ETAInputCapability::Navigate) && SettingsSubsystem) { SelectionArea=ESelectionArea::Details; SelectRow(Rows.IndexOfByKey(R)); SettingsSubsystem->SetDraftValue(R->GetSettingId(),N); } }
 void UTASettingsMenuWidget::RowFavorite(UTASettingRowWidget* R)
-{ if (R && Allows(ETAInputCapability::ToggleFavorite) && SettingsSubsystem) SettingsSubsystem->SetFavorite(R->GetSettingId(),!SettingsSubsystem->IsFavorite(R->GetSettingId())); }
+{ if (R && Allows(ETAInputCapability::ToggleFavorite) && SettingsSubsystem) { SelectionArea=ESelectionArea::Details; SettingsSubsystem->SetFavorite(R->GetSettingId(),!SettingsSubsystem->IsFavorite(R->GetSettingId())); } }
 void UTASettingsMenuWidget::ValueChanged(FName) { RefreshRows(); }
 void UTASettingsMenuWidget::FavoritesChanged() { if (CurrentPageId==FTASettingsCatalog::FavoritesPageId()) BuildSettingRows(); else RefreshRows(); }
 void UTASettingsMenuWidget::LanguageChanged() { RefreshPageLabels(); for (int32 I=0;I<SectionHeadings.Num();++I) SectionHeadings[I]->SetTitle(Text(SectionHeadingIds[I].ToString())); RefreshRows(); BuildPromptBar(); }
@@ -345,13 +355,26 @@ namespace
   {TEXT("ResetPage"),ETAInputCapability::Confirm,false,false},
   {TEXT("Back"),ETAInputCapability::Close,false,false},
   {TEXT("ScrollUp"),ETAInputCapability::Navigate,true,false},
-  {TEXT("ScrollDown"),ETAInputCapability::Navigate,true,false},
-  {TEXT("PointerClick"),ETAInputCapability::Confirm,true,false}
+  {TEXT("ScrollDown"),ETAInputCapability::Navigate,true,false}
  };
 }
 FString UTASettingsMenuWidget::GetSettingCommandTextId(FName Name) const
 {
- if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown") || (Name==TEXT("ResetPage") && MenuDefinition)) return {};
+ if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown"))
+ {
+  if (!bGamepadDevice || !GetScrollTarget()) return {};
+  if (SelectionArea==ESelectionArea::Categories)
+   return Name==TEXT("ScrollUp")?TEXT("UI_Settings_ScrollListUp"):TEXT("UI_Settings_ScrollListDown");
+  return Name==TEXT("ScrollUp")?TEXT("UI_Settings_ScrollDescriptionUp"):TEXT("UI_Settings_ScrollDescriptionDown");
+ }
+ if (bGamepadDevice && !MenuDefinition && SelectionArea==ESelectionArea::Categories)
+ {
+  if (Name==TEXT("PreviousItem")) return TEXT("UI_Settings_PreviousCategory");
+  if (Name==TEXT("NextItem")) return TEXT("UI_Settings_NextCategory");
+  if (Name==TEXT("Confirm")) return TEXT("UI_Settings_EnterCategory");
+  if (Name!=TEXT("Back") && Name!=TEXT("ResetPage")) return {};
+ }
+ if (Name==TEXT("ResetPage") && MenuDefinition) return {};
  const auto* D=SettingsSubsystem?SettingsSubsystem->FindEditableDefinition(SelectedSettingId):nullptr;
  if (Name==TEXT("AdjustLeft") || Name==TEXT("AdjustRight"))
  {
@@ -371,7 +394,7 @@ void UTASettingsMenuWidget::BuildPromptBar()
  {
   const FName Name(Command.Name);
   if (Command.GamepadOnly && !bGamepadDevice) continue;
-  if (Name==TEXT("PointerClick")) continue;
+  if (bGamepadDevice && (Name==TEXT("PreviousPage") || Name==TEXT("NextPage"))) continue;
   if (MenuDefinition && (Name==TEXT("PreviousPage") || Name==TEXT("NextPage"))) continue;
   if (BindingMenu && (Name==TEXT("AdjustLeft") || Name==TEXT("AdjustRight") || Name==TEXT("Favorite"))) continue;
   const FString Label=GetSettingCommandTextId(Name);
@@ -387,6 +410,7 @@ void UTASettingsMenuWidget::BuildPromptBar()
    P->OnPromptClicked.AddDynamic(this,&UTASettingsMenuWidget::PromptClicked); Prompts.Add(P);
   }
  }
+ RefreshScrollPromptVisibility();
 }
 void UTASettingsMenuWidget::PromptClicked(UTAActionPromptWidget* P)
 {
@@ -416,6 +440,15 @@ void UTASettingsMenuWidget::ExecuteSettingsAction(FName Name,bool GamepadNavigat
  if (Name==TEXT("Back")) { HandleMenuBackRequested(); return; }
  if (IsCapturingPlayerInput()) return;
  if (GamepadNavigation) BeginGamepadNavigation();
+ if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown"))
+ { ScrollCurrentRegion(Name==TEXT("ScrollUp")?-1:1); ScrollRepeatDelay=0.35f; return; }
+ if (Name==TEXT("ResetPage") && !MenuDefinition) { ResetPressed(); return; }
+ if (bGamepadDevice && !MenuDefinition && SelectionArea==ESelectionArea::Categories)
+ {
+  if (Name==TEXT("PreviousItem") || Name==TEXT("NextItem")) MovePage(Name==TEXT("PreviousItem")?-1:1);
+  else if (Name==TEXT("Confirm")) EnterDetails();
+  return;
+ }
  if (Name==TEXT("PreviousPage")) MovePage(-1);
  else if (Name==TEXT("NextPage")) MovePage(1);
  else if (Name==TEXT("PreviousItem")) MoveSelection(-1);
@@ -428,30 +461,39 @@ void UTASettingsMenuWidget::ExecuteSettingsAction(FName Name,bool GamepadNavigat
  }
  else if (Name==TEXT("Apply")) ApplyChanges();
  else if (Name==TEXT("Confirm")) ConfirmSelection();
- else if (Name==TEXT("ResetPage") && !MenuDefinition) ResetPressed();
  else if (Name==TEXT("Favorite")) RowFavorite(Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr);
- else if (Name==TEXT("PointerClick")) { if (bPointerSelectionEnabled && InputController.IsValid()) InputController->SimulateSyntheticLeftMouseClick(); }
- else if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown")) { ScrollAtPointer(Name==TEXT("ScrollUp")?-1:1); ScrollRepeatDelay=0.35f; }
 }
 void UTASettingsMenuWidget::BeginGamepadNavigation()
 {
  bPointerSelectionEnabled=false;
+ RefreshRows(); BuildPromptBar();
  if (InputController.IsValid()) InputController->SynchronizeInputPresentation();
 }
 void UTASettingsMenuWidget::InputPresentationChanged()
 {
  if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>()) bGamepadDevice=Icons->GetCurrentDeviceType()!=EInputDeviceType::KeyboardMouse;
- if (!bGamepadDevice) { bPointerSelectionEnabled=true; bSuppressHoverAfterScroll=false; }
+ bPointerSelectionEnabled=!bGamepadDevice;
+ if (!bGamepadDevice) bSuppressHoverAfterScroll=false;
+ RefreshRows();
  BuildPromptBar();
  if (InputController.IsValid()) InputController->SynchronizeInputPresentation();
 }
 void UTASettingsMenuWidget::NotifyPlayerPointerMoved()
 {
- if (!Allows(ETAInputCapability::Cursor)) return;
+ if (bGamepadDevice || !Allows(ETAInputCapability::Cursor)) return;
  bPointerSelectionEnabled=true;
  bSuppressHoverAfterScroll=false;
  SelectPointerRow();
  if (InputController.IsValid()) InputController->SynchronizeInputPresentation();
+}
+UWidget* UTASettingsMenuWidget::GetPlayerPointerTarget() const
+{
+ if (SelectionArea==ESelectionArea::Categories)
+ {
+  const int32 Index=PageDefinitions.IndexOfByPredicate([&](const auto& Page){return Page.PageId==CurrentPageId;});
+  return PageEntries.IsValidIndex(Index)?PageEntries[Index].Get():nullptr;
+ }
+ return Rows.IsValidIndex(SelectedRowIndex)?Rows[SelectedRowIndex].Get():nullptr;
 }
 void UTASettingsMenuWidget::SelectPointerRow()
 {
@@ -460,19 +502,54 @@ void UTASettingsMenuWidget::SelectPointerRow()
  for (int32 I=0;I<Rows.Num();++I)
   if (Rows[I]->IsVisible() && Rows[I]->GetCachedGeometry().IsUnderLocation(Position) &&
       (!ScrollBox_SettingsOptions || ScrollBox_SettingsOptions->GetCachedGeometry().IsUnderLocation(Position)))
-  { if (SelectedRowIndex!=I) { SelectRow(I); RefreshRows(); } return; }
+  { if (SelectedRowIndex!=I || SelectionArea!=ESelectionArea::Details) { SelectionArea=ESelectionArea::Details; SelectRow(I); RefreshRows(); BuildPromptBar(); } return; }
 }
-void UTASettingsMenuWidget::ScrollAtPointer(int32 Direction)
+UScrollBox* UTASettingsMenuWidget::GetScrollTarget() const
 {
- if (!Allows(ETAInputCapability::Navigate) || !FSlateApplication::IsInitialized()) return;
- const FVector2D Position=FSlateApplication::Get().GetCursorPos();
- for (UScrollBox* Scroll:{ScrollBox_SettingsOptions.Get(),ScrollBox_Description.Get()})
-  if (Scroll && Scroll->IsVisible() && Scroll->GetCachedGeometry().IsUnderLocation(Position))
-  { bSuppressHoverAfterScroll=true; Scroll->SetScrollOffset(FMath::Clamp(Scroll->GetScrollOffset()+Direction*60.f,0.f,Scroll->GetScrollOffsetOfEnd())); return; }
+ if (SelectionArea==ESelectionArea::Categories) return ScrollBox_SettingsOptions.Get();
+ return SelectedSettingId.IsNone()?nullptr:ScrollBox_Description.Get();
+}
+bool UTASettingsMenuWidget::CanScrollCurrentRegion() const
+{
+ auto* Scroll=GetScrollTarget();
+ return Scroll && Scroll->IsVisible() && Scroll->GetScrollOffsetOfEnd()>KINDA_SMALL_NUMBER;
+}
+void UTASettingsMenuWidget::RefreshScrollPromptVisibility()
+{
+ if (!InputController.IsValid()) return;
+ const bool Visible=bGamepadDevice && CanScrollCurrentRegion();
+ for (UTAActionPromptWidget* Prompt:Prompts)
+  if (Prompt && (Prompt->GetPromptAction()==InputController->GetSettingsAction(TEXT("ScrollUp")) ||
+                 Prompt->GetPromptAction()==InputController->GetSettingsAction(TEXT("ScrollDown"))))
+   Prompt->SetVisibility(Visible?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
+}
+void UTASettingsMenuWidget::ScrollCurrentRegion(int32 Direction)
+{
+ if (!Allows(ETAInputCapability::Navigate) || !CanScrollCurrentRegion()) return;
+ auto* Scroll=GetScrollTarget();
+ // Scrolling rows underneath a stationary pointer must not select a row or enter details.
+ if (SelectionArea==ESelectionArea::Categories) bSuppressHoverAfterScroll=true;
+ if (AnimatedScroll.Get()!=Scroll) { AnimatedScroll=Scroll; ScrollTargetOffset=Scroll->GetScrollOffset(); }
+ ScrollTargetOffset=FMath::Clamp(ScrollTargetOffset+Direction*60.f,0.f,Scroll->GetScrollOffsetOfEnd());
+}
+void UTASettingsMenuWidget::TickScrollInterpolation(float DeltaTime)
+{
+ auto* Scroll=AnimatedScroll.Get();
+ if (!bGamepadDevice || !Allows(ETAInputCapability::Navigate) || IsCapturingPlayerInput() || Scroll!=GetScrollTarget() || !CanScrollCurrentRegion())
+ { AnimatedScroll.Reset(); return; }
+ if (!Scroll) return;
+ ScrollTargetOffset=FMath::Clamp(ScrollTargetOffset,0.f,Scroll->GetScrollOffsetOfEnd());
+ Scroll->SetScrollOffset(FMath::FInterpTo(Scroll->GetScrollOffset(),ScrollTargetOffset,DeltaTime,ScrollInterpolationSpeed));
+ if (FMath::IsNearlyEqual(Scroll->GetScrollOffset(),ScrollTargetOffset,0.1f))
+ { Scroll->SetScrollOffset(ScrollTargetOffset); AnimatedScroll.Reset(); }
 }
 void UTASettingsMenuWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
 {
  Super::NativeTick(Geometry,DeltaTime);
+ // Overflow becomes authoritative after Slate layout, including viewport resizes.
+ // Update the existing hints' visibility; do not rebuild or poll layout parameters.
+ RefreshScrollPromptVisibility();
+ TickScrollInterpolation(DeltaTime);
  DisplayRefreshDelay-=DeltaTime;
  if (DisplayRefreshDelay<=0 && SettingsSubsystem && !MenuDefinition)
  { DisplayRefreshDelay=1.f; SettingsSubsystem->RefreshDisplayCandidates(); }
@@ -486,7 +563,7 @@ void UTASettingsMenuWidget::NativeTick(const FGeometry& Geometry,float DeltaTime
  const bool Down=InputController->ReadHeldAction(InputController->GetSettingsAction(TEXT("ScrollDown"))).Get<bool>();
  if (Up==Down) { ScrollRepeatDelay=0; return; }
  ScrollRepeatDelay-=DeltaTime;
- if (ScrollRepeatDelay<=0) { ScrollAtPointer(Up?-1:1); ScrollRepeatDelay=0.12f; }
+ if (ScrollRepeatDelay<=0) { ScrollCurrentRegion(Up?-1:1); ScrollRepeatDelay=0.12f; }
 }
 void UTASettingsMenuWidget::TickSliderAdjustment(float DeltaTime,bool Left,bool Right)
 {
@@ -515,11 +592,16 @@ void UTASettingsMenuWidget::RestoreCurrentDefaults()
  {
   const FName Id=R->GetSettingId();
   const auto* D=SettingsSubsystem->FindEditableDefinition(Id);
+  if (!D || D->Type==ETASettingType::Submenu) continue;
   // A page reset must preserve the player's language, including language in Favorites.
   if (Id==TEXT("Game.Language") || (D && D->ApplyHandlerId==TEXT("Game.Language"))) continue;
   Ids.AddUnique(Id);
  }
  for(FName Id:Ids) SettingsSubsystem->StageDefault(Id);
+ // A completed reset is its own scoped commit, not an ordinary unsaved edit.
+ // Existing error and video confirmation flows apply without submitting other drafts.
+ if (!SettingsSubsystem->ApplyDraftForSettings(Ids)) ShowApplyError();
+ else if (SettingsSubsystem->HasPendingVideoMode()) ShowVideoDialog();
 }
 void UTASettingsMenuWidget::InitializeResetHoldVisual()
 {
@@ -615,8 +697,11 @@ void UTASettingsMenuWidget::RequestExit(EPendingExit Kind,FName Target)
  PendingExit=Kind; PendingTarget=Target; CancelResetHold(); SliderRepeatDirection=0;
  if (!SettingsSubsystem->HasDraftChanges()) { CompleteExit(); return; }
  FTACommonDialogDefinition D;
+ D.bAllowGamepadCursor=false;
  D.TitleTextId=TEXT("Dialog.Settings.Unsaved.Title"); D.MessageTextId=TEXT("Dialog.Settings.Unsaved.Message");
- D.Options={DialogOption(TEXT("Apply"),TEXT("Dialog.Apply"),1),DialogOption(TEXT("Discard"),TEXT("Dialog.Discard"),2),DialogOption(TEXT("Cancel"),TEXT("Dialog.Cancel"),3)};
+ if (Kind==EPendingExit::Categories)
+  D.Options={DialogOption(TEXT("Apply"),TEXT("Dialog.Apply"),1),DialogOption(TEXT("Discard"),TEXT("Dialog.Discard"),2)};
+ else D.Options={DialogOption(TEXT("Apply"),TEXT("Dialog.Apply"),1),DialogOption(TEXT("Discard"),TEXT("Dialog.Discard"),2),DialogOption(TEXT("Cancel"),TEXT("Dialog.Cancel"),3)};
  auto* LP=GetOwningLocalPlayer(); auto* S=LP?LP->GetSubsystem<UTACommonDialogSubsystem>():nullptr;
  ActiveDialog=S?S->ShowDialog(D):nullptr;
  if (ActiveDialog) ActiveDialog->OnResult.AddDynamic(this,&UTASettingsMenuWidget::DialogResult);
@@ -629,6 +714,12 @@ void UTASettingsMenuWidget::CompleteExit()
  {
   CurrentPageId=Target; bSuppressHoverAfterScroll=false; SelectedSettingId=NAME_None; SelectedRowIndex=INDEX_NONE;
   BuildSettingRows(); RefreshPageLabels();
+ }
+ else if (Kind==EPendingExit::Categories)
+ {
+  SelectionArea=ESelectionArea::Categories;
+  CancelResetHold(); SliderRepeatDirection=0;
+  RefreshRows(); RefreshPageLabels(); BuildPromptBar();
  }
  else if (Kind==EPendingExit::Submenu)
  {
@@ -650,19 +741,23 @@ void UTASettingsMenuWidget::ApplyDraftAndContinue()
  if (!SettingsSubsystem || ActiveDialog) return;
  if (!SettingsSubsystem->ApplyDraft())
  {
-  PendingExit=EPendingExit::None;
-  if (InputController.IsValid()) InputController->CancelSettingsCloseRequest();
-  FTACommonDialogDefinition D; D.TitleTextId=TEXT("Dialog.Settings.Error.Title"); D.MessageTextId=TEXT("Dialog.Settings.Error.Message");
-  D.Options={DialogOption(TEXT("Cancel"),TEXT("Dialog.OK"),1)};
-  if (auto* LP=GetOwningLocalPlayer()) if (auto* S=LP->GetSubsystem<UTACommonDialogSubsystem>()) ActiveDialog=S->ShowDialog(D);
-  if (ActiveDialog) ActiveDialog->OnResult.AddDynamic(this,&UTASettingsMenuWidget::DialogResult);
+  ShowApplyError();
   return;
  }
  if (SettingsSubsystem->HasPendingVideoMode()) ShowVideoDialog(); else CompleteExit();
 }
+void UTASettingsMenuWidget::ShowApplyError()
+{
+ PendingExit=EPendingExit::None;
+ if (InputController.IsValid()) InputController->CancelSettingsCloseRequest();
+ FTACommonDialogDefinition D; D.bAllowGamepadCursor=false; D.TitleTextId=TEXT("Dialog.Settings.Error.Title"); D.MessageTextId=TEXT("Dialog.Settings.Error.Message");
+ D.Options={DialogOption(TEXT("Cancel"),TEXT("Dialog.OK"),1)};
+ if (auto* LP=GetOwningLocalPlayer()) if (auto* S=LP->GetSubsystem<UTACommonDialogSubsystem>()) ActiveDialog=S->ShowDialog(D);
+ if (ActiveDialog) ActiveDialog->OnResult.AddDynamic(this,&UTASettingsMenuWidget::DialogResult);
+}
 void UTASettingsMenuWidget::ShowVideoDialog()
 {
- FTACommonDialogDefinition D; D.TitleTextId=TEXT("Dialog.Settings.Video.Title"); D.MessageTextId=TEXT("Dialog.Settings.Video.Message");
+ FTACommonDialogDefinition D; D.bAllowGamepadCursor=false; D.TitleTextId=TEXT("Dialog.Settings.Video.Title"); D.MessageTextId=TEXT("Dialog.Settings.Video.Message");
  D.Options={DialogOption(TEXT("Keep"),TEXT("Dialog.Keep"),1),DialogOption(TEXT("Revert"),TEXT("Dialog.Revert"),3)};
  D.TimeoutSeconds=15; D.TimeoutResultId=TEXT("Revert"); bVideoDialog=true;
  if (auto* LP=GetOwningLocalPlayer()) if (auto* S=LP->GetSubsystem<UTACommonDialogSubsystem>()) ActiveDialog=S->ShowDialog(D);

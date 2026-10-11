@@ -181,6 +181,9 @@ bool FTAInputDeviceDetector::HandleMouseMoveEvent(FSlateApplication& SoftApp, co
 		Owner->LastVirtualCursorPosition.Reset();
 		Owner->NotifyRawInputKey(EKeys::MouseX);
 		if (auto* Receiver=Cast<ITAPlayerInputReceiver>(Owner->GetInputWinner().Request.Owner.Get())) Receiver->NotifyPlayerPointerMoved();
+		// A device transition may position the pointer on the selected control.
+		// Do not deliver this event's old position as a hover after that positioning.
+		if (Owner->LastVirtualCursorPosition.IsSet()) return true;
 	}
 	return false;
 }
@@ -498,11 +501,7 @@ FVector2D AThe_AwakeningPlayerController::ReadCursorStick(FKey PairedAxisKey) co
 
 FVector2D AThe_AwakeningPlayerController::GetCursorInputAxis()
 {
-	if (Cast<UTASettingsMenuWidget>(GetInputWinner().Request.Owner.Get()))
-	{
-		const UInputAction* Action=GetSettingsAction(TEXT("PointerMove"));
-		return Action && Action->ValueType==EInputActionValueType::Axis2D?ReadHeldAction(Action).Get<FVector2D>().GetClampedToMaxSize(1.f):FVector2D::ZeroVector;
-	}
+	if (auto* Receiver=Cast<ITAPlayerInputReceiver>(GetInputWinner().Request.Owner.Get()); Receiver && !Receiver->AllowsVirtualCursor()) return FVector2D::ZeroVector;
 	return (ReadCursorStick(EKeys::Gamepad_Left2D) +
 		(UsesCursorLook() ? ReadCursorStick(EKeys::Gamepad_Right2D) : FVector2D::ZeroVector)).GetClampedToMaxSize(1.f);
 }
@@ -517,6 +516,7 @@ bool AThe_AwakeningPlayerController::IsCursorStickLookActive() const
 void AThe_AwakeningPlayerController::TickVirtualCursor(float DeltaTime)
 {
 	if (!AllowsInput(ETAInputCapability::Cursor)) return;
+	if (auto* Receiver=Cast<ITAPlayerInputReceiver>(GetInputWinner().Request.Owner.Get()); Receiver && !Receiver->AllowsVirtualCursor()) return;
 	const FVector2D CursorAxis = GetCursorInputAxis();
 	if (!bApplicationInputActive || CursorAxis.IsNearlyZero() || !FSlateApplication::IsInitialized())
 	{
@@ -691,6 +691,7 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 	const auto* Receiver=Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
 	const bool ShowCursor=Presentation.bShowCursor && (!Receiver || Receiver->ShouldShowPlayerCursor());
 	UWidget* CursorOwner = Cast<UWidget>(Winner.Request.Owner.Get());
+	const bool ReturnToSelectedControl=ShowCursor && !bShowMouseCursor && PresentedCursorOwner==CursorOwner;
 	if (PresentedCursorOwner != CursorOwner || bShowMouseCursor != ShowCursor)
 	{
 		if (PresentedCursorOwner != CursorOwner)
@@ -704,6 +705,16 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 
 	auto* Client = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
 	const auto Viewport = Client ? Client->GetGameViewportWidget() : TSharedPtr<SViewport>();
+	if (ReturnToSelectedControl && Receiver && Viewport.IsValid() && FSlateApplication::IsInitialized() && OwnsPlayerInput())
+	{
+		if (UWidget* Target=Receiver->GetPlayerPointerTarget(); Target && Target->IsVisible())
+		{
+			const FGeometry Geometry=Target->GetCachedGeometry();
+			const FVector2D Center=Geometry.LocalToAbsolute(Geometry.GetLocalSize()*0.5f);
+			if (!Geometry.GetLocalSize().IsNearlyZero() && Viewport->GetCachedGeometry().IsUnderLocation(Center))
+			{ LastVirtualCursorPosition=Center; FSlateApplication::Get().SetCursorPos(Center); }
+		}
+	}
 	UWidget* Focus = Presentation.Focus == ETAInputFocusRequirement::Target ? Presentation.FocusTarget.Get() : nullptr;
 	// A live UObject without a usable Slate surface also falls back to the viewport.
 	if (Focus && (!Focus->GetCachedWidget().IsValid() || !Focus->GetIsEnabled() || !Focus->IsVisible())) Focus = nullptr;

@@ -2,6 +2,7 @@
 #include "UI/TAActionPromptWidget.h"
 #include "The_AwakeningPlayerController.h"
 #include "Core/TALocalizeSubsystem.h"
+#include "Core/TAInputIconSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
@@ -63,6 +64,7 @@ void UTACommonDialogWidget::NativeOnInitialized()
   for (auto* ButtonSlot:Slots) { *ButtonSlot=CreateWidget<UTACommonDialogButtonWidget>(this,OptionWidgetClass?OptionWidgetClass.Get():UTACommonDialogButtonWidget::StaticClass()); Box->AddChildToVerticalBox(*ButtonSlot)->SetPadding(FMargin(0,8,0,0)); }
  }
  if (auto* GI=GetGameInstance()) if (auto* L=GI->GetSubsystem<UTALocalizeSubsystem>()) L->OnLanguageChanged.AddUniqueDynamic(this,&UTACommonDialogWidget::RefreshText);
+ if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>()) Icons->OnInputPromptsChanged.AddUniqueDynamic(this,&UTACommonDialogWidget::InputPresentationChanged);
 }
 bool UTACommonDialogWidget::Open(const FTACommonDialogDefinition& Definition)
 {
@@ -93,6 +95,16 @@ void UTACommonDialogWidget::RefreshText()
  if (Text_Message) Text_Message->SetText(Text(Data.MessageTextId));
  if (Text_Countdown) Text_Countdown->SetVisibility(Data.TimeoutSeconds>0?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
 }
+bool UTACommonDialogWidget::ShouldShowPlayerCursor() const
+{
+ if (Data.bAllowGamepadCursor) return true;
+ auto* GI=GetGameInstance(); auto* Icons=GI?GI->GetSubsystem<UTAInputIconSubsystem>():nullptr;
+ return !Icons || Icons->GetCurrentDeviceType()==EInputDeviceType::KeyboardMouse;
+}
+UWidget* UTACommonDialogWidget::GetPlayerPointerTarget() const
+{ return Data.Options.IsEmpty()?nullptr:DialogOption_1.Get(); }
+void UTACommonDialogWidget::InputPresentationChanged()
+{ if (Controller.IsValid()) Controller->SynchronizeInputPresentation(); }
 TOptional<ETAInputCapability> UTACommonDialogWidget::ResolvePlayerInput(FKey Key) const
 {
  if (Controller.IsValid()) for (const auto& O:Data.Options)
@@ -123,6 +135,7 @@ void UTACommonDialogWidget::NativeDestruct()
 {
  ReleaseRequest();
  if (auto* GI=GetGameInstance()) if (auto* L=GI->GetSubsystem<UTALocalizeSubsystem>()) L->OnLanguageChanged.RemoveDynamic(this,&UTACommonDialogWidget::RefreshText);
+ if (auto* GI=GetGameInstance()) if (auto* Icons=GI->GetSubsystem<UTAInputIconSubsystem>()) Icons->OnInputPromptsChanged.RemoveDynamic(this,&UTACommonDialogWidget::InputPresentationChanged);
  if (auto* LP=GetOwningLocalPlayer()) if (auto* S=LP->GetSubsystem<UTACommonDialogSubsystem>()) S->Forget(this);
  Super::NativeDestruct();
 }

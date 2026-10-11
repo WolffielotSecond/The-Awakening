@@ -30,7 +30,9 @@ public:
  virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
  virtual void ExecutePlayerInput(FKey Key,ETAInputCapability Capability) override;
  virtual bool HandleMenuBackRequested() override;
- virtual bool ShouldShowPlayerCursor() const override { return bPointerSelectionEnabled; }
+ virtual bool ShouldShowPlayerCursor() const override { return !bGamepadDevice; }
+ virtual bool AllowsVirtualCursor() const override { return false; }
+ virtual UWidget* GetPlayerPointerTarget() const override;
  virtual void NotifyPlayerPointerMoved() override;
  virtual void RemoveFromParent() override;
  void InitializeMenu(AThe_AwakeningPlayerController* PC,UTASettingsMenuWidget* Parent,UTASettingsMenuDefinitionAsset* Menu=nullptr);
@@ -96,7 +98,11 @@ protected:
  void SelectRow(int32 Index);
  void EnsureRowSelection();
 private:
- enum class EPendingExit : uint8 { None,Page,Submenu,Close };
+ // Local navigation within this owner; does not grant input permission or change ownership.
+ enum class ESelectionArea : uint8 { Categories,Details };
+ ESelectionArea SelectionArea=ESelectionArea::Categories;
+ void EnterDetails();
+ enum class EPendingExit : uint8 { None,Page,Submenu,Close,Categories };
  EPendingExit PendingExit=EPendingExit::None;
  FName PendingTarget;
  bool bVideoDialog=false;
@@ -104,6 +110,7 @@ private:
  void RequestExit(EPendingExit Kind,FName Target=NAME_None);
  void CompleteExit();
  void ShowVideoDialog();
+ void ShowApplyError();
  void ApplyDraftAndContinue();
  UFUNCTION() void ApplyChanges();
  UFUNCTION() void DialogResult(FName Result);
@@ -129,7 +136,15 @@ private:
  void ExecuteSettingsAction(FName Name,bool bGamepadNavigation);
  void BeginGamepadNavigation();
  void SelectPointerRow();
- void ScrollAtPointer(int32 Direction);
+ UScrollBox* GetScrollTarget() const;
+ bool CanScrollCurrentRegion() const;
+ void RefreshScrollPromptVisibility();
+ void ScrollCurrentRegion(int32 Direction);
+ void TickScrollInterpolation(float DeltaTime);
+ /** Visual scroll interpolation, independent of physical Held state. */
+ UPROPERTY(EditDefaultsOnly,Category="Settings|Scroll",meta=(ClampMin="0.1")) float ScrollInterpolationSpeed=12.f;
+ TWeakObjectPtr<UScrollBox> AnimatedScroll;
+ float ScrollTargetOffset=0.f;
  UFUNCTION() void InputPresentationChanged();
  UFUNCTION() void RowHovered(class UTASelectableMenuOptionWidget* Row);
  UFUNCTION() void RowActivated(UTASettingRowWidget* Row);

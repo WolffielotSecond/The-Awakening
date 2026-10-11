@@ -18,7 +18,7 @@ bool FTAInputIconResourcesTest::RunTest(const FString&)
   Icons->SetCurrentDeviceType(Device);
   const TArray<FKey> Keys=Device==EInputDeviceType::KeyboardMouse?
    TArray<FKey>{EKeys::Q,EKeys::Tab,EKeys::SpaceBar,EKeys::LeftMouseButton,EKeys::RightMouseButton}:
-   TArray<FKey>{EKeys::Gamepad_FaceButton_Bottom,EKeys::Gamepad_FaceButton_Right,EKeys::Gamepad_Left2D,EKeys::Gamepad_Special_Left};
+   TArray<FKey>{EKeys::Gamepad_FaceButton_Bottom,EKeys::Gamepad_FaceButton_Right,EKeys::Gamepad_Left2D,EKeys::Gamepad_Special_Left,EKeys::Gamepad_RightStick_Up,EKeys::Gamepad_RightStick_Down};
   for (const auto& Key:Keys)
   {
    auto* Texture=Icons->GetIconForKey(Key);

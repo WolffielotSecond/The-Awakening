@@ -1,6 +1,6 @@
 # 设置菜单：从零创建资产与接线
 
-> 新增的“草稿→应用”、离开确认、显示回退和可供全游戏复用的弹窗，按 [通用弹窗与设置应用搭建流程](CommonDialogSystem.md) 接线。下文旧的画面确认／还原按钮不再使用；调整和恢复默认改为暂存草稿，应用后才生效。
+> 新增的“草稿→应用”、离开确认、显示回退和可供全游戏复用的弹窗，按 [通用弹窗与设置应用搭建流程](CommonDialogSystem.md) 接线。下文旧的画面确认／还原按钮不再使用；普通调整暂存草稿。当前分类恢复默认是独立提交，完成长按后立即应用并保存，显示模式仍须确认。
 
 按本文顺序在 Unreal 编辑器中新建数据资产和 Widget Blueprint，最后接入现有暂停菜单。C++ 负责生成页面、子标题、选项、输入交互与实际效果；你在 UMG 中设计布局和样式。
 
@@ -570,22 +570,21 @@ Choice 默认候选数组：
 
 | 操作／Action 名称后缀 | 默认键鼠 | 默认手柄 |
 | --- | --- | --- |
-| PreviousPage／NextPage | PageUp／PageDown | LB／RB |
+| PreviousPage／NextPage | Q／E（当前资产；可在 IMC 改绑） | 不配置 |
 | PreviousItem／NextItem | 不配置 | 十字键上／下 |
 | AdjustLeft／AdjustRight | 左／右箭头 | 十字键左／右 |
 | Confirm | 不配置 | A／底部面键 |
 | Favorite | F | X／左侧面键 |
 | ResetPage | R | Y／顶部面键 |
 | Back | Esc | B／右侧面键 |
-| ScrollUp／ScrollDown | 不配置，鼠标使用滚轮 | LT／RT |
-| PointerMove | 原生鼠标移动 | 左摇杆，Axis2D，带死区 |
-| PointerClick | 原生鼠标左键 | 右摇杆按下 |
+| ScrollUp／ScrollDown | 不配置，鼠标使用滚轮 | RS 上／下 |
+| 原生指针操作 | 鼠标移动、左键及滚轮 | 禁用虚拟光标；LS／摇杆按下不执行指针行为 |
 
-手柄按键文字以 Xbox 命名展示，其他设备的提示由现有统一系统转换。可以直接在 IMC_Settings 编辑这些默认映射。PreviousItem、NextItem、Confirm、ScrollUp、ScrollDown 与 PointerClick 为手柄操作，给它们添加键盘键也不会启用键鼠确认或项目导航。
+手柄按键文字以 Xbox 命名展示，其他设备的提示由现有统一系统转换。可以直接在 IMC_Settings 编辑这些默认映射。PreviousItem、NextItem、Confirm、ScrollUp、ScrollDown 为手柄操作，给它们添加键盘键也不会启用键鼠确认或项目导航。资产中原有 PointerMove／PointerClick 映射保留，但设置菜单不再读取或执行它们。
 
-提示栏随当前选中项目变化：开关、子菜单不显示减少／增加，手柄显示确认；选择、滑块不显示确认。选择的 AdjustLeft／AdjustRight 提示文字为“上一项／下一项”，滑块仍为“减少／增加”。这里选择候选的上一项／下一项仍使用 AdjustLeft／AdjustRight，手柄切换设置行的 PreviousItem／NextItem 独立保留。键鼠不显示确认或设置行导航；指针移动、点击和手柄上下滚动不占用提示栏，滚动操作仍保留。
+提示栏随当前选中项目变化：开关、子菜单不显示减少／增加，手柄显示确认；选择、滑块不显示确认。选择的 AdjustLeft／AdjustRight 提示文字为“上一项／下一项”，滑块仍为“减少／增加”。这里选择候选的上一项／下一项仍使用 AdjustLeft／AdjustRight，手柄切换设置行的 PreviousItem／NextItem 独立保留。键鼠不显示确认或设置行导航；指针移动、点击不占用提示栏；手柄按当前区域显示 RS 上／下滚动设置列表或说明提示；目标没有实际可滚动内容时隐藏，键鼠始终隐藏。
 
-主设置界面为键鼠和手柄显示“长按3秒重置当前页面”。`IA_SettingsResetPage` 默认绑定 R／Y，可在 IMC_Settings 编辑，Action 保持 Boolean，无需添加 Hold Trigger。持续按住对应按键或鼠标按住 Button_RestoreDefaults 满 3 秒才触发，每次长按只重置一次；短按及单击提示栏不会重置。只重置当前页面包含的设置，始终保留语言；收藏页也遵守此规则，不清空收藏。切换页面、进入二级菜单或失去输入权限会取消当前长按，需要松开重新按住。此操作不会隐藏鼠标，二级菜单不显示或接受该页面操作。
+主设置界面为键鼠和手柄显示“长按3秒重置当前页面”。`IA_SettingsResetPage` 默认绑定 R／Y，可在 IMC_Settings 编辑，Action 保持 Boolean，无需添加 Hold Trigger。左侧选中分类后即可长按，中栏也可使用，不必先按 A。持续按住对应按键或鼠标按住 Button_RestoreDefaults 满 3 秒才触发，每次长按只重置一次；短按及单击提示栏不会重置。只重置当前页面包含的非子菜单设置，始终保留语言；收藏页只重置其中设置，不清空收藏。恢复结果通过 ApplyDraftForSettings 单独应用并保存，对应草稿清除；其他项目的草稿不提交。之后放弃其他更改不会撤销已完成的恢复。显示模式恢复仍走 Keep/Revert 与 15 秒超时回退。切换页面、进入二级菜单或失去输入权限会取消当前长按，需要松开重新按住；二级菜单不显示或接受该页面操作。光标显隐继续按当前输入设备决定。
 
 重置按钮进度由 C++ 驱动，不需要创建蓝图 Widget Animation。优先使用菜单蓝图中名为 ProgressBar_ResetHold 的 Progress Bar（勾选 Is Variable，并编译保存蓝图），保留它的颜色、Brush、填充样式、Padding 与布局；C++ 只更新 Percent，并设置为不拦截点击。手动控件的 Bar Fill Type 请设为 Left to Right。找不到控件时，系统才自动在 Button_RestoreDefaults 内包裹 Overlay：底层是左到右填充的 ProgressBar_ResetHold，上层保留原有内容和文字，填充覆盖按钮内部全宽。Settings／Style 中的 ResetHoldFillColor 只控制自动生成版本。自定义外观时把进度层放在按钮背景之上、文字之下，横纵 Fill、Padding=0；不要放在文字上方或添加不透明的前景背景遮挡进度。
 
@@ -599,7 +598,7 @@ Choice 默认候选数组：
 
 滑块支持长按 IMC 中的 AdjustLeft／AdjustRight：按下立即调整一次，持续按住 0.35 秒后每 0.08 秒调整一次，使用设置定义的 Step，并限制在 1–100。键盘和手柄均支持；松开、切换选中项、失去输入权限或同时按住两个方向时停止连续调整。选择类型只在按下时切换一次，不连续循环。
 
-| 类型 | 大按钮点击（鼠标／手柄指针） | 手柄确认 | 减少／增加 |
+| 类型 | 大按钮点击（真实鼠标） | 手柄确认 | 减少／增加 |
 | --- | --- | --- | --- |
 | Toggle | 切换开关 | 切换当前开关 | 无效 |
 | Choice | 只选中，不改值 | 不改值 | 切换当前候选；也可点箭头 |
@@ -608,13 +607,17 @@ Choice 默认候选数组：
 
 所有设置行取消按钮按下／悬停的默认深色效果，保留 Normal 外观。行选中使用 Image_Highlight，建议四种行模板都包含这个控件；左侧页面按钮则由 C++ 将当前页背景设为蓝色，其余页恢复原背景色。不要在蓝图点击事件里另行改变按钮颜色或设置值。
 
-仅在手柄执行上一页、下一页、上一项、下一项时隐藏鼠标，并关闭悬停选择，防止旧鼠标位置覆盖导航选择。手柄摇杆移动指针后恢复鼠标显示和悬停选择；输入设备切换为键鼠时也立即恢复显示。键鼠翻页不会隐藏鼠标。增减、确认、收藏和滚动不主动改变指针显隐。
+输入设备切换为手柄时立即隐藏鼠标并关闭悬停选择，保持原来选中的分类或设置项。设置菜单禁用虚拟光标消费者，LS／摇杆按下不能移动或点击隐藏指针。切回键鼠时立即显示鼠标，由 PC 将光标放到当前选中分类或设置行的中心；之后继续支持真实鼠标悬停、点击与滚轮。暂停菜单采用相同设备切换规则，手柄通过原有 IMC_UI 上下导航、确认和返回；切回键鼠时光标回到选中按钮。
 
 上一项／下一项选择中栏设置行，自动将目标行滚入可见区域；子标题不参与选择。减少、增加和收藏作用于当前选中行。悬停用于选中，点击大按钮还会执行表中的对应行为。
 
-手柄滚动根据指针位置选择中栏或右栏 ScrollBox，不主动改变选中项；持续按住会连续滚动。没有指向两栏之一时不滚动。建议将两个 ScrollBox 命名为 `ScrollBox_SettingsOptions` 和 `ScrollBox_Description`；旧模板未命名时，C++ 会沿 Box_SettingsOptions、Box_Description（或旧 Text_Description）的父容器查找最近的 ScrollBox，无需重新摆放布局。
+手柄 ScrollUp／ScrollDown（当前 IMC_Settings：RS 上／下）按当前操作区域选择目标：左侧分类栏操作时滚动中间设置列表；A 进入设置项区域后滚动右侧当前选中项的说明；B 返回分类后目标切回中间列表。没有实际溢出的目标不滚动，也不会回退滚动另一栏。滚动不要求指针悬停，不改变选中项；持续偏转连续滚动，松开停止。建议将两个 ScrollBox 命名为 `ScrollBox_SettingsOptions` 和 `ScrollBox_Description`；旧模板未命名时，C++ 会沿 Box_SettingsOptions、Box_Description（或旧 Text_Description）的父容器查找最近的 ScrollBox，无需重新摆放布局。
 
-运行检查：分别使用键鼠和手柄确认提示数量；手柄翻页／选项导航后，静止指针不得重新选择旧行；按键盘键应立即显示指针；移动摇杆后恢复悬停。把指针放在两栏中分别按 LT／RT，检查各自滚动；将 IMC 的一个按键改到其他键，检查旧键失效、新键和提示同步生效。
+RS 操作先修改受范围约束的目标偏移，再使用 FInterpTo 平滑趋近；原有首次步进与长按重复时序保留。WBP_SettingsMenu 的 Settings／Scroll → ScrollInterpolationSpeed 默认 12，可调滚动响应速度。切换区域、输入设备或失去授权时停止旧目标的插值，不修改物理 Held observation。
+
+设置的应用／放弃、错误和显示确认弹窗通过通用 Definition 的 `bAllowGamepadCursor=false` 同样禁用手柄指针；A/B 仍由 IMC_CommonDialog 对应 Slot 决定。真实鼠标可继续点击，切回键鼠时回到首个弹窗选项。其他调用者未声明此要求的通用弹窗保持原有指针行为。
+
+运行检查：键鼠切到手柄时指针立即消失且选择保留，LS 不移动隐藏指针；切回鼠标时指针落在选中项上，随后悬停、点击正常。暂停菜单同样检查。左侧分类栏中拨动 RS，检查只平滑滚动中间设置列表；A 进入右侧选项并选中长说明设置（例如鼠标相机灵敏度），拨动 RS 检查只平滑滚动说明及上下边界；B 返回后检查恢复列表滚动，短内容不显示滚动提示；将 IMC 的一个按键改到其他键，检查旧键失效、新键和提示同步生效。
 
 ## 22. 显示屏、显示模式、宽高比与分辨率
 
@@ -643,3 +646,26 @@ Choice 默认候选数组：
 4. 确认后退出并重新启动游戏，核对窗口位置、模式和分辨率；测试只有一块显示屏或断开原显示屏后的回落行为。
 
 新增硬件应用逻辑位于 TADisplaySettingsService；定义仍在 DA，当前值与确认快照仍由 TASettingsSubsystem 管理，UI 和输入继续使用现有设置行、IMC 与统一提示系统。增量资产脚本为 `Tools/Settings/add_display_settings_assets.py`，仅补充缺失项，不替换已编辑定义。
+
+## 设置手柄两区域导航（当前实现）
+
+所有操作键由 `IMC_Settings` / `IMC_CommonDialog` 的 resolved Action mappings 决定；菜单不判断具体物理按键名称。
+
+- 主菜单默认选中左侧收藏分类。左侧 PreviousItem / NextItem（默认十字键上下）切换分类；Confirm（A）进入右侧。LB/RB 不再绑定分类翻页。
+- 右侧上下选择设置项，左右调整选择或滑块；Confirm 保留开关和子菜单操作。Favorite（X）收藏/取消收藏。ResetPage（Y）在左侧分类和右侧设置区域均可长按 3 秒，独立应用并保存当前页默认设置，保留语言；左侧不处理调整与收藏操作。
+- 右侧 Back（B）在无草稿时直接返回左侧原分类；有草稿时使用现有通用弹窗，Slot 1（A）应用、Slot 2（B，当前实际 IMC）放弃，完成后返回左侧。显示模式修改仍保留原 Keep/Revert 确认流程，处理完成才返回。
+- 左侧 Back 关闭设置。键鼠原有翻页、悬停、点击、应用/退出流程保留；二级菜单退出返回父菜单右侧。
+- 两区域是 Widget 内的业务选择状态，不增加 Router 模式或额外 Slate Focus 写入。所有操作仍须通过当前 owner、精确 handle 和 capability 授权。
+- 提示栏按当前区域与设置项生成，支持简中、繁中、英文。设备切到手柄立即关闭指针及悬停选行；Confirm 只执行当前区域的导航或业务行为，不合成指针点击。
+- 键位录入的取消键改为 `IA_SettingsCancelCapture`（默认 Esc / Start），可编辑 IMC，不再硬编码物理取消键。录入中的任意新按键属于待绑定数据，不能先由旧 mapping 限制。
+
+自动化覆盖区域切换、草稿应用/放弃、干净返回、覆盖 owner 拒绝、IMC 改绑、弹窗 A/B slot 解析；交互式 PIE 需验证真实高亮、弹窗、显示确认及混用指针。
+
+### 本轮收尾与验证（2026-10-11）
+
+- Editor Development 编译、`git diff --check` 通过。只读资产验证确认当前 IMC、弹窗 A/B/X/Y Slot 和 Widget 模板引用正确，命令退出 0；日志 `Saved/Logs/SettingsWrapUpAssetVerify.log`。
+- 最近一次 42 项回归：30 项 clean success、11 项带 warning success、1 项既有 `TheAwakening.Puzzle.Scope` failure；报告 `Saved/Automation/SettingsTwoAreaRegression/index.json`。不是全量全部通过。
+- 全量 43 项曾被旧 `Settings.EnglishLayout` 夹具空按钮读取阻断（`TASettingsEnglishLayoutTests.cpp:106`）。该测试未删除或弱化，后续 42 项运行明确未包含它；需要单独适配当前资产。Puzzle.Scope 继续按已登记延期事项处理。
+- MenuInput / CommonDialog / Drafts 覆盖两区域导航、IMC 改绑、覆盖 owner 拒绝、弹窗 Slot、RS 插值与目标取消、设置／暂停禁用虚拟指针、选中控件回位目标、左栏长按恢复、短按无效、单次长按只执行一次、配置落盘、放弃不撤销恢复、其他分类及显示草稿不提交、语言保留。
+- 用户允许本段收尾；自动化不证明真实鼠标回位、高亮和插值手感。真实窗口中的关闭／重开、设备混用及显示模式 Keep/Revert/超时没有本轮逐项人工 PASS 记录，不将其写为已验证。
+- 已移除本轮一次性 IMC 迁移脚本；正式创建／验证工具保留，创建工具不再生成无消费者的 PointerMove／PointerClick。既有资产与映射不删除，避免扩大到序列化引用迁移；设置运行路径不消费它们。未清空 Saved／Intermediate／DDC，未创建 commit。

@@ -24,5 +24,9 @@ public:
  virtual bool IsCapturingPlayerInput() const { return false; }
  virtual bool CapturePlayerInput(FKey Key, bool bRepeat) { return false; }
  virtual bool ShouldShowPlayerCursor() const { return true; }
+ /** Consumer policy; physical stick observation is unaffected. */
+ virtual bool AllowsVirtualCursor() const { return true; }
+ /** Optional selected control for returning from directional navigation to a real pointer. */
+ virtual UWidget* GetPlayerPointerTarget() const { return nullptr; }
  virtual void NotifyPlayerPointerMoved() {}
 };

@@ -57,11 +57,11 @@ bool UTAKeyBindingsMenuWidget::CapturePlayerInput(FKey Key,bool Repeat)
 {
  if (!IsCapturingPlayerInput() || !Allows(ETAInputCapability::CaptureBinding)) return false;
  if (Repeat) return true;
- if (Key==EKeys::LeftMouseButton && Button_CancelCapture && Button_CancelCapture->IsVisible() &&
+ if (Key.IsMouseButton() && Button_CancelCapture && Button_CancelCapture->IsVisible() &&
   FSlateApplication::IsInitialized() && Button_CancelCapture->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos()))
  { CancelCapture(); return true; }
- // A dedicated cancellation key stays available even when the menu mappings change.
- if (Key==EKeys::Escape || Key==EKeys::Gamepad_Special_Right) { CancelCapture(); return true; }
+ // Cancellation is a logical action too; respect its current resolved IMC binding.
+ if (InputController.IsValid() && InputController->IsKeyMappedToAction(Key,InputController->GetSettingsAction(TEXT("CancelCapture")))) { CancelCapture(); return true; }
  if (!BindingService) { CancelCapture(); return true; }
  FString Error; const FName Id=CapturingId;
  if (BindingService->Rebind(Id,Key,Error)) { CapturingId=NAME_None; StatusTextId=TEXT("Settings.Binding.Success"); }

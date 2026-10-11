@@ -47,6 +47,8 @@ public:
  UFUNCTION(BlueprintPure,Category="Settings|Draft") bool IsSettingDirty(FName Id) const;
  UFUNCTION(BlueprintPure,Category="Settings|Draft") bool HasDraftChanges() const;
  UFUNCTION(BlueprintCallable,Category="Settings|Draft") bool ApplyDraft();
+ // Commit only these settings; leave unrelated edits in the same session pending.
+ bool ApplyDraftForSettings(const TArray<FName>& SettingIds);
  UFUNCTION(BlueprintCallable,Category="Settings|Draft") void DiscardDraft();
  void StageDefault(FName Id);
  UPROPERTY(BlueprintAssignable) FTASettingsVideoResolved OnVideoModeResolved;
