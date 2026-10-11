@@ -19,6 +19,7 @@ class UTextBlock;
 class UButton;
 class UScrollBox;
 class UProgressBar;
+class UTACommonDialogWidget;
 UCLASS(Abstract,Blueprintable)
 class THE_AWAKENING_API UTASettingsMenuWidget : public UUserWidget, public ITAPlayerInputReceiver
 {
@@ -36,6 +37,7 @@ public:
  void SetPlayerInputRequest(AThe_AwakeningPlayerController* PC,FTAInputRouter::FHandle Handle);
  UWidget* GetInitialFocusTarget() const;
  UFUNCTION(BlueprintCallable,Category="Settings") void SelectPage(FName PageId);
+ void RequestClose();
 protected:
  virtual void NativeConstruct() override;
  virtual void NativeDestruct() override;
@@ -63,6 +65,8 @@ protected:
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Title;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UVerticalBox> Box_Pages;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_RestoreDefaults;
+ UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_ApplySettings;
+ UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ApplySettings;
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> Text_RestoreDefaults;
  /** Optional authored overlay, below the reset label and above its background. */
  UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UProgressBar> ProgressBar_ResetHold;
@@ -92,6 +96,18 @@ protected:
  void SelectRow(int32 Index);
  void EnsureRowSelection();
 private:
+ enum class EPendingExit : uint8 { None,Page,Submenu,Close };
+ EPendingExit PendingExit=EPendingExit::None;
+ FName PendingTarget;
+ bool bVideoDialog=false;
+ UPROPERTY(Transient) TObjectPtr<UTACommonDialogWidget> ActiveDialog;
+ void RequestExit(EPendingExit Kind,FName Target=NAME_None);
+ void CompleteExit();
+ void ShowVideoDialog();
+ void ApplyDraftAndContinue();
+ UFUNCTION() void ApplyChanges();
+ UFUNCTION() void DialogResult(FName Result);
+ UFUNCTION() void VideoResolved(bool bKept);
  bool UsesEnglishLayout() const;
  void ApplyLanguageLayout(bool bEnglish);
  struct FFooterLayout { FMargin OuterPadding; FMargin ContentPadding; EVerticalAlignment Vertical; };
@@ -145,6 +161,7 @@ private:
  FTASettingsResetHold ResetHold;
  bool bResetHoldArmed=false;
  bool bGeneratedResetHoldVisual=false;
+ float DisplayRefreshDelay=0;
  FTAInputRouter::FHandle InputRequestHandle=0;
 };
 UCLASS(Abstract,Blueprintable)

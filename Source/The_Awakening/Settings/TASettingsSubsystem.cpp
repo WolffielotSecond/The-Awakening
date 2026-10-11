@@ -65,16 +65,24 @@ bool UTASettingsSubsystem::GetValue(FName Id,int32& Out) const
 }
 bool UTASettingsSubsystem::SetValue(FName Id,int32 Value)
 {
- const auto* D=FindDefinition(Id); int32 N=0;
+ const auto* Found=FindDefinition(Id); int32 N=0;
+ if (!Found) return false;
+ // A display change rebuilds candidate arrays. Keep the requested definition stable.
+ const FTASettingDefinition Definition=*Found;
+ const auto* D=&Definition;
  if (!D || !D->Normalize(Value,N)) return false;
  const auto Policy=D->ApplyPolicy;
+ if (FTADisplaySettingsService::IsVideoSetting(D->ApplyHandlerId))
+ { int32 Existing=0; if (GetValue(Id,Existing) && Existing==N) return true; }
  if (Policy==ETASettingApplyPolicy::VideoMode && !HasPendingVideoMode())
  {
   auto* U=UGameUserSettings::GetGameUserSettings(); if (!U) return false;
-  PreviousResolution=U->GetScreenResolution(); PreviousWindowMode=U->GetFullscreenMode(); VideoDeadline=FPlatformTime::Seconds()+15;
+  const auto Monitors=FTADisplaySettingsService::GetMonitors();
+  PreviousDisplayState=FTADisplaySettingsService::GetCurrentState(Monitors); VideoDeadline=FPlatformTime::Seconds()+15;
  }
  if (!FTASettingsApplyService::Apply(GetLocalPlayer(),*D,N)) { if (Policy==ETASettingApplyPolicy::VideoMode) RevertVideoMode(); return false; }
  CurrentValues.Add(Id,N);
+ if (FTADisplaySettingsService::IsVideoSetting(D->ApplyHandlerId)) RefreshDisplayCandidates();
  int32 Display=0;
  if (!HasPendingVideoMode() && FTASettingsApplyService::ReadDisplayValue(*D,Display))
   if (auto* U=UGameUserSettings::GetGameUserSettings()) U->SaveSettings();
@@ -110,17 +118,34 @@ void UTASettingsSubsystem::ConfirmVideoMode()
 {
  if (!HasPendingVideoMode()) return; VideoDeadline=0;
  if (auto* U=UGameUserSettings::GetGameUserSettings()) { U->ConfirmVideoMode(); U->SaveSettings(); }
- SaveValues(); NotifyVideoValues();
+ SaveValues(); NotifyVideoValues(); OnVideoModeResolved.Broadcast(true);
 }
 void UTASettingsSubsystem::RevertVideoMode()
 {
  if (!HasPendingVideoMode()) return; VideoDeadline=0;
  if (auto* U=UGameUserSettings::GetGameUserSettings())
- { U->SetScreenResolution(PreviousResolution); U->SetFullscreenMode(static_cast<EWindowMode::Type>(PreviousWindowMode)); U->ApplyResolutionSettings(false); U->SaveSettings(); }
- SaveValues(); NotifyVideoValues();
+ { FTADisplaySettingsService::ApplyState(PreviousDisplayState); U->SaveSettings(); }
+ RefreshDisplayCandidates();
+ SaveValues(); NotifyVideoValues(); OnVideoModeResolved.Broadcast(false);
 }
 void UTASettingsSubsystem::NotifyVideoValues()
-{ OnSettingValueChanged.Broadcast(TEXT("Display.WindowMode")); OnSettingValueChanged.Broadcast(TEXT("Display.Resolution")); }
+{ for (const FName Id:{FName(TEXT("Display.Monitor")),FName(TEXT("Display.WindowMode")),FName(TEXT("Display.AspectRatio")),FName(TEXT("Display.Resolution"))}) OnSettingValueChanged.Broadcast(Id); }
+void UTASettingsSubsystem::RefreshDisplayCandidates()
+{
+ const auto Monitors=FTADisplaySettingsService::GetMonitors();
+ const auto State=FTADisplaySettingsService::GetCurrentState(Monitors);
+ bool Changed=LastDisplayState.MonitorId!=State.MonitorId || LastDisplayState.Resolution!=State.Resolution || LastDisplayState.WindowMode!=State.WindowMode;
+ LastDisplayState=State;
+ for (auto& D:Definitions)
+ {
+  TArray<FName> Before; for (const auto& C:D.Choices) Before.Add(C.Value);
+  FTADisplaySettingsService::RefreshDefinition(D,Monitors,State);
+  TArray<FName> After; for (const auto& C:D.Choices) After.Add(C.Value);
+  Changed|=Before!=After;
+ }
+ if (bEditing) RefreshEditableDefinitions();
+ if (Changed) NotifyVideoValues();
+}
 void UTASettingsSubsystem::CheckVideoModeTimeout() { if (HasPendingVideoMode() && FPlatformTime::Seconds()>=VideoDeadline) RevertVideoMode(); }
 int32 UTASettingsSubsystem::GetInteger(FName Id,int32 Fallback) const
 { int32 V; return GetValue(Id,V)?V:Fallback; }
@@ -141,7 +166,7 @@ FName UTASettingsSubsystem::GetChoice(FName Id,FName Fallback) const
 }
 FText UTASettingsSubsystem::FormatValue(const FTASettingDefinition& D) const
 {
- int32 V=0; if (!GetValue(D.SettingId,V)) return FText::GetEmpty();
+ const int32 V=GetEditableInteger(D.SettingId);
  const auto* GI=GetLocalPlayer()?GetLocalPlayer()->GetGameInstance():nullptr; const auto* Loc=GI?GI->GetSubsystem<UTALocalizeSubsystem>():nullptr;
  auto Text=[Loc](const FString& Id){return Loc?Loc->GetText(Id):FText::FromString(Id);};
  if (D.Type==ETASettingType::Toggle) return Text(V==1?TEXT("Settings.Value.On"):TEXT("Settings.Value.Off"));
@@ -149,6 +174,12 @@ FText UTASettingsSubsystem::FormatValue(const FTASettingDefinition& D) const
  {
   if (!D.Choices.IsValidIndex(V)) return FText::GetEmpty();
   const auto& C=D.Choices[V];
+  if (D.ChoiceProviderId==TEXT("DisplayMonitors"))
+  {
+   const auto Monitors=FTADisplaySettingsService::GetMonitors();
+   const auto* Monitor=Monitors.FindByPredicate([&](const auto& M){return M.Id==C.Value;});
+   if (Monitor) return FText::Format(Text(TEXT("Settings.Format.Monitor")),FText::AsNumber(V+1),Monitor->Id==TEXT("Primary")?Text(TEXT("Settings.Value.PrimaryDisplay")):FText::FromString(Monitor->Name));
+  }
   return !C.NameTextId.IsEmpty()?Text(C.NameTextId):FText::FromName(C.Value);
  }
  if (D.Type!=ETASettingType::Slider) return FText::GetEmpty();
@@ -196,4 +227,112 @@ void UTASettingsSubsystem::SaveValues() const
  }
  TArray<FString> Favorites; for(FName Id:FavoriteSettingIds) Favorites.Add(Id.ToString()); Favorites.Sort();
  GConfig->SetArray(PlayerSettingsConfigSection,TEXT("Favorites"),Favorites,GGameUserSettingsIni); GConfig->Flush(false,GGameUserSettingsIni);
+}
+
+void UTASettingsSubsystem::BeginEditing()
+{
+ if (bEditing) return;
+ bEditing=true; DraftValues.Reset(); DraftChoices.Reset(); bDraftVideo=false;
+ RefreshEditableDefinitions();
+}
+void UTASettingsSubsystem::EndEditing()
+{ DiscardDraft(); bEditing=false; EditableDefinitions.Reset(); }
+void UTASettingsSubsystem::RefreshEditableDefinitions()
+{
+ EditableDefinitions=Definitions;
+ const auto Monitors=FTADisplaySettingsService::GetMonitors();
+ if (!bDraftVideo) DraftDisplayState=FTADisplaySettingsService::GetCurrentState(Monitors);
+ for (auto& D:EditableDefinitions) FTADisplaySettingsService::RefreshDefinition(D,Monitors,DraftDisplayState);
+}
+const FTASettingDefinition* UTASettingsSubsystem::FindEditableDefinition(FName Id) const
+{ return GetEditableDefinitions().FindByPredicate([Id](const auto& D){return D.SettingId==Id;}); }
+int32 UTASettingsSubsystem::GetEditableInteger(FName Id,int32 Fallback) const
+{
+ if (!bEditing) return GetInteger(Id,Fallback);
+ const auto* D=FindEditableDefinition(Id); if (!D) return Fallback;
+ if (FTADisplaySettingsService::IsVideoSetting(D->ApplyHandlerId))
+  return FMath::Max(0,D->FindChoiceIndex(FTADisplaySettingsService::ReadChoice(D->ApplyHandlerId,FTADisplaySettingsService::GetMonitors(),DraftDisplayState)));
+ if (D->Type==ETASettingType::Choice)
+ {
+  const FName Choice=DraftChoices.Contains(Id)?DraftChoices.FindRef(Id):GetChoice(Id);
+  const int32 Index=D->FindChoiceIndex(Choice); return Index==INDEX_NONE?D->DefaultValue:Index;
+ }
+ return DraftValues.Contains(Id)?DraftValues.FindRef(Id):GetInteger(Id,Fallback);
+}
+bool UTASettingsSubsystem::IsSettingDirty(FName Id) const
+{
+ if (!bEditing) return false;
+ const auto* D=FindEditableDefinition(Id); if (!D || D->Type==ETASettingType::Submenu) return false;
+ if (D->Type==ETASettingType::Choice) return D->GetChoiceValue(GetEditableInteger(Id))!=GetChoice(Id);
+ return GetEditableInteger(Id)!=GetInteger(Id);
+}
+bool UTASettingsSubsystem::HasDraftChanges() const
+{ for (const auto& D:GetEditableDefinitions()) if (IsSettingDirty(D.SettingId)) return true; return false; }
+bool UTASettingsSubsystem::SetDraftValue(FName Id,int32 Value)
+{
+ if (!bEditing || HasPendingVideoMode()) return false;
+ const auto* Found=FindEditableDefinition(Id); int32 N=0; if (!Found || !Found->Normalize(Value,N)) return false;
+ const FTASettingDefinition D=*Found;
+ if (FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId))
+ {
+  FTADisplayState Target;
+  if (!FTADisplaySettingsService::BuildChange(D.ApplyHandlerId,D.GetChoiceValue(N),FTADisplaySettingsService::GetMonitors(),DraftDisplayState,Target)) return false;
+  DraftDisplayState=Target; bDraftVideo=true;
+  RefreshEditableDefinitions(); NotifyVideoValues();
+ }
+ else
+ {
+  DraftValues.Add(Id,N);
+  if (D.Type==ETASettingType::Choice) DraftChoices.Add(Id,D.GetChoiceValue(N));
+  if (!IsSettingDirty(Id)) { DraftValues.Remove(Id); DraftChoices.Remove(Id); }
+  OnSettingValueChanged.Broadcast(Id);
+ }
+ return true;
+}
+bool UTASettingsSubsystem::AdjustDraftValue(FName Id,int32 Dir)
+{
+ const auto* D=FindEditableDefinition(Id); if (!D || !Dir) return false;
+ int32 V=GetEditableInteger(Id);
+ if (D->Type==ETASettingType::Toggle) V=1-V;
+ else if (D->Type==ETASettingType::Slider) V+=D->Step*(Dir<0?-1:1);
+ else if (D->Type==ETASettingType::Choice && !D->Choices.IsEmpty()) V=(V+(Dir<0?-1:1)+D->Choices.Num())%D->Choices.Num();
+ else return false;
+ return SetDraftValue(Id,V);
+}
+void UTASettingsSubsystem::StageDefault(FName Id)
+{ if (const auto* D=FindEditableDefinition(Id)) SetDraftValue(Id,D->DefaultValue); }
+void UTASettingsSubsystem::DiscardDraft()
+{
+ DraftValues.Reset(); DraftChoices.Reset(); bDraftVideo=false;
+ if (bEditing) RefreshEditableDefinitions();
+ TArray<FName> Ids; for (const auto& D:Definitions) Ids.Add(D.SettingId);
+ for (FName Id:Ids) OnSettingValueChanged.Broadcast(Id);
+}
+bool UTASettingsSubsystem::ApplyDraft()
+{
+ if (!bEditing || HasPendingVideoMode()) return false;
+ // Copy definitions: language application invokes UI refresh synchronously.
+ const auto ToApply=EditableDefinitions;
+ bool VideoChanged=false;
+ for (const auto& D:ToApply)
+ {
+  if (!IsSettingDirty(D.SettingId)) continue;
+  if (FTADisplaySettingsService::IsVideoSetting(D.ApplyHandlerId)) { VideoChanged=true; continue; }
+  const int32 V=GetEditableInteger(D.SettingId);
+  if (!FTASettingsApplyService::Apply(GetLocalPlayer(),D,V)) { SaveValues(); return false; }
+  CurrentValues.Add(D.SettingId,V); DraftValues.Remove(D.SettingId); DraftChoices.Remove(D.SettingId);
+  OnSettingValueChanged.Broadcast(D.SettingId);
+ }
+ if (VideoChanged)
+ {
+  PreviousDisplayState=FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors());
+  if (!FTADisplaySettingsService::ApplyState(DraftDisplayState)) { SaveValues(); return false; }
+  VideoDeadline=FPlatformTime::Seconds()+15;
+ }
+ bDraftVideo=false; DraftValues.Reset(); DraftChoices.Reset();
+ RefreshDisplayCandidates(); SaveValues();
+ if (!HasPendingVideoMode()) if (auto* U=UGameUserSettings::GetGameUserSettings()) U->SaveSettings();
+ TArray<FName> Ids; for (const auto& D:Definitions) Ids.Add(D.SettingId);
+ for (FName Id:Ids) OnSettingValueChanged.Broadcast(Id);
+ return true;
 }

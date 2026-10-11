@@ -19,6 +19,7 @@ class THE_AWAKENING_API UTASettingRowWidget : public UTASelectableMenuOptionWidg
 public:
  void Configure(const FTASettingDefinition& Definition,FText Name,FText Value,int32 Number,bool bFavorite,bool bEnglishLayout=false);
  void SetHighlighted(bool B);
+ void SetDirty(bool bDirty);
  UFUNCTION(BlueprintPure,Category="Settings") FName GetSettingId() const { return Definition.SettingId; }
  UWidget* GetFocusTarget() const;
  UPROPERTY(BlueprintAssignable) FTASettingRowActivated OnActivated;
@@ -26,6 +27,8 @@ public:
  UPROPERTY(BlueprintAssignable) FTASettingRowAdjusted OnAdjusted;
  UPROPERTY(BlueprintAssignable) FTASettingRowNumberChanged OnNumberChanged;
 protected:
+ /** Synthetic italic also works with Chinese fonts lacking an Italic face. Degrees. */
+ UPROPERTY(EditDefaultsOnly,Category="Settings|Style") float DirtyTitleShear=-12.f;
  virtual void NativeOnInitialized() override;
  // Assign both textures in the row Blueprint to show a clickable star in either state.
  UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Settings|Favorite") TObjectPtr<UTexture2D> FavoriteIconTexture;
@@ -59,6 +62,7 @@ private:
  UFUNCTION() void NumberChanged(float Value);
  FTASettingDefinition Definition;
  bool bRefreshing=false;
+ TOptional<FWidgetTransform> AuthoredTitleTransform;
 };
 // Separate Blueprint templates can be assigned for each type, sharing the interaction contract.
 UCLASS(Abstract,Blueprintable) class THE_AWAKENING_API UTAToggleSettingRowWidget : public UTASettingRowWidget { GENERATED_BODY() };

@@ -1,5 +1,7 @@
 # 设置菜单：从零创建资产与接线
 
+> 新增的“草稿→应用”、离开确认、显示回退和可供全游戏复用的弹窗，按 [通用弹窗与设置应用搭建流程](CommonDialogSystem.md) 接线。下文旧的画面确认／还原按钮不再使用；调整和恢复默认改为暂存草稿，应用后才生效。
+
 按本文顺序在 Unreal 编辑器中新建数据资产和 Widget Blueprint，最后接入现有暂停菜单。C++ 负责生成页面、子标题、选项、输入交互与实际效果；你在 UMG 中设计布局和样式。
 
 ## 1. 准备目录与创建顺序
@@ -348,7 +350,7 @@ Populate Default Definitions 会重置 Definitions 及其目标 WBP 引用。首
 | 页面／子标题 | SettingId |
 | --- | --- |
 | 游戏／常规 | Game.Language、Game.DialogueTextSpeed |
-| 显示／画面 | Display.WindowMode、Display.Resolution、Display.VSync、Display.FrameRateLimit、Display.BrightnessMenu |
+| 显示／画面 | Display.Monitor、Display.WindowMode、Display.AspectRatio、Display.Resolution、Display.VSync、Display.FrameRateLimit、Display.BrightnessMenu |
 | 显示／信息显示 | Display.AdvancedData |
 | 鼠标与键盘／相机 | MouseKeyboard.CameraSensitivity、MouseKeyboard.InvertCameraX、MouseKeyboard.InvertCameraY |
 | 鼠标与键盘／按键绑定 | MouseKeyboard.KeyBindingsMenu |
@@ -505,7 +507,7 @@ Choice 默认候选数组：
 | Display.FrameRateLimit | 30、60、90、120、144、165、240、Unlimited | 1 |
 | Display.AdvancedData | Off、Basic、Full | 0 |
 
-每个候选含 Value 与 NameTextId；保存下标，实际效果使用 Value。分辨率由 ChoiceProviderId=ScreenResolutions 在启动时生成。
+每个候选含 Value 与 NameTextId；保存下标，实际效果使用 Value。显示屏、宽高比和分辨率由动态 Provider 生成，随当前显示屏与显示模式刷新，详见第 22 节。
 
 新增页面时，在 DA_SettingsPages 增加 PageId 和 Sections，再在三个本地化 JSON 中加入对应键，然后使用 Locations 勾选设置归属。例如：
 
@@ -537,16 +539,16 @@ Choice 默认候选数组：
 
 ## 20. 当前已创建的测试设置（暂不使用二级菜单）
 
-`/Game/Setting/DA_Settings` 已创建，包含 12 个实际设置；启动配置已指向它，玩家控制器 BP_ThirdPersonPlayerController 的 SettingsMenuWidgetClass 已指定 WBP_SettingsMenu。
+`/Game/Setting/DA_Settings` 已创建，初始 12 项测试设置已增量加入 4 项显示设置；启动配置已指向它，玩家控制器 BP_ThirdPersonPlayerController 的 SettingsMenuWidgetClass 已指定 WBP_SettingsMenu。
 
 | 页面 | 测试设置 |
 | --- | --- |
 | 游戏 | 语言（Choice）、对话文字速度（Slider） |
-| 显示 | 垂直同步（Toggle）、帧率上限（Choice）、高级数据显示模式（Choice） |
+| 显示 | 使用的显示屏、显示模式、宽高比、分辨率、帧率上限、高级数据显示模式（Choice），垂直同步（Toggle） |
 | 鼠标与键盘 | 相机灵敏度（Slider）、反转相机 X / Y（Toggle） |
 | 控制器 | 相机灵敏度（Slider）、反转相机 X / Y（Toggle）、菜单光标速度（Slider） |
 
-声音页保持空页，收藏页由系统生成。没有添加二级菜单入口，也没有窗口模式与分辨率项目；这批数据用于先验证普通设置行、收藏和三栏说明。
+声音页保持空页，收藏页由系统生成，没有添加二级菜单入口。这批数据用于验证普通设置行、显示参数联动、收藏和三栏说明。
 
 鼠标与键盘的相机灵敏度说明包含“文字 → 16:9 横图 → 补充文字 → 9:16 竖图”；控制器的相机灵敏度说明包含竖图。两张测试纹理位于 `/Game/Setting/TestImages`，用于检查图片是否始终占满右栏宽度且保持比例。
 
@@ -613,3 +615,31 @@ Choice 默认候选数组：
 手柄滚动根据指针位置选择中栏或右栏 ScrollBox，不主动改变选中项；持续按住会连续滚动。没有指向两栏之一时不滚动。建议将两个 ScrollBox 命名为 `ScrollBox_SettingsOptions` 和 `ScrollBox_Description`；旧模板未命名时，C++ 会沿 Box_SettingsOptions、Box_Description（或旧 Text_Description）的父容器查找最近的 ScrollBox，无需重新摆放布局。
 
 运行检查：分别使用键鼠和手柄确认提示数量；手柄翻页／选项导航后，静止指针不得重新选择旧行；按键盘键应立即显示指针；移动摇杆后恢复悬停。把指针放在两栏中分别按 LT／RT，检查各自滚动；将 IMC 的一个按键改到其他键，检查旧键失效、新键和提示同步生效。
+
+## 22. 显示屏、显示模式、宽高比与分辨率
+
+四项均使用现有 WBP_SettingChoice，已加入 `/Game/Setting/DA_Settings` 的显示／画面子标题，无需新增设置行蓝图。
+
+| SettingId | 名称 | ChoiceProviderId／候选 | ApplyPolicy |
+| --- | --- | --- | --- |
+| Display.Monitor | 使用的显示屏 | DisplayMonitors：连接设备；显示“序号 — 设备名称” | VideoMode |
+| Display.WindowMode | 显示模式 | Fullscreen、WindowedFullscreen、Windowed | VideoMode |
+| Display.AspectRatio | 宽高比 | DisplayAspectRatios：从所选设备和模式的可用分辨率归纳 | VideoMode |
+| Display.Resolution | 分辨率 | ScreenResolutions：按当前宽高比筛选 | VideoMode |
+
+存储仍为 Choice 数组下标。显示设置实际值以 GameUserSettings 和游戏窗口为准，运行时将设备 ID、模式、宽高比和分辨率重新映射到当前候选下标，避免把旧设备的下标直接套到新列表。显示屏选择通过窗口位置保存；确认前不持久化待定显示值。Windows 使用每个显示屏自己的系统显示模式列表，普通窗口模式补充不超过该桌面尺寸的常用窗口分辨率。
+
+切换显示屏尽量保留当前宽高比，再选择最接近当前像素数量的可用分辨率；目标显示屏不支持该宽高比时回落到接近目标桌面的分辨率。切换宽高比会筛选分辨率并同时应用最接近当前像素数量的候选。宽高比控制输出尺寸的比例，不是黑边或相机裁剪设置。21:9 包含常见的 2560×1080、3440×1440 等超宽尺寸。
+
+无边框全屏固定使用所选显示屏的桌面尺寸，因此宽高比、分辨率各只有一个候选。Choice 只有一个候选时左右箭头禁用；单显示屏设备的显示屏选择也一样。打开设置、改变显示参数，以及设置界面每秒刷新时都会同步动态候选；手动移动窗口到其他屏幕后也会更新选中显示屏。
+
+改变上述四项后沿用 15 秒确认机制：`Button_ConfirmVideoMode` 保留，`Button_RevertVideoMode` 回退；超时或关闭主设置菜单也回退。快照包含分辨率、模式、显示屏和窗口位置，多次连续修改共用修改前的快照。回退时原显示屏若已断开，会把窗口放到当前主显示屏。确认／回退按钮仍由你在蓝图中摆放，名称和类型保持为 Button。
+
+实际窗口移动和显示模式切换只针对 Standalone Game／打包游戏的游戏窗口，不移动编辑器窗口或嵌入式 PIE。请用 Standalone Game 验收：
+
+1. 切换显示屏，确认游戏窗口移到目标屏；分别点击保留、回退，并等待 15 秒验证超时恢复。
+2. 切换全屏、无边框全屏和窗口，核对候选值与实际窗口尺寸。
+3. 在全屏或窗口下选择另一宽高比，核对分辨率过滤和实际输出变化。
+4. 确认后退出并重新启动游戏，核对窗口位置、模式和分辨率；测试只有一块显示屏或断开原显示屏后的回落行为。
+
+新增硬件应用逻辑位于 TADisplaySettingsService；定义仍在 DA，当前值与确认快照仍由 TASettingsSubsystem 管理，UI 和输入继续使用现有设置行、IMC 与统一提示系统。增量资产脚本为 `Tools/Settings/add_display_settings_assets.py`，仅补充缺失项，不替换已编辑定义。

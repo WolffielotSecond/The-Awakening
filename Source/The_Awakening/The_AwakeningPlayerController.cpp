@@ -25,6 +25,7 @@
 #include "The_AwakeningCharacter.h"
 #include "UI/Pause/TAPauseMenuWidget.h"
 #include "Settings/TASettingsMenuWidget.h"
+#include "UI/TACommonDialog.h"
 #include "Settings/TASettingsSubsystem.h"
 #include "Settings/TAKeyBindingService.h"
 #include "InputMappingContext.h"
@@ -215,6 +216,10 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+ bClosePauseAfterSettings=false;
+ if (GetLocalPlayer()) if (auto* Dialogs=GetLocalPlayer()->GetSubsystem<UTACommonDialogSubsystem>())
+  if (auto* Dialog=Dialogs->GetActiveDialog()) Dialog->Dismiss();
+ CloseSettingsMenu(true);
 	if (GameCursor) { GameCursor->Shutdown(); GameCursor.Reset(); }
 	FTAInputRouter::FWinner BaseInputOwner;
 	SynchronizeUIInputMappingContext(BaseInputOwner);
@@ -404,6 +409,14 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 		{
    auto* Bindings=GetLocalPlayer()->GetSubsystem<UTAKeyBindingService>();
+   if (!CommonDialogInputMappingContext) CommonDialogInputMappingContext=DefaultCommonDialogContext.LoadSynchronous();
+   if (CommonDialogInputMappingContext && DialogActions.IsEmpty())
+   {
+    if (Bindings) CommonDialogInputMappingContext=Bindings->PrepareContext(CommonDialogInputMappingContext);
+    for (const auto& Mapping:CommonDialogInputMappingContext->GetMappings())
+     if (Mapping.Action && Mapping.Action->GetName().StartsWith(TEXT("IA_DialogOption")))
+      DialogActions.Add(FCString::Atoi(*Mapping.Action->GetName().RightChop(15)),const_cast<UInputAction*>(Mapping.Action.Get()));
+   }
    if (SettingsInputMappingContext && SettingsActions.IsEmpty())
    {
     if (Bindings) SettingsInputMappingContext=Bindings->PrepareContext(SettingsInputMappingContext);
@@ -589,7 +602,7 @@ bool AThe_AwakeningPlayerController::RoutePlayerInputKey(FKey Key, bool bRepeat,
   return Receiver->CapturePlayerInput(Key,bRepeat);
  }
 	// Back is a dedicated Enhanced Input action in the shared UI mapping context.
-	if (UIBackAction && IsKeyMappedToAction(Key, UIBackAction))
+	if (Receiver->UsesSharedBackAction() && UIBackAction && IsKeyMappedToAction(Key, UIBackAction))
 	{
 		// A held back key must not pop multiple nested menus as key-repeat events arrive.
 		if (bRepeat) return true;
@@ -730,9 +743,10 @@ void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAI
 		return;
 	}
 
-	const bool bShouldBeActive = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get()) != nullptr;
+	const bool DialogActive=Cast<UTACommonDialogWidget>(Winner.Request.Owner.Get())!=nullptr;
+ const bool bShouldBeActive = !DialogActive && Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get()) != nullptr;
 	const bool SettingsActive=Cast<UTASettingsMenuWidget>(Winner.Request.Owner.Get())!=nullptr;
-	if (bShouldBeActive == bUIInputMappingContextActive && SettingsActive==bSettingsInputMappingContextActive)
+	if (bShouldBeActive == bUIInputMappingContextActive && SettingsActive==bSettingsInputMappingContextActive && DialogActive==bDialogInputMappingContextActive)
 	{
 		return;
 	}
@@ -752,7 +766,13 @@ void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAI
 
 	FModifyContextOptions Options;
 	Options.bForceImmediately = true;
-	if (SettingsActive!=bSettingsInputMappingContextActive && SettingsInputMappingContext)
+	if (DialogActive!=bDialogInputMappingContextActive && CommonDialogInputMappingContext)
+ {
+  if (DialogActive) Subsystem->AddMappingContext(CommonDialogInputMappingContext,30,Options);
+  else Subsystem->RemoveMappingContext(CommonDialogInputMappingContext,Options);
+  bDialogInputMappingContextActive=DialogActive;
+ }
+ if (SettingsActive!=bSettingsInputMappingContextActive && SettingsInputMappingContext)
 	{
 		if (SettingsActive) Subsystem->AddMappingContext(SettingsInputMappingContext,20,Options);
 		else Subsystem->RemoveMappingContext(SettingsInputMappingContext,Options);
@@ -890,13 +910,21 @@ void AThe_AwakeningPlayerController::OpenSettingsMenu()
 	PauseMenuInstance->SetVisibility(ESlateVisibility::Collapsed);
 }
 
-void AThe_AwakeningPlayerController::CloseSettingsMenu()
+TSubclassOf<UTACommonDialogWidget> AThe_AwakeningPlayerController::GetCommonDialogWidgetClass() const
+{
+ if (CommonDialogWidgetClass) return CommonDialogWidgetClass;
+ if (auto* Class=DefaultCommonDialogClass.LoadSynchronous()) return Class;
+ return UTACommonDialogWidget::StaticClass();
+}
+void AThe_AwakeningPlayerController::CloseSettingsMenu(bool bForce)
 {
 	if (!SettingsMenuInstance) return;
+ if (!bForce) { SettingsMenuInstance->RequestClose(); return; }
 	// Restore the page before releasing Settings' request so focus can return to it.
 	if (PauseMenuInstance) PauseMenuInstance->SetVisibility(PauseVisibilityBeforeSettings);
 	SettingsMenuInstance->RemoveFromParent();
 	SettingsMenuInstance = nullptr;
+ if (bClosePauseAfterSettings) { bClosePauseAfterSettings=false; ClosePauseMenu(); }
 }
 
 void AThe_AwakeningPlayerController::ClosePauseMenu()
@@ -905,7 +933,7 @@ void AThe_AwakeningPlayerController::ClosePauseMenu()
 	{
 		return;
 	}
-	CloseSettingsMenu();
+ if (SettingsMenuInstance) { bClosePauseAfterSettings=true; CloseSettingsMenu(); return; }
 
 	const FTAInputRouter::FHandle Handle = PauseInputRequestHandle;
 	PauseInputRequestHandle = 0;

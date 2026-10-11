@@ -12,6 +12,14 @@
 #include "Components/CanvasPanel.h"
 #include "Components/Overlay.h"
 #include "Blueprint/WidgetTree.h"
+void UTASettingRowWidget::SetDirty(bool bDirty)
+{
+ if (!Text_Name) return;
+ if (!AuthoredTitleTransform.IsSet()) AuthoredTitleTransform=Text_Name->GetRenderTransform();
+ FWidgetTransform Transform=AuthoredTitleTransform.GetValue();
+ if (bDirty) Transform.Shear.X+=DirtyTitleShear;
+ Text_Name->SetRenderTransform(Transform);
+}
 void UTASettingRowWidget::NativeOnInitialized()
 {
  Super::NativeOnInitialized();
@@ -44,6 +52,9 @@ void UTASettingRowWidget::Configure(const FTASettingDefinition& D,FText Name,FTe
  const bool Adjustable=D.Type==ETASettingType::Choice || D.Type==ETASettingType::Slider;
  if (Button_Decrease) Button_Decrease->SetVisibility(Adjustable?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
  if (Button_Increase) Button_Increase->SetVisibility(Adjustable?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
+ const bool CanAdjust=D.Type!=ETASettingType::Choice || D.Choices.Num()>1;
+ if (Button_Decrease) Button_Decrease->SetIsEnabled(CanAdjust);
+ if (Button_Increase) Button_Increase->SetIsEnabled(CanAdjust);
  if (Slider_Value)
  {
   Slider_Value->SetVisibility(D.Type==ETASettingType::Slider?ESlateVisibility::Visible:ESlateVisibility::Collapsed);

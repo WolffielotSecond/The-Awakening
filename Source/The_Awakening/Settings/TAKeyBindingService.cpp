@@ -11,6 +11,8 @@ namespace
 {
  FName Group(const FString& Action,const FString& Context)
  {
+  if (Context==TEXT("IMC_CommonDialog")) return TEXT("Dialog");
+  if (Context==TEXT("IMC_Settings")) return TEXT("Settings");
   if (Context!=TEXT("IMC_UI")) return TEXT("Gameplay");
   if (Action.Contains(TEXT("Inventory"))) return TEXT("Inventory");
   if (Action.Contains(TEXT("Puzzle"))) return TEXT("Puzzle");
@@ -21,6 +23,7 @@ namespace
 bool UTAKeyBindingService::GroupsOverlap(FName A,FName B)
 {
  if (A==B) return true;
+ if (A==TEXT("Dialog") || B==TEXT("Dialog")) return false;
  return (A==TEXT("Menu") && B!=TEXT("Gameplay")) || (B==TEXT("Menu") && A!=TEXT("Gameplay"));
 }
 UInputMappingContext* UTAKeyBindingService::PrepareContext(UInputMappingContext* Source)

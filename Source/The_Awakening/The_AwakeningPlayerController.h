@@ -21,6 +21,7 @@ class SViewport;
 class FWidgetPath;
 class UTAPauseMenuWidget;
 class UTASettingsMenuWidget;
+class UTACommonDialogWidget;
 struct FInputActionValue;
 struct FInputKeyEventArgs;
 class FTAGameCursor;
@@ -91,7 +92,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Settings")
 	void OpenSettingsMenu();
 	UFUNCTION(BlueprintCallable, Category = "UI|Settings")
-	void CloseSettingsMenu();
+	void CloseSettingsMenu(bool bForce=false);
+ void CancelSettingsCloseRequest() { bClosePauseAfterSettings=false; }
+ UInputAction* GetDialogAction(int32 Slot) const { return DialogActions.FindRef(Slot); }
+ TSubclassOf<UTACommonDialogWidget> GetCommonDialogWidgetClass() const;
 	UInputAction* GetUIBackAction() const { return UIBackAction; }
 	UInputAction* GetPauseAction() const { return PauseAction; }
  UInputAction* GetSettingsAction(FName Name) const { return SettingsActions.FindRef(Name); }
@@ -130,6 +134,11 @@ protected:
 	TObjectPtr<UInputMappingContext> UIInputMappingContext;
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
 	TObjectPtr<UInputMappingContext> SettingsInputMappingContext;
+ UPROPERTY(EditAnywhere,Category="Input|Input Mappings") TObjectPtr<UInputMappingContext> CommonDialogInputMappingContext;
+ UPROPERTY() TSoftObjectPtr<UInputMappingContext> DefaultCommonDialogContext{FSoftObjectPath(TEXT("/Game/Input/IMC_CommonDialog.IMC_CommonDialog"))};
+ UPROPERTY() TSoftClassPtr<UTACommonDialogWidget> DefaultCommonDialogClass{FSoftObjectPath(TEXT("/Game/UI/Common/WBP_CommonDialog.WBP_CommonDialog_C"))};
+ UPROPERTY(EditAnywhere,Category="UI|Dialog") TSubclassOf<UTACommonDialogWidget> CommonDialogWidgetClass;
+ UPROPERTY(Transient) TMap<int32,TObjectPtr<UInputAction>> DialogActions;
 	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
 	TObjectPtr<UInputAction> UIBackAction;
 	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
@@ -190,6 +199,8 @@ private:
 	void SynchronizeUIInputMappingContext(const FTAInputRouter::FWinner& Winner);
 	bool bUIInputMappingContextActive = false;
 	bool bSettingsInputMappingContextActive = false;
+ bool bClosePauseAfterSettings=false;
+ bool bDialogInputMappingContextActive=false;
 	TOptional<FVector2D> LastVirtualCursorPosition;
 	// Lifecycle edge memory (loss notification/invalidation), never an authorization source.
 	TOptional<TAInputOwnershipAdapter::EState> LastDefinitiveInputOwnership;
@@ -199,6 +210,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTAExternalInputOwnershipTest;
 	friend class FTASettingsMenuInputTest;
+ friend class FTASettingsDialogTest;
 	friend class FTAHeldObservationLifecycleTest;
 	friend class FTAVirtualCursorAxesTest;
 	friend class FTASyntheticClickSurfaceTest;

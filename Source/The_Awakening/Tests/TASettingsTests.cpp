@@ -2,6 +2,8 @@
 #include "Misc/AutomationTest.h"
 #include "Settings/TASettingsTypes.h"
 #include "Settings/TASettingsSubsystem.h"
+#include "UI/TACommonDialog.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/FileManager.h"
 #include "Algo/Reverse.h"
@@ -33,6 +35,7 @@
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
 #include "Brushes/SlateColorBrush.h"
+#include "Settings/TADisplaySettingsService.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsCatalogTest,"TheAwakening.Settings.CatalogValidation",
  EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
@@ -202,6 +205,8 @@ bool FTASettingsBindingTest::RunTest(const FString&)
  TestTrue(TEXT("Shared menu actions overlap dialogue"),UTAKeyBindingService::GroupsOverlap(TEXT("Menu"),TEXT("Dialogue")));
  TestFalse(TEXT("Gameplay and dialogue may share keys"),UTAKeyBindingService::GroupsOverlap(TEXT("Gameplay"),TEXT("Dialogue")));
  TestFalse(TEXT("Inventory and puzzle are exclusive"),UTAKeyBindingService::GroupsOverlap(TEXT("Inventory"),TEXT("Puzzle")));
+ TestFalse(TEXT("Dialog and settings may reuse keys"),UTAKeyBindingService::GroupsOverlap(TEXT("Dialog"),TEXT("Settings")));
+ TestFalse(TEXT("Dialog and shared menu are exclusive"),UTAKeyBindingService::GroupsOverlap(TEXT("Dialog"),TEXT("Menu")));
  return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsStateTest,"TheAwakening.Settings.StatePersistence",
@@ -312,41 +317,41 @@ bool FTASettingsMenuInputTest::RunTest(const FString&)
  TestEqual(TEXT("Authored border padding survives initialization"),AuthoredProgress->GetBorderPadding(),FVector2D(7,9));
  TestTrue(TEXT("Authored fill style survives initialization"),AuthoredProgress->GetBarFillStyle()==EProgressBarFillStyle::Mask);
  auto* State=NewObject<UTASettingsSubsystem>(Local); State->Definitions=FTASettingsCatalog::Build(State);
- Menu->SettingsSubsystem=State;
+ Menu->SettingsSubsystem=State; State->BeginEditing();
  TestTrue(TEXT("Scroll up remains hidden from prompts"),Menu->GetSettingCommandTextId(TEXT("ScrollUp")).IsEmpty());
  TestTrue(TEXT("Scroll down remains hidden from prompts"),Menu->GetSettingCommandTextId(TEXT("ScrollDown")).IsEmpty());
  TestEqual(TEXT("Main page exposes reset prompt"),Menu->GetSettingCommandTextId(TEXT("ResetPage")),FString(TEXT("UI_Settings_ResetPage")));
  State->SetValue(TEXT("Display.AdvancedData"),0);
  Menu->SelectedSettingId=TEXT("Display.AdvancedData"); Menu->ConfirmSelection();
- TestEqual(TEXT("Choice confirm does not change its value"),State->GetInteger(Menu->SelectedSettingId),0);
- Menu->AdjustSelectedValue(1); TestEqual(TEXT("Choice increase changes the index"),State->GetInteger(Menu->SelectedSettingId),1);
+ TestEqual(TEXT("Choice confirm does not change its value"),State->GetEditableInteger(Menu->SelectedSettingId),0);
+ Menu->AdjustSelectedValue(1); TestEqual(TEXT("Choice increase changes the index"),State->GetEditableInteger(Menu->SelectedSettingId),1);
  Menu->SelectedSettingId=TEXT("Controller.InvertCameraX"); State->SetValue(Menu->SelectedSettingId,0);
- Menu->AdjustSelectedValue(1); TestEqual(TEXT("Increase cannot toggle a switch"),State->GetInteger(Menu->SelectedSettingId),0);
- Menu->ConfirmSelection(); TestEqual(TEXT("Confirm toggles a switch"),State->GetInteger(Menu->SelectedSettingId),1);
+ Menu->AdjustSelectedValue(1); TestEqual(TEXT("Increase cannot toggle a switch"),State->GetEditableInteger(Menu->SelectedSettingId),0);
+ Menu->ConfirmSelection(); TestEqual(TEXT("Confirm toggles a switch"),State->GetEditableInteger(Menu->SelectedSettingId),1);
  Menu->SelectedSettingId=TEXT("MouseKeyboard.CameraSensitivity"); State->SetValue(Menu->SelectedSettingId,66);
- Menu->ConfirmSelection(); TestEqual(TEXT("Slider confirm does not change its value"),State->GetInteger(Menu->SelectedSettingId),66);
- Menu->AdjustSelectedValue(-1); TestEqual(TEXT("Slider decrease changes the position"),State->GetInteger(Menu->SelectedSettingId),65);
+ Menu->ConfirmSelection(); TestEqual(TEXT("Slider confirm does not change its value"),State->GetEditableInteger(Menu->SelectedSettingId),66);
+ Menu->AdjustSelectedValue(-1); TestEqual(TEXT("Slider decrease changes the position"),State->GetEditableInteger(Menu->SelectedSettingId),65);
  TestTrue(TEXT("Slider has no Confirm prompt"),Menu->GetSettingCommandTextId(TEXT("Confirm")).IsEmpty());
  TestEqual(TEXT("Slider keeps decrease label"),Menu->GetSettingCommandTextId(TEXT("AdjustLeft")),FString(TEXT("UI_Settings_AdjustLeft")));
  Menu->ExecuteSettingsAction(TEXT("AdjustRight"),false);
  Menu->TickSliderAdjustment(0.2f,false,true);
- TestEqual(TEXT("Slider waits before repeating"),State->GetInteger(Menu->SelectedSettingId),66);
+ TestEqual(TEXT("Slider waits before repeating"),State->GetEditableInteger(Menu->SelectedSettingId),66);
  Menu->TickSliderAdjustment(0.2f,false,true);
- TestEqual(TEXT("Held slider increases after delay"),State->GetInteger(Menu->SelectedSettingId),67);
+ TestEqual(TEXT("Held slider increases after delay"),State->GetEditableInteger(Menu->SelectedSettingId),67);
  Menu->TickSliderAdjustment(0.08f,false,true);
- TestEqual(TEXT("Held slider continues increasing"),State->GetInteger(Menu->SelectedSettingId),68);
+ TestEqual(TEXT("Held slider continues increasing"),State->GetEditableInteger(Menu->SelectedSettingId),68);
  Menu->TickSliderAdjustment(1.f,false,false);
- TestEqual(TEXT("Release stops slider repeat"),State->GetInteger(Menu->SelectedSettingId),68);
+ TestEqual(TEXT("Release stops slider repeat"),State->GetEditableInteger(Menu->SelectedSettingId),68);
  Menu->ExecuteSettingsAction(TEXT("AdjustLeft"),false); Menu->TickSliderAdjustment(0.36f,true,false);
- TestEqual(TEXT("Held slider also decreases"),State->GetInteger(Menu->SelectedSettingId),66);
+ TestEqual(TEXT("Held slider also decreases"),State->GetEditableInteger(Menu->SelectedSettingId),66);
  Menu->TickSliderAdjustment(1.f,true,true);
- TestEqual(TEXT("Opposite held inputs cancel repeat"),State->GetInteger(Menu->SelectedSettingId),66);
+ TestEqual(TEXT("Opposite held inputs cancel repeat"),State->GetEditableInteger(Menu->SelectedSettingId),66);
  Menu->SelectedSettingId=TEXT("Display.AdvancedData");
  TestEqual(TEXT("Choice uses previous item label"),Menu->GetSettingCommandTextId(TEXT("AdjustLeft")),FString(TEXT("UI_Settings_PreviousChoice")));
  TestEqual(TEXT("Choice uses next item label"),Menu->GetSettingCommandTextId(TEXT("AdjustRight")),FString(TEXT("UI_Settings_NextChoice")));
  TestTrue(TEXT("Choice has no Confirm prompt"),Menu->GetSettingCommandTextId(TEXT("Confirm")).IsEmpty());
  Menu->TickSliderAdjustment(1.f,true,false);
- TestEqual(TEXT("Held adjustment never repeats Choice"),State->GetInteger(Menu->SelectedSettingId),1);
+ TestEqual(TEXT("Held adjustment never repeats Choice"),State->GetEditableInteger(Menu->SelectedSettingId),1);
  for (FName Id:{FName(TEXT("Controller.InvertCameraX")),FName(TEXT("Controller.KeyBindingsMenu"))})
  {
   Menu->SelectedSettingId=Id;
@@ -360,14 +365,46 @@ bool FTASettingsMenuInputTest::RunTest(const FString&)
  {
   const auto* Definition=State->FindDefinition(Id);
   const auto RowClass=Menu->RowWidgetClasses.FindChecked(Definition->Type);
-  auto* Row=CreateWidget<UTASettingRowWidget>(PC,RowClass); Row->Configure(*Definition,FText::GetEmpty(),FText::GetEmpty(),State->GetInteger(Id),false);
+  auto* Row=CreateWidget<UTASettingRowWidget>(PC,RowClass); Row->Configure(*Definition,FText::GetEmpty(),FText::GetEmpty(),State->GetEditableInteger(Id),false);
   Menu->Rows.Add(Row);
   if (auto* Button=Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Option"))))
    TestTrue(TEXT("Setting buttons have no pressed darkening"),Button->GetStyle().Pressed==Button->GetStyle().Normal);
+  if (auto* Title=Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Name"))))
+  {
+   const auto Before=Title->GetRenderTransform(); Row->SetDirty(true);
+   TestTrue(TEXT("Dirty titles are italic even without an italic font face"),Title->GetRenderTransform().Shear.X!=Before.Shear.X);
+   Row->SetDirty(false); TestTrue(TEXT("Clean title restores authored transform"),Title->GetRenderTransform()==Before);
+  }
  }
  Menu->RestoreCurrentDefaults();
- TestEqual(TEXT("Page reset preserves the selected language"),State->GetInteger(TEXT("Game.Language")),2);
- TestEqual(TEXT("Page reset still restores other settings"),State->GetInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ TestEqual(TEXT("Page reset preserves the selected language"),State->GetEditableInteger(TEXT("Game.Language")),2);
+ TestEqual(TEXT("Page reset still restores other settings"),State->GetEditableInteger(TEXT("MouseKeyboard.CameraSensitivity")),State->FindDefinition(TEXT("MouseKeyboard.CameraSensitivity"))->DefaultValue);
+ const FName InitialPage=Menu->CurrentPageId;
+ State->SetDraftValue(TEXT("Controller.InvertCameraX"),1);
+ Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Page; Menu->PendingTarget=TEXT("Settings.Page.Display");
+ Menu->DialogResult(TEXT("Cancel"));
+ TestEqual(TEXT("Cancel leave keeps current page"),Menu->CurrentPageId,InitialPage);
+ TestTrue(TEXT("Cancel leave preserves draft"),State->HasDraftChanges());
+ Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Page; Menu->PendingTarget=TEXT("Settings.Page.Display");
+ Menu->DialogResult(TEXT("Discard"));
+ TestFalse(TEXT("Discard on leave clears drafts"),State->HasDraftChanges());
+ TestEqual(TEXT("Discard continues requested page switch"),Menu->CurrentPageId,FName(TEXT("Settings.Page.Display")));
+ State->SetDraftValue(TEXT("Controller.InvertCameraX"),1);
+ Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Page; Menu->PendingTarget=TEXT("Settings.Page.Controller");
+ Menu->DialogResult(TEXT("Apply"));
+ TestTrue(TEXT("Apply on leave updates runtime"),State->GetBoolean(TEXT("Controller.InvertCameraX")));
+ TestEqual(TEXT("Apply continues requested page switch"),Menu->CurrentPageId,FName(TEXT("Settings.Page.Controller")));
+ State->OnVideoModeResolved.AddUniqueDynamic(Menu,&UTASettingsMenuWidget::VideoResolved);
+ for (bool Keep:{true,false})
+ {
+  State->PreviousDisplayState=FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors());
+  State->VideoDeadline=FPlatformTime::Seconds()+15;
+  Menu->PendingExit=UTASettingsMenuWidget::EPendingExit::Page; Menu->PendingTarget=Keep?TEXT("KeepExit"):TEXT("RevertExit"); Menu->bVideoDialog=true;
+  Menu->DialogResult(Keep?TEXT("Keep"):TEXT("Revert"));
+  TestEqual(TEXT("Keep and revert both continue the requested exit"),Menu->CurrentPageId,FName(Keep?TEXT("KeepExit"):TEXT("RevertExit")));
+  TestTrue(TEXT("Video choice preserves applied non-video settings"),State->GetBoolean(TEXT("Controller.InvertCameraX")));
+ }
+ State->OnVideoModeResolved.RemoveDynamic(Menu,&UTASettingsMenuWidget::VideoResolved);
  Menu->bGamepadDevice=true; Menu->BeginGamepadNavigation();
  TestFalse(TEXT("Gamepad navigation hides the pointer"),Menu->ShouldShowPlayerCursor());
  Menu->InputPresentationChanged(); TestFalse(TEXT("Other gamepad prompt updates keep navigation mode"),Menu->ShouldShowPlayerCursor());
@@ -391,7 +428,7 @@ bool FTASettingsMenuInputTest::RunTest(const FString&)
  }
  Input.AddMappingContext(Context,20); FModifyContextOptions Options; Options.bForceImmediately=true; Input.RequestRebuildControlMappings(Options);
  TestFalse(TEXT("Keyboard Up cannot select the previous setting"),Menu->ResolvePlayerInput(EKeys::Up).IsSet());
- TestFalse(TEXT("Keyboard Enter is not settings Confirm"),Menu->ResolvePlayerInput(EKeys::Enter).IsSet());
+ TestTrue(TEXT("Keyboard Enter is settings Apply from IMC"),Menu->ResolvePlayerInput(EKeys::Enter).IsSet());
  TestTrue(TEXT("Gamepad item navigation comes from IMC"),Menu->ResolvePlayerInput(EKeys::Gamepad_DPad_Up).IsSet());
  TestTrue(TEXT("Keyboard page navigation comes from IMC"),Menu->ResolvePlayerInput(EKeys::PageDown).IsSet());
  TestTrue(TEXT("Keyboard reset comes from IMC"),Menu->ResolvePlayerInput(EKeys::R).IsSet());
@@ -442,4 +479,156 @@ bool FTASettingsResetHoldTest::RunTest(const FString&)
  TestEqual(TEXT("Custom return finishes in half a second"),Custom.Display,0.f);
  return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsDisplayChoicesTest,"TheAwakening.Settings.DisplayChoices",
+ EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FTASettingsDisplayChoicesTest::RunTest(const FString&)
+{
+ FTADisplayMonitor Primary; Primary.Id=TEXT("MonitorA"); Primary.bPrimary=true; Primary.Desktop=FIntPoint(2560,1440);
+ Primary.DisplayRect={0,0,2560,1440}; Primary.WorkArea=Primary.DisplayRect;
+ Primary.FullscreenResolutions={FIntPoint(1280,720),FIntPoint(1920,1080),Primary.Desktop};
+ FTADisplayMonitor Secondary; Secondary.Id=TEXT("MonitorB"); Secondary.Desktop=FIntPoint(1920,1200);
+ Secondary.DisplayRect={-1920,0,0,1200}; Secondary.WorkArea=Secondary.DisplayRect;
+ Secondary.FullscreenResolutions={FIntPoint(1280,720),FIntPoint(1920,1080),FIntPoint(1280,800),Secondary.Desktop};
+ const TArray<FTADisplayMonitor> Monitors={Primary,Secondary};
+ FTADisplayState Current; Current.MonitorId=Primary.Id; Current.Resolution=Primary.Desktop; Current.WindowMode=EWindowMode::Fullscreen;
+ FTADisplayState Target;
+ TestTrue(TEXT("Monitor change produces a complete target"),FTADisplaySettingsService::BuildChange(TEXT("Display.Monitor"),Secondary.Id,Monitors,Current,Target));
+ TestEqual(TEXT("Target monitor identity is retained"),Target.MonitorId,Secondary.Id);
+ TestEqual(TEXT("Monitor change keeps aspect when supported"),Target.Resolution,FIntPoint(1920,1080));
+ TestTrue(TEXT("Window moves onto a negative-coordinate display"),Target.WindowPosition.X<0);
+ TestTrue(TEXT("Aspect change selects a real resolution"),FTADisplaySettingsService::BuildChange(TEXT("Display.AspectRatio"),TEXT("16:10"),Monitors,Target,Current));
+ TestEqual(TEXT("Aspect selects the nearest pixel count"),Current.Resolution,Secondary.Desktop);
+ TestFalse(TEXT("Unavailable ratio is rejected"),FTADisplaySettingsService::BuildChange(TEXT("Display.AspectRatio"),TEXT("32:9"),Monitors,Current,Target));
+ TestFalse(TEXT("Unavailable monitor is rejected"),FTADisplaySettingsService::BuildChange(TEXT("Display.Monitor"),TEXT("Removed"),Monitors,Current,Target));
+ TestFalse(TEXT("Unsupported fullscreen resolution is rejected"),FTADisplaySettingsService::BuildChange(TEXT("Display.Resolution"),TEXT("3840x2160"),Monitors,Current,Target));
+ TestTrue(TEXT("Borderless mode is available"),FTADisplaySettingsService::BuildChange(TEXT("Display.WindowMode"),TEXT("WindowedFullscreen"),Monitors,Current,Target));
+ TestEqual(TEXT("Borderless uses selected desktop"),Target.Resolution,Secondary.Desktop);
+ TestEqual(TEXT("Borderless has exactly one resolution"),FTADisplaySettingsService::GetResolutions(Secondary,EWindowMode::WindowedFullscreen).Num(),1);
+ FTASettingDefinition Resolution; Resolution.ChoiceProviderId=TEXT("ScreenResolutions");
+ FTADisplaySettingsService::RefreshDefinition(Resolution,Monitors,Target);
+ TestEqual(TEXT("Borderless resolution row has one candidate"),Resolution.Choices.Num(),1);
+ TestEqual(TEXT("Stored resolution is an array index"),Resolution.GetChoiceValue(0),FName(TEXT("1920x1200")));
+ Current=Target; Current.WindowMode=EWindowMode::Fullscreen; Current.Resolution=FIntPoint(1920,1080);
+ FTADisplaySettingsService::RefreshDefinition(Resolution,Monitors,Current);
+ TestTrue(TEXT("Resolution list contains selected ratio"),Resolution.FindChoiceIndex(TEXT("1280x720"))!=INDEX_NONE);
+ TestEqual(TEXT("Resolution list excludes other ratios"),Resolution.FindChoiceIndex(TEXT("1920x1200")),INDEX_NONE);
+ FTASettingDefinition Aspect; Aspect.ChoiceProviderId=TEXT("DisplayAspectRatios");
+ FTADisplaySettingsService::RefreshDefinition(Aspect,Monitors,Current);
+ TestTrue(TEXT("Ratios include supported 16:9 and 16:10"),Aspect.FindChoiceIndex(TEXT("16:9"))!=INDEX_NONE && Aspect.FindChoiceIndex(TEXT("16:10"))!=INDEX_NONE);
+ const auto Windowed=FTADisplaySettingsService::GetResolutions(Secondary,EWindowMode::Windowed);
+ TestTrue(TEXT("Windowed supports common non-fullscreen sizes"),Windowed.Contains(FIntPoint(1024,768)));
+ TestFalse(TEXT("Windowed excludes sizes larger than desktop"),Windowed.Contains(FIntPoint(3840,2160)));
+ TestEqual(TEXT("Ultrawide marketing sizes share 21:9"),FTADisplaySettingsService::AspectRatio(FIntPoint(3440,1440)),FName(TEXT("21:9")));
+ TestEqual(TEXT("Invalid resolution has no ratio"),FTADisplaySettingsService::AspectRatio(FIntPoint(0,0)),NAME_None);
+ return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsDraftTest,"TheAwakening.Settings.Drafts",
+ EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FTASettingsDraftTest::RunTest(const FString&)
+{
+ const FString Filename=FPaths::ProjectSavedDir()/TEXT("Automation/SettingsDraft-Test.ini");
+ FFileHelper::SaveStringToFile(TEXT(""),*Filename); GConfig->LoadFile(Filename);
+ TGuardValue<FString> File(GGameUserSettingsIni,Filename);
+ ON_SCOPE_EXIT { GConfig->UnloadFile(Filename); IFileManager::Get().Delete(*Filename); };
+ auto* Local=NewObject<ULocalPlayer>(GEngine);
+ auto* S=NewObject<UTASettingsSubsystem>(Local); S->Definitions=FTASettingsCatalog::Build(S);
+ const FName Slider(TEXT("MouseKeyboard.CameraSensitivity")),Toggle(TEXT("Controller.InvertCameraX")),Choice(TEXT("Display.AdvancedData"));
+ S->SetValue(Slider,50); S->SetValue(Toggle,0); S->SetValue(Choice,0); S->BeginEditing();
+ TestTrue(TEXT("Slider stages successfully"),S->SetDraftValue(Slider,75));
+ TestEqual(TEXT("Runtime slider remains applied"),S->GetInteger(Slider),50);
+ TestEqual(TEXT("Editable slider shows draft"),S->GetEditableInteger(Slider),75);
+ TestTrue(TEXT("Draft is marked dirty"),S->IsSettingDirty(Slider));
+ S->SetDraftValue(Slider,50); TestFalse(TEXT("Returning to applied value clears dirty"),S->HasDraftChanges());
+ S->SetDraftValue(Toggle,1); S->SetDraftValue(Choice,2);
+ TestFalse(TEXT("Draft toggle cannot affect runtime"),S->GetBoolean(Toggle));
+ TestEqual(TEXT("Runtime choice remains basic index"),S->GetInteger(Choice),0);
+ S->SetFavorite(Choice,true);
+ auto* Saved=NewObject<UTASettingsSubsystem>(Local); Saved->Definitions=S->Definitions; Saved->LoadSavedValues();
+ TestEqual(TEXT("Favorite save never persists choice drafts"),Saved->GetInteger(Choice),0);
+ TestTrue(TEXT("Applying drafts succeeds"),S->ApplyDraft());
+ TestTrue(TEXT("Applied toggle now affects runtime"),S->GetBoolean(Toggle));
+ TestEqual(TEXT("Applied choice retains index semantics"),S->GetInteger(Choice),2);
+ TestFalse(TEXT("Apply clears dirty state"),S->HasDraftChanges());
+ S->SetDraftValue(Slider,75); S->DiscardDraft();
+ TestEqual(TEXT("Discard shows applied slider"),S->GetEditableInteger(Slider),50);
+ TestFalse(TEXT("Discard clears dirty state"),S->HasDraftChanges());
+ S->StageDefault(Slider); TestEqual(TEXT("Reset stages default"),S->GetEditableInteger(Slider),S->FindDefinition(Slider)->DefaultValue);
+ TestEqual(TEXT("Reset leaves runtime slider intact"),S->GetInteger(Slider),50);
+ S->DiscardDraft();
+ const auto Before=FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors());
+ const auto* Mode=S->FindEditableDefinition(TEXT("Display.WindowMode"));
+ if (TestNotNull(TEXT("Video mode definition"),Mode))
+ {
+  const FName ModeId=Mode->SettingId;
+  const int32 Current=S->GetEditableInteger(Mode->SettingId);
+  TestTrue(TEXT("Video change is staged"),S->SetDraftValue(Mode->SettingId,(Current+1)%Mode->Choices.Num()));
+  const auto After=FTADisplaySettingsService::GetCurrentState(FTADisplaySettingsService::GetMonitors());
+  TestEqual(TEXT("Staging does not apply screen mode"),After.WindowMode,Before.WindowMode);
+  TestEqual(TEXT("Staging does not resize screen"),After.Resolution,Before.Resolution);
+  TestFalse(TEXT("Staging has no video confirmation deadline"),S->HasPendingVideoMode());
+  S->RefreshDisplayCandidates(); TestTrue(TEXT("Hardware refresh preserves video draft"),S->IsSettingDirty(ModeId));
+ }
+ S->DiscardDraft();
+ S->PreviousDisplayState=Before; S->VideoDeadline=FPlatformTime::Seconds()-1;
+ S->CheckVideoModeTimeout();
+ TestFalse(TEXT("Timeout finishes video confirmation"),S->HasPendingVideoMode());
+ TestTrue(TEXT("Video revert preserves applied non-video toggle"),S->GetBoolean(Toggle));
+ TestEqual(TEXT("Video revert preserves applied advanced HUD"),S->GetInteger(Choice),2);
+ S->EndEditing(); return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTASettingsDialogTest,"TheAwakening.Settings.CommonDialog",
+ EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FTASettingsDialogTest::RunTest(const FString&)
+{
+ FTACommonDialogDefinition D;
+ TestFalse(TEXT("No-button popup is invalid"),D.IsValid());
+ for (int32 I=1;I<=4;++I) { FTACommonDialogOption O; O.ResultId=FName(*FString::FromInt(I)); O.LabelTextId=TEXT("Dialog.OK"); O.InputSlot=I; D.Options.Add(O); }
+ TestTrue(TEXT("Four buttons are supported"),D.IsValid());
+ const FTACommonDialogOption Fifth=D.Options[0];
+ D.Options.Add(Fifth); TestFalse(TEXT("Five buttons are rejected"),D.IsValid()); D.Options.Pop();
+ D.Options[3].InputSlot=1; TestFalse(TEXT("Duplicate input slot is rejected"),D.IsValid()); D.Options[3].InputSlot=4;
+ D.Options[3].ResultId=D.Options[0].ResultId; TestFalse(TEXT("Duplicate result ID is rejected"),D.IsValid()); D.Options[3].ResultId=TEXT("4");
+ D.TimeoutSeconds=15; TestFalse(TEXT("Timeout requires a valid result"),D.IsValid()); D.TimeoutResultId=TEXT("3");
+ TestTrue(TEXT("Timeout result can map to any button"),D.IsValid());
+ auto* IMC=LoadObject<UInputMappingContext>(nullptr,TEXT("/Game/Input/IMC_CommonDialog.IMC_CommonDialog"));
+ if (!TestNotNull(TEXT("Independent popup IMC asset"),IMC)) return false;
+ TSet<const UInputAction*> Actions;
+ for (const auto& M:IMC->GetMappings()) { Actions.Add(M.Action); TestTrue(TEXT("Popup actions work while paused"),M.Action->bTriggerWhenPaused); }
+ TestEqual(TEXT("Popup owns exactly four logical actions"),Actions.Num(),4);
+ auto* World=UWorld::CreateWorld(EWorldType::Game,false);
+ ON_SCOPE_EXIT { World->DestroyWorld(false); };
+ auto* PCClass=LoadClass<AThe_AwakeningPlayerController>(nullptr,TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
+ auto* PC=PCClass?World->SpawnActor<AThe_AwakeningPlayerController>(PCClass):nullptr;
+ if (!TestNotNull(TEXT("Dialog test controller"),PC)) return false;
+ auto* Local=NewObject<ULocalPlayer>(GEngine); Local->PlayerController=PC; PC->Player=Local; World->AddController(PC);
+ auto* DialogClass=LoadClass<UTACommonDialogWidget>(nullptr,TEXT("/Game/UI/Common/WBP_CommonDialog.WBP_CommonDialog_C"));
+ auto* Popup=DialogClass?CreateWidget<UTACommonDialogWidget>(PC,DialogClass):nullptr;
+ if (!TestNotNull(TEXT("Authored dialog template with native fallback"),Popup)) return false;
+ TestNotNull(TEXT("Dialog fallback constructs button one"),Popup->DialogOption_1.Get());
+ TestNotNull(TEXT("Dialog fallback constructs button four"),Popup->DialogOption_4.Get());
+ TestFalse(TEXT("Dialog does not route shared Back"),Popup->UsesSharedBackAction());
+ FSettingsTestInput Input; Input.Input=NewObject<UTAPlayerInput>(PC); PC->PlayerInput=Input.Input;
+ for (const auto& M:IMC->GetMappings()) PC->DialogActions.Add(FCString::Atoi(*M.Action->GetName().RightChop(15)),const_cast<UInputAction*>(M.Action.Get()));
+ Input.AddMappingContext(IMC,30); FModifyContextOptions Options; Options.bForceImmediately=true; Input.RequestRebuildControlMappings(Options);
+ Popup->Data=D; Popup->Controller=PC;
+ TestTrue(TEXT("Popup key is resolved from its IMC"),Popup->ResolvePlayerInput(EKeys::Enter).IsSet());
+ auto* Remapped=DuplicateObject<UInputMappingContext>(IMC,GetTransientPackage());
+ Remapped->UnmapKey(PC->GetDialogAction(1),EKeys::Enter); Remapped->MapKey(PC->GetDialogAction(1),EKeys::P);
+ Input.RemoveMappingContext(IMC); Input.AddMappingContext(Remapped,30); Input.RequestRebuildControlMappings(Options);
+ TestFalse(TEXT("Removed Enter is no longer accepted"),Popup->ResolvePlayerInput(EKeys::Enter).IsSet());
+ TestTrue(TEXT("Popup follows remapped key"),Popup->ResolvePlayerInput(EKeys::P).IsSet());
+ auto* Underlying=NewObject<UInputMappingContext>(); FTAInputRequest Parent; Parent.Owner=Underlying; Parent.Priority=600;
+ const auto ParentHandle=PC->AcquireInputRequest(Parent);
+ FTAInputRequest Modal; Modal.Owner=Popup; Modal.Priority=1000; Modal.Allowed={ETAInputCapability::Confirm};
+ Popup->Handle=PC->AcquireInputRequest(Modal);
+ TestTrue(TEXT("Modal owns input over original screen"),PC->GetInputWinner().Request.Owner.Get()==Popup);
+ Popup->Complete(TEXT("Unknown")); TestTrue(TEXT("Unknown result cannot close dialog"),PC->GetInputWinner().Request.Owner.Get()==Popup);
+ Popup->Complete(D.Options[0].ResultId);
+ TestEqual(TEXT("Completion releases exact modal handle"),PC->GetInputWinner().Handle,ParentHandle);
+ Popup->Dismiss(); TestEqual(TEXT("Repeated dismiss leaves original owner intact"),PC->GetInputWinner().Handle,ParentHandle);
+ PC->ReleaseInputRequest(ParentHandle);
+ return true;
+}
+
 #endif

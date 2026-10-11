@@ -1,4 +1,5 @@
 #include "Settings/TASettingsTypes.h"
+#include "Settings/TADisplaySettingsService.h"
 #include "Settings/TASettingsMenuWidget.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "HAL/PlatformMisc.h"
@@ -134,25 +135,11 @@ bool FTASettingDefinition::IsValidDefinition() const
 }
 void FTASettingsCatalog::RefreshCandidates(FTASettingDefinition& D)
 {
- if (D.ChoiceProviderId != TEXT("ScreenResolutions")) return;
- TArray<FIntPoint> Resolutions;
- UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
- FDisplayMetrics Metrics; FDisplayMetrics::RebuildDisplayMetrics(Metrics);
- const FIntPoint Native(Metrics.PrimaryDisplayWidth, Metrics.PrimaryDisplayHeight);
- if (Native.X > 0 && Native.Y > 0) Resolutions.AddUnique(Native);
- if (const auto* U=UGameUserSettings::GetGameUserSettings())
+ if (D.ChoiceProviderId==TEXT("ScreenResolutions") || D.ChoiceProviderId==TEXT("DisplayMonitors") || D.ChoiceProviderId==TEXT("DisplayAspectRatios"))
  {
-  const auto Current=U->GetScreenResolution();
-  if (Current.X>0 && Current.Y>0) Resolutions.AddUnique(Current);
+  const auto Monitors=FTADisplaySettingsService::GetMonitors();
+  FTADisplaySettingsService::RefreshDefinition(D,Monitors,FTADisplaySettingsService::GetCurrentState(Monitors));
  }
- if (Resolutions.IsEmpty()) Resolutions.Add(FIntPoint(1280,720));
- Resolutions.Sort([](const FIntPoint& A,const FIntPoint& B){ return A.X == B.X ? A.Y < B.Y : A.X < B.X; });
- D.Choices.Reset();
- for (const auto& R : Resolutions)
- {
-  FTASettingChoice C; C.Value = FName(*FString::Printf(TEXT("%dx%d"),R.X,R.Y)); D.Choices.Add(C);
- }
- D.DefaultValue=Resolutions.Contains(Native)?Resolutions.IndexOfByKey(Native):Resolutions.Num()-1;
 }
 TArray<FTASettingDefinition> FTASettingsCatalog::Build(UObject* Outer)
 {
@@ -189,8 +176,12 @@ TArray<FTASettingDefinition> FTASettingsCatalog::Build(UObject* Outer)
  Choices(Language,{TEXT("zh-CN"),TEXT("zh-TW"),TEXT("en")});
  auto& TextSpeed=Slider(TEXT("Game.DialogueTextSpeed"),FName(TEXT("Settings.Page.Game")),40,10,100,5,ETASettingDisplayFormat::Integer);
  TextSpeed.UnitTextId=TEXT("Settings.Unit.CharactersPerSecond"); TextSpeed.ApplyPolicy=ETASettingApplyPolicy::NextDialogue;
+ auto& Monitor=Add(TEXT("Display.Monitor"),FName(TEXT("Settings.Page.Display")),ETASettingType::Choice,0);
+ Monitor.ChoiceProviderId=TEXT("DisplayMonitors"); RefreshCandidates(Monitor); Monitor.ApplyPolicy=ETASettingApplyPolicy::VideoMode;
  auto& Mode=Add(TEXT("Display.WindowMode"),FName(TEXT("Settings.Page.Display")),ETASettingType::Choice,1);
  Choices(Mode,{TEXT("Fullscreen"),TEXT("WindowedFullscreen"),TEXT("Windowed")}); Mode.ApplyPolicy=ETASettingApplyPolicy::VideoMode;
+ auto& Aspect=Add(TEXT("Display.AspectRatio"),FName(TEXT("Settings.Page.Display")),ETASettingType::Choice,0);
+ Aspect.ChoiceProviderId=TEXT("DisplayAspectRatios"); RefreshCandidates(Aspect); Aspect.ApplyPolicy=ETASettingApplyPolicy::VideoMode;
  auto& Resolution=Add(TEXT("Display.Resolution"),FName(TEXT("Settings.Page.Display")),ETASettingType::Choice,0);
  Resolution.ChoiceProviderId=TEXT("ScreenResolutions"); RefreshCandidates(Resolution); Resolution.ApplyPolicy=ETASettingApplyPolicy::VideoMode;
  Add(TEXT("Display.VSync"),FName(TEXT("Settings.Page.Display")),ETASettingType::Toggle,0);
