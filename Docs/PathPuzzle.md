@@ -176,6 +176,19 @@ OnSucceeded / OnFailed 的 Result 包含 bSucceeded、Failure、Progress、MainG
 
 ## 验证
 
+### Deferred / Known Test Failure：TheAwakening.Puzzle.Scope
+
+截至 2026-10-10 最近一次完整自动化回归，**34/35 项通过**，唯一失败项为
+`TheAwakening.Puzzle.Scope`。此项尚未解决，暂缓至破解小游戏正式美术集成及整体功能验收阶段处理。
+
+- 注册及实现：`Source/The_Awakening/Tests/TAHeldGameplayTests.cpp`，`FTAPuzzleScopeTest`。
+- 现有证据高度指向测试夹具未适配新版 Input Mapping 初始化，而非已确认的游戏功能缺陷：夹具创建临时 PC/LocalPlayer，但未建立 `UTAPlayerInput` 和 resolved mappings；直接记录物理 Held Key 不足以产生当前 Puzzle 使用的 Action 输入。
+- 失败涉及 WASD、LS、Confirm；起点未选中使 Session 保持 Ready，进而产生“计时未减少”的连锁断言失败，不能据此认定 Timer 存在功能缺陷。
+- 后续优先参考 `Source/The_Awakening/Tests/TAUIPlayerIngressTests.cpp` 的初始化方式，正确建立 `UTAPlayerInput` 和 resolved mappings，并先验证输入映射前置条件。
+- 不为此修改正式 Puzzle/Input 逻辑，不删除、跳过或降低现有测试断言。待上述验收阶段修复测试后，重新运行该测试及完整回归；如仍有失败，再调查具体功能路径。
+
+这是 **Deferred / Known Test Failure**，不是已修复问题，也不表示完整自动化全部通过。
+
 自动化测试前缀：`TheAwakening.Puzzle`。覆盖会话额度、重试不重置倒计时、独立效果开关、边界失败、双向连接、随机种子与可通关解、默认奖励对接。
 
 需要在 UE 里用最终 WBP 确认：节点鼠标点击、整体缩放位置、替换贴图后的尺寸、结算事件连接及物品容量不足时的外部处理。

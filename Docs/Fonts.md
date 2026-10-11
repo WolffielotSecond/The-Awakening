@@ -217,7 +217,7 @@ staging or every other packaged screen.
 | Complete font/Culture/license output verification | A Windows Development build now exists and Settings/Input Icons passed player acceptance. Still audit original font faces, TA_GlobalFont references, Culture data and staged notices before release; these were not established by the scoped UI acceptance. |
 | Prominent in-game HarmonyOS Sans Credits/About/Licenses notice | Required before release; not implemented. Preserve the usage statement, Copyright 2021 Huawei Device Co., Ltd. and original LICENSE-update.txt. The final UI location remains to be agreed. |
 | Same-process PIE changes Editor Language | Confirmed, accepted limitation; no fix planned now. Independent-process testing isolates language state. |
-| Puzzle.Scope headless failure | Pre-existing issue, outside font migration; not fixed or hidden by changing assertions. |
+| TheAwakening.Puzzle.Scope — Deferred / Known Test Failure | Full regression is 34/35, not all passing. Evidence strongly points to missing test-fixture Input Mapping initialization, not a confirmed gameplay defect. Defer to puzzle art integration/system acceptance; see [PathPuzzle.md](PathPuzzle.md#验证). Preserve assertions and production Puzzle/Input behavior. |
 
 Future packaged acceptance must include different window sizes/resolutions and
 Settings, Pause, History, Inventory and Scan font/layout checks. Configuration
