@@ -63,6 +63,11 @@ Build/*/**
 # Don't ignore icon files in Build
 !Build/**/*.ico
 
+# Project UAT extension loaded by the editor's native packaging workflow.
+!Build/Automation/
+!Build/Automation/*.cs
+!Build/Automation/*.csproj
+
 # Built data for maps
 *_BuiltData.uasset
 

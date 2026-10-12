@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Show', 'Set', 'Prepare', 'Package')][string]$Action = 'Show',
+    [ValidateSet('Show', 'Set', 'Prepare', 'Package', 'Stage')][string]$Action = 'Show',
     [string]$Version,
     [string]$ProjectRoot = (Join-Path $PSScriptRoot '../..'),
     [string]$EngineRoot,
     [ValidateSet('Development', 'Shipping')][string]$Configuration = 'Development',
-    [string]$OutputRoot
+    [string]$OutputRoot,
+    [string]$StagedIniPath
 )
 
 Set-StrictMode -Version Latest
@@ -61,6 +62,15 @@ function Write-Utf8([string]$Path, [string]$Text) {
 if (-not (Test-Path -LiteralPath $projectPath)) { throw "Project not found: $projectPath" }
 if ($Action -eq 'Set' -and [string]::IsNullOrEmpty($Version)) { throw 'Set requires -Version.' }
 if ($Action -ne 'Set' -and $PSBoundParameters.ContainsKey('Version')) { throw '-Version is supported only with -Action Set.' }
+if ($Action -eq 'Stage') {
+    if ([string]::IsNullOrEmpty($StagedIniPath)) { throw 'Stage requires -StagedIniPath.' }
+    $StagedIniPath = (Resolve-Path -LiteralPath $StagedIniPath).Path
+    $savedPrefix = [IO.Path]::GetFullPath((Join-Path $ProjectRoot 'Saved')).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if (-not $StagedIniPath.StartsWith($savedPrefix, [StringComparison]::OrdinalIgnoreCase) -or (Split-Path $StagedIniPath -Leaf) -ne 'DefaultGame.ini') {
+        throw 'Stage may only stamp a DefaultGame.ini copy inside the project Saved directory.'
+    }
+}
+elseif ($PSBoundParameters.ContainsKey('StagedIniPath')) { throw '-StagedIniPath is supported only with -Action Stage.' }
 
 $buildLock = $null
 $stateDir = Join-Path $ProjectRoot 'Saved/Versioning'
@@ -72,7 +82,7 @@ if ($Action -ne 'Show') {
 
 try {
     $originalBytes = [IO.File]::ReadAllBytes($configPath)
-    $configText = [IO.File]::ReadAllText($configPath)
+    $configText = [IO.File]::ReadAllText($(if ($Action -eq 'Stage') { $StagedIniPath } else { $configPath }))
     $currentVersion = Read-IniValue $configText $generalSection 'ProjectVersion'
     Assert-Version $currentVersion
     $buildId = Read-IniValue $configText $buildSection 'BuildId'
@@ -113,7 +123,14 @@ try {
     $commit = 'nogit'
     $dirty = $false
     if (Get-Command git -ErrorAction SilentlyContinue) {
-        $gitRoot = & git -C $ProjectRoot rev-parse --show-toplevel 2>$null
+        # Windows PowerShell 5 treats native stderr as terminating errors under Stop.
+        # A project copy outside Git is an expected fallback, not a failed build.
+        $gitProbeErrorPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $gitRoot = & git -C $ProjectRoot rev-parse --show-toplevel 2>$null
+        }
+        finally { $ErrorActionPreference = $gitProbeErrorPreference }
         # A copied project inside an unrelated repository is not a Git checkout of this project.
         if ($LASTEXITCODE -eq 0 -and [IO.Path]::GetFullPath($gitRoot.Trim()) -eq $ProjectRoot) {
             $commitOutput = & git -C $ProjectRoot rev-parse --short=8 HEAD 2>$null
@@ -151,7 +168,7 @@ try {
         try {
             Write-Utf8 $configPath $stamped
             Write-Utf8 $manifestPath (($manifest | ConvertTo-Json) + "`n")
-            & $uatPath BuildCookRun "-project=$projectPath" -noP4 -platform=Win64 "-clientconfig=$Configuration" -build -cook -stage -pak -iostore -archive "-archivedirectory=$releaseDir" -utf8output
+            & $uatPath "-ScriptsForProject=$projectPath" BuildCookRun "-project=$projectPath" -noP4 -platform=Win64 "-clientconfig=$Configuration" -build -cook -stage -pak -iostore -archive "-archivedirectory=$releaseDir" -utf8output
             if ($LASTEXITCODE -ne 0) { throw "Unreal packaging failed (exit $LASTEXITCODE)." }
             $manifest.Status = 'Succeeded'
         }
@@ -169,7 +186,13 @@ try {
         }
     }
     else {
-        Write-Utf8 $configPath $stamped
+        if ($Action -eq 'Stage') {
+            Write-Utf8 $StagedIniPath $stamped
+            $manifest.Status = 'Staged'
+            # The editor chooses the target configuration; this hook runs during Stage, not Build.
+            $manifest.Configuration = 'See packaging log'
+        }
+        else { Write-Utf8 $configPath $stamped }
         Write-Utf8 $manifestPath (($manifest | ConvertTo-Json) + "`n")
     }
     Write-Output "Version: $currentVersion; Build: $buildId; manifest: $manifestPath"

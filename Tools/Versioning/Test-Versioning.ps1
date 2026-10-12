@@ -43,6 +43,20 @@ try {
     Assert-That ($second.BuildId -match '^\d{8}\.002-nogit$' -and $first.BuildId -ne $second.BuildId) 'Increment local sequence'
     Assert-That ((Invoke-Version 'Show').BuildId -eq $second.BuildId) 'Prepare stamps runtime config'
 
+    $stageDir = Join-Path $fixture 'Saved/Temp/Windows/The_Awakening/Config'
+    $null = New-Item -ItemType Directory -Path $stageDir -Force
+    $stagedIni = Join-Path $stageDir 'DefaultGame.ini'
+    [IO.File]::WriteAllText($stagedIni, $initial)
+    $sourceBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($configPath))
+    $null = Invoke-Version 'Stage' @{ StagedIniPath = $stagedIni }
+    $stagedInfo = Get-Content -LiteralPath (Join-Path $fixture 'Saved/Versioning/build-info.json') -Raw | ConvertFrom-Json
+    Assert-That ($stagedInfo.Status -eq 'Staged' -and $stagedInfo.BuildId -match '^\d{8}\.003-nogit$') 'Stage reserves a new identity'
+    Assert-That ([IO.File]::ReadAllText($stagedIni).Contains("BuildId=$($stagedInfo.BuildId)")) 'Stamp packaging config copy'
+    Assert-That ($sourceBytes -eq [Convert]::ToBase64String([IO.File]::ReadAllBytes($configPath))) 'Stage leaves source config untouched'
+    $rejected = $false
+    try { $null = Invoke-Version 'Stage' @{ StagedIniPath = $configPath } } catch { $rejected = $true }
+    Assert-That $rejected 'Stage rejects stamping the source config'
+
     # Minimal UAT stand-in verifies stamping, forwarding of spaced paths, and restoration.
     $engine = Join-Path $fixture 'Mock Engine'
     $uatDir = Join-Path $engine 'Engine/Build/BatchFiles'

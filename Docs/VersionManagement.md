@@ -22,7 +22,7 @@ SaveFormatVersion=1
 
 ## 命令
 
-在项目根目录运行，推荐 PowerShell 7。脚本支持项目路径和引擎路径中的空格。
+在项目根目录运行，支持 Windows PowerShell 5.1 和 PowerShell 7。脚本支持项目路径和引擎路径中的空格。
 
 ```powershell
 # 查看当前配置
@@ -47,7 +47,17 @@ SaveFormatVersion=1
 
 `Package` 当前目标为 Win64，默认输出到 `Saved/Releases/The_Awakening-版本-构建ID-Win64-配置/`。该目录附带 `build-info.json` 和 `CHANGELOG.md`。构建记录包含版本、存档格式、UTC 时间、提交号、工作区改动标记、构建配置和状态。失败输出目录也会保留，其状态是 `Failed`，不可作为发布包。
 
-自动生成身份通过上述 `Package` 入口执行。直接点击编辑器打包不会执行此脚本；需要先使用 `Prepare`，并在编辑器打开或重新加载配置之前执行，以免内存中的旧配置覆盖新身份。日常编译不增加游戏版本。`Prepare` 之后可用 `Set -Version 当前版本` 恢复 `BuildId=local`。不要在脚本打包时修改或保存项目设置，也不要同时使用编辑器打包。
+## 编辑器原生打包入口
+
+现已接入 UE 5.6 编辑器的 Platforms → Windows → Package Project 入口，无须先运行 Prepare。首次接入后建议重启编辑器，让内存中的 Packaging 配置与磁盘一致。
+
+`DefaultGame.ini` 的 Packaging 配置中设置了 `CustomStageCopyHandler=TAVersioning`。UAT 通过 `-ScriptsForProject` 自动发现 `Build/Automation/TAVersioning.Automation.csproj`，在 Stage 阶段调用扩展。扩展执行 `Manage-Version.ps1 -Action Stage`，只修改即将装入包的 DefaultGame.ini 副本。源码配置和编辑器日常显示仍为 `local`，最终游戏包显示真实构建 ID；即使这次打包跳过代码编译，仍会生成身份。输出目录沿用编辑器所选路径。
+
+编辑器原生流程的元数据记录在 `Saved/Versioning/build-info.json`，状态为 `Staged`，表示配置已经写入包的准备阶段，并不代表整个打包成功；构建配置和最终结果以 UAT 日志为准。日志应包含 `TA Versioning: staged BuildId=...`。原生流程不会附加脚本 Package 入口所提供的外部 JSON／CHANGELOG 副本或带版本号的归档目录。
+
+如果使用 Prepare 或 Package 提前生成了非 local 的 ID，Stage 扩展保留该 ID，同一配置在多个分块中也共用一个 ID。保持源码 `BuildId=local` 即可让每次原生打包自动生成新 ID。Prepare 之后可用 `Set -Version 当前版本` 恢复 `BuildId=local`。
+
+当前接入验证范围为 Windows／Win64 的 Pak + IoStore 打包，使用 Windows 自带 PowerShell 执行。请保持 `bMakeBinaryConfig=False`；开启 Binary Config 后，配置合并发生在此扩展之前，当前方案不支持。日常编译不增加游戏版本。不要在脚本 Package 打包时修改或保存项目设置，也不要同时使用编辑器打包。
 
 脚本不自动提交、创建标签或上传发布包。发布前更新 `CHANGELOG.md`，提交代码和资产，确认构建来源。发布标签建议为 `v0.2.0-alpha.1`；同一标签对应的已发布内容不要覆盖，修复后使用新版本。
 
@@ -72,4 +82,6 @@ SaveFormatVersion=1
 ./Tools/Versioning/Test-Versioning.ps1
 ```
 
-脚本测试在系统临时目录创建隔离项目，验证编号校验、字段保留、序号递增、无 Git 回退及模拟打包成功/失败时的配置恢复。模拟打包不替代真实 Cook 验证；发布时还需检查打包日志与包内 Full 信息是否和 `build-info.json` 一致。
+脚本测试在系统临时目录创建隔离项目，验证编号校验、字段保留、序号递增、无 Git 回退、Stage 只修改配置副本及模拟打包成功/失败时的配置恢复。
+
+原生入口已通过真实 UAT Stage／Pak／IoStore／Archive 验证，测试复用既有编译和 Cook 数据。发布时仍需完成正常 Cook，并检查打包日志与包内 Full 信息是否和 `build-info.json` 一致。
