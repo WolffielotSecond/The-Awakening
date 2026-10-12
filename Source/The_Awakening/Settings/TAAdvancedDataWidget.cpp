@@ -7,7 +7,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Components/TextBlock.h"
 #include "HAL/PlatformTime.h"
-#include "Misc/ConfigCacheIni.h"
+#include "Core/TAVersionLibrary.h"
 
 void UTAAdvancedDataWidget::NativeConstruct()
 {
@@ -36,10 +36,8 @@ void UTAAdvancedDataWidget::Refresh()
  FString S=FString::Printf(TEXT("%d（%s）FPS"),FPS,Limit>0?*FString::FromInt(FMath::RoundToInt(Limit)):*T(TEXT("Settings.Value.Unlimited")));
  if (Mode==TEXT("Full"))
  {
-  FString Version,Build;
-  if (GConfig) { GConfig->GetString(TEXT("/Script/EngineSettings.GeneralProjectSettings"),TEXT("ProjectVersion"),Version,GGameIni); GConfig->GetString(TEXT("TheAwakening.Build"),TEXT("BuildId"),Build,GGameIni); }
-  if (Version.IsEmpty()) Version=T(TEXT("Settings.Value.Unknown"));
-  if (Build.IsEmpty()) Build=T(TEXT("Settings.Value.Unknown"));
+  const FString Version=UTAVersionLibrary::GetProjectVersion();
+  const FString Build=UTAVersionLibrary::GetBuildId();
   int32 Quality=U?U->GetViewDistanceQuality():-1;
   if (U && (U->GetShadowQuality()!=Quality || U->GetGlobalIlluminationQuality()!=Quality || U->GetReflectionQuality()!=Quality ||
    U->GetAntiAliasingQuality()!=Quality || U->GetTextureQuality()!=Quality || U->GetVisualEffectQuality()!=Quality ||

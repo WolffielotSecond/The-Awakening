@@ -451,11 +451,12 @@ Display.AdvancedData 的三个候选项：
 | 1 | Basic | 当前帧率（帧率上限）FPS |
 | 2 | Full | 当前帧率（帧率上限）FPS-游戏版本-构建ID-画质-语言-输入设备 |
 
-游戏版本来自 ProjectVersion。构建 ID 可在 DefaultGame.ini 配置：
+游戏版本和构建 ID 统一通过 UTAVersionLibrary 读取。ProjectVersion 是唯一游戏版本来源；构建 ID 由版本管理脚本在打包前生成，日常编辑器开发为 local。完整流程见 [版本号管理](VersionManagement.md)。DefaultGame.ini 中的配置示例：
 
 ```ini
 [TheAwakening.Build]
-BuildId=你的构建ID
+BuildId=local
+SaveFormatVersion=1
 ```
 
 ## 16. 检查打包目录
