@@ -8,6 +8,8 @@ names = {str(m.get_editor_property("action").get_name()) for m in mappings}
 assert "IA_SettingsResetPage" in names
 assert "IA_SettingsApply" in names
 assert "IA_SettingsCancelCapture" in names
+assert "IA_SettingsFocusCategories" in names
+assert "IA_SettingsFocusDetails" in names
 action_keys = {}
 for mapping in mappings:
     action_keys.setdefault(mapping.get_editor_property("action").get_name(), set()).add(mapping.get_editor_property("key").export_text())
@@ -21,7 +23,7 @@ for m in mappings:
     action = m.get_editor_property("action")
     key = m.get_editor_property("key").export_text()
     assert action.get_editor_property("trigger_when_paused")
-    if action.get_name() in ("IA_SettingsPreviousItem", "IA_SettingsNextItem", "IA_SettingsConfirm", "IA_SettingsScrollUp", "IA_SettingsScrollDown"):
+    if action.get_name() in ("IA_SettingsPreviousItem", "IA_SettingsNextItem", "IA_SettingsConfirm", "IA_SettingsScrollUp", "IA_SettingsScrollDown", "IA_SettingsFocusCategories", "IA_SettingsFocusDetails"):
         assert "Gamepad_" in key, (action.get_name(), key)
 pc_class = library.load_blueprint_class("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController")
 pc = unreal.get_default_object(pc_class)

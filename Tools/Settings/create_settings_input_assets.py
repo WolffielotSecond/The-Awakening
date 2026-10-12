@@ -17,6 +17,8 @@ bindings = {
     "NextPage": ["PageDown"],
     "PreviousItem": ["Gamepad_DPad_Up"],
     "NextItem": ["Gamepad_DPad_Down"],
+    "FocusCategories": ["Gamepad_LeftStick_Left"],
+    "FocusDetails": ["Gamepad_LeftStick_Right"],
     "AdjustLeft": ["Left", "Gamepad_DPad_Left"],
     "AdjustRight": ["Right", "Gamepad_DPad_Right"],
     "Confirm": ["Gamepad_FaceButton_Bottom"],

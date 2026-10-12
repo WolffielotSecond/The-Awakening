@@ -27,6 +27,7 @@
 #include "Settings/TASettingsMenuWidget.h"
 #include "UI/TACommonDialog.h"
 #include "Settings/TASettingsSubsystem.h"
+#include "Settings/TAAdvancedDataWidget.h"
 #include "Settings/TAKeyBindingService.h"
 #include "InputMappingContext.h"
 #include "Widgets/SWindow.h"
@@ -194,6 +195,23 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 	if (IsLocalPlayerController())
 	{
+  if (GetLocalPlayer() && !AdvancedDataWidgetInstance)
+  {
+   if (auto* WidgetClass=AdvancedDataWidgetClass.LoadSynchronous())
+   {
+    AdvancedDataWidgetInstance=CreateWidget<UTAAdvancedDataWidget>(this,WidgetClass);
+    if (AdvancedDataWidgetInstance)
+    {
+     AdvancedDataWidgetInstance->SetVisibility(ESlateVisibility::HitTestInvisible);
+     if (!AdvancedDataWidgetInstance->AddToPlayerScreen(100))
+     {
+      AdvancedDataWidgetInstance->RemoveFromParent(); AdvancedDataWidgetInstance=nullptr;
+      UE_LOG(LogThe_Awakening,Warning,TEXT("Cannot add advanced data panel to the local player's screen."));
+     }
+    }
+   }
+   else UE_LOG(LogThe_Awakening,Warning,TEXT("AdvancedDataWidgetClass is not available on %s."),*GetName());
+  }
 		if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>(); Icons && GetLocalPlayer())
 			Icons->RefreshCurrentDeviceForUser(GetLocalPlayer()->GetPlatformUserId());
 		InputDeviceDetector = MakeShared<FTAInputDeviceDetector>(this);
@@ -219,6 +237,7 @@ void AThe_AwakeningPlayerController::BeginPlay()
 
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+ if (AdvancedDataWidgetInstance) { AdvancedDataWidgetInstance->RemoveFromParent(); AdvancedDataWidgetInstance=nullptr; }
  bClosePauseAfterSettings=false;
  if (GetLocalPlayer()) if (auto* Dialogs=GetLocalPlayer()->GetSubsystem<UTACommonDialogSubsystem>())
   if (auto* Dialog=Dialogs->GetActiveDialog()) Dialog->Dismiss();
@@ -677,7 +696,9 @@ bool AThe_AwakeningPlayerController::UsesCursorLook() const
 
 void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 {
-	if (!IsLocalPlayerController()) return;
+	if (!IsLocalPlayerController() || bSynchronizingInputPresentation) return;
+	// Immediate mapping rebuilds and prompt listeners can synchronously call back here.
+	TGuardValue<bool> SynchronizingGuard(bSynchronizingInputPresentation, true);
 	auto Winner = GetInputWinner();
 	if (!ObservedWinnerHandle.IsSet() || ObservedWinnerHandle.GetValue() != Winner.Handle)
 	{
@@ -756,8 +777,10 @@ void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAI
 
 	const bool DialogActive=Cast<UTACommonDialogWidget>(Winner.Request.Owner.Get())!=nullptr;
  const bool bShouldBeActive = !DialogActive && Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get()) != nullptr;
-	const bool SettingsActive=Cast<UTASettingsMenuWidget>(Winner.Request.Owner.Get())!=nullptr;
-	if (bShouldBeActive == bUIInputMappingContextActive && SettingsActive==bSettingsInputMappingContextActive && DialogActive==bDialogInputMappingContextActive)
+	// Compare installed mapping state, including unavailable optional contexts.
+	const bool DialogMappingActive=DialogActive && CommonDialogInputMappingContext!=nullptr;
+	const bool SettingsActive=Cast<UTASettingsMenuWidget>(Winner.Request.Owner.Get())!=nullptr && SettingsInputMappingContext!=nullptr;
+	if (bShouldBeActive == bUIInputMappingContextActive && SettingsActive==bSettingsInputMappingContextActive && DialogMappingActive==bDialogInputMappingContextActive)
 	{
 		return;
 	}
@@ -777,11 +800,11 @@ void AThe_AwakeningPlayerController::SynchronizeUIInputMappingContext(const FTAI
 
 	FModifyContextOptions Options;
 	Options.bForceImmediately = true;
-	if (DialogActive!=bDialogInputMappingContextActive && CommonDialogInputMappingContext)
+	if (DialogMappingActive!=bDialogInputMappingContextActive && CommonDialogInputMappingContext)
  {
   if (DialogActive) Subsystem->AddMappingContext(CommonDialogInputMappingContext,30,Options);
   else Subsystem->RemoveMappingContext(CommonDialogInputMappingContext,Options);
-  bDialogInputMappingContextActive=DialogActive;
+  bDialogInputMappingContextActive=DialogMappingActive;
  }
  if (SettingsActive!=bSettingsInputMappingContextActive && SettingsInputMappingContext)
 	{

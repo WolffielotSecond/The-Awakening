@@ -234,5 +234,8 @@
 	"Settings.Binding.IA_DialogOption1": "Dialog option 1",
 	"Settings.Binding.IA_DialogOption2": "Dialog option 2",
 	"Settings.Binding.IA_DialogOption3": "Dialog option 3",
-	"Settings.Binding.IA_DialogOption4": "Dialog option 4"
+	"Settings.Binding.IA_DialogOption4": "Dialog option 4",
+	"UI_Settings_FocusCategories": "Back to categories",
+	"Settings.Binding.IA_SettingsFocusCategories": "Focus settings categories",
+	"Settings.Binding.IA_SettingsFocusDetails": "Focus setting details"
 }

@@ -347,6 +347,8 @@ namespace
   {TEXT("NextPage"),ETAInputCapability::Navigate,false,true},
   {TEXT("PreviousItem"),ETAInputCapability::Navigate,true,true},
   {TEXT("NextItem"),ETAInputCapability::Navigate,true,true},
+  {TEXT("FocusCategories"),ETAInputCapability::Navigate,true,true},
+  {TEXT("FocusDetails"),ETAInputCapability::Navigate,true,true},
   {TEXT("AdjustLeft"),ETAInputCapability::Navigate,false,false},
   {TEXT("AdjustRight"),ETAInputCapability::Navigate,false,false},
   {TEXT("Apply"),ETAInputCapability::Confirm,false,false},
@@ -360,18 +362,24 @@ namespace
 }
 FString UTASettingsMenuWidget::GetSettingCommandTextId(FName Name) const
 {
+ // Entering a category remains available through IMC without a footer hint.
+ if (Name==TEXT("FocusDetails")) return {};
+ if (Name==TEXT("FocusCategories") || Name==TEXT("FocusDetails"))
+ {
+  if (!bGamepadDevice || MenuDefinition) return {};
+  if (Name==TEXT("FocusCategories")) return SelectionArea==ESelectionArea::Details?TEXT("UI_Settings_FocusCategories"):FString();
+  return {};
+ }
  if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown"))
  {
   if (!bGamepadDevice || !GetScrollTarget()) return {};
-  if (SelectionArea==ESelectionArea::Categories)
-   return Name==TEXT("ScrollUp")?TEXT("UI_Settings_ScrollListUp"):TEXT("UI_Settings_ScrollListDown");
-  return Name==TEXT("ScrollUp")?TEXT("UI_Settings_ScrollDescriptionUp"):TEXT("UI_Settings_ScrollDescriptionDown");
+  return Name==TEXT("ScrollUp")?TEXT("UI_Settings_ScrollListUp"):TEXT("UI_Settings_ScrollListDown");
  }
  if (bGamepadDevice && !MenuDefinition && SelectionArea==ESelectionArea::Categories)
  {
   if (Name==TEXT("PreviousItem")) return TEXT("UI_Settings_PreviousCategory");
   if (Name==TEXT("NextItem")) return TEXT("UI_Settings_NextCategory");
-  if (Name==TEXT("Confirm")) return TEXT("UI_Settings_EnterCategory");
+  if (Name==TEXT("Confirm")) return {};
   if (Name!=TEXT("Back") && Name!=TEXT("ResetPage")) return {};
  }
  if (Name==TEXT("ResetPage") && MenuDefinition) return {};
@@ -425,7 +433,7 @@ TOptional<ETAInputCapability> UTASettingsMenuWidget::ResolvePlayerInput(FKey K) 
 {
  if (!InputController.IsValid() || K.IsMouseButton()) return {};
  for (const auto& Command:SettingsCommands)
-  if (!(MenuDefinition && FName(Command.Name)==TEXT("ResetPage")) && (!Command.GamepadOnly || K.IsGamepadKey()) && InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(Command.Name))) return Command.Capability;
+  if (!(MenuDefinition && (FName(Command.Name)==TEXT("ResetPage") || FName(Command.Name)==TEXT("FocusCategories") || FName(Command.Name)==TEXT("FocusDetails"))) && (!Command.GamepadOnly || K.IsGamepadKey()) && InputController->IsKeyMappedToAction(K,InputController->GetSettingsAction(Command.Name))) return Command.Capability;
  return {};
 }
 void UTASettingsMenuWidget::ExecutePlayerInput(FKey K,ETAInputCapability C)
@@ -440,6 +448,15 @@ void UTASettingsMenuWidget::ExecuteSettingsAction(FName Name,bool GamepadNavigat
  if (Name==TEXT("Back")) { HandleMenuBackRequested(); return; }
  if (IsCapturingPlayerInput()) return;
  if (GamepadNavigation) BeginGamepadNavigation();
+ if (Name==TEXT("FocusCategories") || Name==TEXT("FocusDetails"))
+ {
+  if (!MenuDefinition)
+  {
+   if (Name==TEXT("FocusCategories") && SelectionArea==ESelectionArea::Details) RequestExit(EPendingExit::Categories);
+   else if (Name==TEXT("FocusDetails") && SelectionArea==ESelectionArea::Categories) EnterDetails();
+  }
+  return;
+ }
  if (Name==TEXT("ScrollUp") || Name==TEXT("ScrollDown"))
  { ScrollCurrentRegion(Name==TEXT("ScrollUp")?-1:1); ScrollRepeatDelay=0.35f; return; }
  if (Name==TEXT("ResetPage") && !MenuDefinition) { ResetPressed(); return; }
@@ -506,8 +523,7 @@ void UTASettingsMenuWidget::SelectPointerRow()
 }
 UScrollBox* UTASettingsMenuWidget::GetScrollTarget() const
 {
- if (SelectionArea==ESelectionArea::Categories) return ScrollBox_SettingsOptions.Get();
- return SelectedSettingId.IsNone()?nullptr:ScrollBox_Description.Get();
+ return ScrollBox_SettingsOptions.Get();
 }
 bool UTASettingsMenuWidget::CanScrollCurrentRegion() const
 {

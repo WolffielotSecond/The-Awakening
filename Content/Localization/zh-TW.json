@@ -234,5 +234,8 @@
 	"Settings.Binding.IA_DialogOption1": "彈出視窗選項 1",
 	"Settings.Binding.IA_DialogOption2": "彈出視窗選項 2",
 	"Settings.Binding.IA_DialogOption3": "彈出視窗選項 3",
-	"Settings.Binding.IA_DialogOption4": "彈出視窗選項 4"
+	"Settings.Binding.IA_DialogOption4": "彈出視窗選項 4",
+	"UI_Settings_FocusCategories": "返回設定分類",
+	"Settings.Binding.IA_SettingsFocusCategories": "選擇設定分類欄",
+	"Settings.Binding.IA_SettingsFocusDetails": "選擇詳細設定欄"
 }

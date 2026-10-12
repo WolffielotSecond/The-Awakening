@@ -234,5 +234,8 @@
 	"Settings.Binding.IA_DialogOption1": "弹窗选项 1",
 	"Settings.Binding.IA_DialogOption2": "弹窗选项 2",
 	"Settings.Binding.IA_DialogOption3": "弹窗选项 3",
-	"Settings.Binding.IA_DialogOption4": "弹窗选项 4"
+	"Settings.Binding.IA_DialogOption4": "弹窗选项 4",
+	"UI_Settings_FocusCategories": "返回设置大类",
+	"Settings.Binding.IA_SettingsFocusCategories": "选择设置大类栏",
+	"Settings.Binding.IA_SettingsFocusDetails": "选择详细设置栏"
 }

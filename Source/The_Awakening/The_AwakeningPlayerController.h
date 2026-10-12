@@ -21,6 +21,7 @@ class SViewport;
 class FWidgetPath;
 class UTAPauseMenuWidget;
 class UTASettingsMenuWidget;
+class UTAAdvancedDataWidget;
 class UTACommonDialogWidget;
 struct FInputActionValue;
 struct FInputKeyEventArgs;
@@ -147,6 +148,11 @@ protected:
 	TSubclassOf<UTAPauseMenuWidget> PauseMenuWidgetClass;
 	UPROPERTY(EditAnywhere, Category = "UI|Settings")
 	TSubclassOf<UTASettingsMenuWidget> SettingsMenuWidgetClass;
+ /** Automatically added to this local player's screen; layout belongs to the WBP. */
+ UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="UI|Advanced Data")
+ TSoftClassPtr<UTAAdvancedDataWidget> AdvancedDataWidgetClass{FSoftObjectPath(TEXT("/Game/UI/WBP_AdvancedData.WBP_AdvancedData_C"))};
+ UPROPERTY(Transient)
+ TObjectPtr<UTAAdvancedDataWidget> AdvancedDataWidgetInstance;
 	UPROPERTY(Transient)
 	TObjectPtr<UTAPauseMenuWidget> PauseMenuInstance;
 	UPROPERTY(Transient)
@@ -201,6 +207,7 @@ private:
 	bool bSettingsInputMappingContextActive = false;
  bool bClosePauseAfterSettings=false;
  bool bDialogInputMappingContextActive=false;
+	bool bSynchronizingInputPresentation=false;
 	TOptional<FVector2D> LastVirtualCursorPosition;
 	// Lifecycle edge memory (loss notification/invalidation), never an authorization source.
 	TOptional<TAInputOwnershipAdapter::EState> LastDefinitiveInputOwnership;

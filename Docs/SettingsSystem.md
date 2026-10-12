@@ -437,7 +437,9 @@ SettingsMenuWidgetClass = WBP_SettingsMenu
 
 创建 `WBP_AdvancedData`，父类为 `TAAdvancedDataWidget`。添加必需 TextBlock：**Text_AdvancedData**，勾选 Is Variable，编译并保存。
 
-将它放入现有 HUD，由你设计屏幕位置。HUD 应由本地玩家控制器创建，确保该控件能够取得 Owning Player。也可以在现有 HUD 初始化处创建一次 WBP_AdvancedData，指定本地玩家控制器作为 Owning Player，再加入视口。
+本地玩家控制器会在 BeginPlay 自动创建一次信息面板，指定自己作为 Owning Player，再以层级 100 加入该玩家的屏幕；退出时自动移除。默认使用现有 `/Game/UI/WBP_AdvancedData`。无需在 HUD 或蓝图中重复 Create Widget / Add to Viewport，否则会显示两份。
+
+可在玩家控制器蓝图的 Class Defaults → UI → Advanced Data 中修改 **Advanced Data Widget Class**，选择其他继承 `TAAdvancedDataWidget` 的 WBP。屏幕位置、锚点、字体和背景仍在该 WBP 中自行设计。面板自动设置为不参与鼠标命中，不接管输入或焦点。
 
 保留控件拥有者 Tick。关闭模式由 C++ 清空文字，默认每 0.25 秒刷新；不要因关闭模式将整个拥有者 Collapse 并停止更新。
 
@@ -669,3 +671,24 @@ RS 操作先修改受范围约束的目标偏移，再使用 FInterpTo 平滑趋
 - MenuInput / CommonDialog / Drafts 覆盖两区域导航、IMC 改绑、覆盖 owner 拒绝、弹窗 Slot、RS 插值与目标取消、设置／暂停禁用虚拟指针、选中控件回位目标、左栏长按恢复、短按无效、单次长按只执行一次、配置落盘、放弃不撤销恢复、其他分类及显示草稿不提交、语言保留。
 - 用户允许本段收尾；自动化不证明真实鼠标回位、高亮和插值手感。真实窗口中的关闭／重开、设备混用及显示模式 Keep/Revert/超时没有本轮逐项人工 PASS 记录，不将其写为已验证。
 - 已移除本轮一次性 IMC 迁移脚本；正式创建／验证工具保留，创建工具不再生成无消费者的 PointerMove／PointerClick。既有资产与映射不删除，避免扩大到序列化引用迁移；设置运行路径不消费它们。未清空 Saved／Intermediate／DDC，未创建 commit。
+
+### 左摇杆切换大类栏与设置项栏
+
+设置主界面新增两个暂停时可执行的 IMC 动作：
+
+| 动作 | 默认手柄绑定 | 操作 |
+| --- | --- | --- |
+| IA_SettingsFocusCategories | Gamepad Left Thumbstick Left | 从设置项栏返回大类栏 |
+| IA_SettingsFocusDetails | Gamepad Left Thumbstick Right | 从大类栏进入当前大类的设置项 |
+
+两者位于 `/Game/Input/Actions/Settings`，映射在现有 `/Game/Input/IMC_Settings` 中。可直接编辑 IMC 改绑；代码没有固定物理键兜底。已有项目可使用 `Tools/Settings/add_settings_column_input.py` 增量添加，保留其他输入映射及已有这两个动作的自定义绑定。
+
+返回大类保留当前大类和选中设置项；再次进入时继续选中之前的设置项。左拨复用现有返回确认流程：当前有未应用修改时，先选择应用或放弃，随后返回大类。右拨只进入设置项栏，不确认开关、不修改选择或滑块、不打开二级菜单。
+
+同一次持续拨住只处理一次，重复按下事件不会再次执行。大类栏的上一项／下一项继续选择大类，设置项栏继续选择设置项。手柄提示栏按区域显示对应的摇杆方向提示；二级菜单和输入录入时不执行这两个主界面动作。弹窗拥有输入时，底层设置菜单不能切换栏位。
+
+### 设置项列表滚动与进入提示
+
+“进入设置项”的提示不再显示，包括大类栏中的 A 确认提示和左摇杆右拨提示；它们的 IMC 操作仍保留。设置项中的开关／二级菜单确认提示继续按选中项类型显示。
+
+右摇杆上下在大类栏和设置项栏均滚动中间的 `ScrollBox_SettingsOptions`。长按连续滚动、平滑插值、松开停止以及列表没有溢出时隐藏滚动提示的规则一致；不会把列表滚动变为选择上一项／下一项，也不会调整设置值。右侧说明栏不再是这两个右摇杆滚动动作的目标。

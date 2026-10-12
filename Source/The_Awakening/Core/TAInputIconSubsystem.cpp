@@ -180,6 +180,8 @@ FString UTAInputIconSubsystem::KeyToAssetName(FKey Key) const
 	if (Key == EKeys::Gamepad_Right2D || Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY) return TEXT("Stick_R");
 	if (Key == EKeys::Gamepad_RightStick_Up) return TEXT("Stick_R_Up");
 	if (Key == EKeys::Gamepad_RightStick_Down) return TEXT("Stick_R_Down");
+	if (Key == EKeys::Gamepad_LeftStick_Left) return TEXT("Stick_L_Left");
+	if (Key == EKeys::Gamepad_LeftStick_Right) return TEXT("Stick_L_Right");
 	if (Key == EKeys::Gamepad_Special_Left)  return TEXT("Special_Left");
 	if (Key == EKeys::Gamepad_Special_Right) return TEXT("Special_Right");
 
