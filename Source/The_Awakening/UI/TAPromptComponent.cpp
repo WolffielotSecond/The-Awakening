@@ -13,6 +13,8 @@
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Inventory/TAWorldItem.h"
+#include "Inventory/TANearbyPickupComponent.h"
+#include "The_AwakeningPlayerController.h"
 
 UTAPromptComponent::UTAPromptComponent()
 {
@@ -74,6 +76,12 @@ void UTAPromptComponent::CollectInteractCandidates(TArray<FTAPromptCandidate>& O
 	{
 		return;
 	}
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(OwnerPawn->GetController());
+	if (!PC || !PC->AllowsInput(ETAInputCapability::Interact)) return;
+	const auto* Pickup = OwnerPawn->FindComponentByClass<UTANearbyPickupComponent>();
+	// Once configured, the overlay is the sole pickup prompt. Until then retain the
+	// selected world prompt so existing levels still have usable feedback.
+	if (Pickup && Pickup->HasItems() && Pickup->HasPanel()) return;
 
 	TArray<FOverlapResult> Overlaps;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(PromptInteract), false, OwnerPawn.Get());
@@ -100,6 +108,8 @@ void UTAPromptComponent::CollectInteractCandidates(TArray<FTAPromptCandidate>& O
 		{
 			continue;
 		}
+		if (Pickup && Pickup->HasItems() && Actor != Pickup->GetSelectedItem()) continue;
+		if (Pickup && !Pickup->HasItems() && Cast<ATAWorldItem>(Actor)) continue;
 		if (!ITAInteractable::Execute_CanInteract(Actor, OwnerPawn.Get()))
 		{
 			continue;

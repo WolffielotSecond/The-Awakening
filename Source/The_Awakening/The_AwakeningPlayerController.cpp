@@ -451,6 +451,8 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 			{
 				Subsystem->AddMappingContext(Bindings?Bindings->PrepareContext(CurrentContext):CurrentContext, 0);
 			}
+			if (auto* PickupContext = PickupInputMappingContext.LoadSynchronous())
+				Subsystem->AddMappingContext(Bindings ? Bindings->PrepareContext(PickupContext) : PickupContext, 0);
 
 			// The legacy property contains desktop mouse mappings, not touch controls.
 			// Keep its serialized name so existing Blueprint defaults remain valid.

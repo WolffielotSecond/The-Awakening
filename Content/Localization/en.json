@@ -1,4 +1,9 @@
 {
+	"Pickup_Previous": "Previous item",
+	"Pickup_Next": "Next item",
+	"Pickup_Failed": "Unable to pick up. Check available inventory space.",
+	"Settings.Binding.IA_PickupPrevious": "Select previous pickup",
+	"Settings.Binding.IA_PickupNext": "Select next pickup",
 	"Char_Alice_Name": "Alice",
 	"Char_Bob_Name": "Bob",
 	"Common_UnavailableInThisVersion": "Unavailable in this version",

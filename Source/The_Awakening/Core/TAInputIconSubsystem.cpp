@@ -109,6 +109,9 @@ FString UTAInputIconSubsystem::KeyToAssetName(FKey Key) const
 	if (Key == EKeys::MiddleMouseButton) return TEXT("Key_3");
 	if (Key == EKeys::ThumbMouseButton)  return TEXT("Key_4");
 	if (Key == EKeys::ThumbMouseButton2) return TEXT("Key_5");
+	if (Key == EKeys::MouseScrollUp)    return TEXT("Scroll_Up");
+	if (Key == EKeys::MouseScrollDown)  return TEXT("Scroll_Down");
+	if (Key == EKeys::MouseWheelAxis)   return TEXT("Scroll_Vertical");
 
 	// 键盘特殊
 	if (Key == EKeys::SpaceBar) return TEXT("Space");
@@ -253,7 +256,7 @@ FString UTAInputIconSubsystem::BuildIconPath(FKey Key) const
 	{
 	case EInputDeviceType::KeyboardMouse:
 		Folder = TEXT("Keyboard_Mouse");
-		if (Key.IsMouseButton())
+		if (Key.IsMouseButton() || Key == EKeys::MouseScrollUp || Key == EKeys::MouseScrollDown || Key == EKeys::MouseWheelAxis)
 		{
 			AssetName = FString::Printf(TEXT("Mouse_%s"), *Name);
 		}

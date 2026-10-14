@@ -15,6 +15,7 @@ class UInputAction;
 class UAbilitySystemComponent;
 class UTAParkourComponent;
 class UTAInventoryComponent;
+class UTANearbyPickupComponent;
 class UTAPromptComponent;
 class UTAFreezeComponent;
 class UTAInventoryPanelWidget;
@@ -85,6 +86,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Input")
 	UInputAction* InteractAction;
 
+	UPROPERTY(EditAnywhere, Category = "Input")
+	UInputAction* PreviousPickupAction;
+	UPROPERTY(EditAnywhere, Category = "Input")
+	UInputAction* NextPickupAction;
+
 	/** 扫描输入*/
 	UPROPERTY(EditAnywhere, Category = "Input")
 	UInputAction* ScanAction; //rmb右键
@@ -105,6 +111,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAInventoryComponent> InventoryComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTANearbyPickupComponent> NearbyPickupComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAPromptComponent> PromptComponent;
@@ -245,6 +254,8 @@ protected:
 	void UpdateMovementInput();
 	void UpdateHeldGameplayInput();
 	void TryPlayerInteract();
+	void SelectPreviousPickup();
+	void SelectNextPickup();
 
 	void OnScanStarted(const FInputActionValue& Value);
 	void OnScanEnded(const FInputActionValue& Value);

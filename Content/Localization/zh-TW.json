@@ -1,4 +1,9 @@
 {
+	"Pickup_Previous": "上一件物品",
+	"Pickup_Next": "下一件物品",
+	"Pickup_Failed": "無法拾取，請檢查背包剩餘空間。",
+	"Settings.Binding.IA_PickupPrevious": "選擇上一件可拾取物品",
+	"Settings.Binding.IA_PickupNext": "選擇下一件可拾取物品",
 	"Char_Alice_Name": "愛麗絲",
 	"Char_Bob_Name": "鮑勃",
 	"Common_UnavailableInThisVersion": "目前版本中無法使用",

@@ -25,6 +25,10 @@
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAMovementComponent.h"
 #include "Inventory/TAInventoryComponent.h"
+#include "Inventory/TANearbyPickupComponent.h"
+#include "Inventory/TAWorldItem.h"
+#include "UObject/ConstructorHelpers.h"
+#include "InputAction.h"
 #include "Scan/TAScanningComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
@@ -94,6 +98,11 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& Objec
 
 	ParkourComponent = CreateDefaultSubobject<UTAParkourComponent>(TEXT("ParkourComponent"));
 	InventoryComponent = CreateDefaultSubobject<UTAInventoryComponent>(TEXT("InventoryComponent"));
+	NearbyPickupComponent = CreateDefaultSubobject<UTANearbyPickupComponent>(TEXT("NearbyPickupComponent"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> PreviousPickupAsset(TEXT("/Game/Input/Actions/Pickup/IA_PickupPrevious.IA_PickupPrevious"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> NextPickupAsset(TEXT("/Game/Input/Actions/Pickup/IA_PickupNext.IA_PickupNext"));
+	PreviousPickupAction = PreviousPickupAsset.Object;
+	NextPickupAction = NextPickupAsset.Object;
 	PromptComponent = CreateDefaultSubobject<UTAPromptComponent>(TEXT("PromptComponent"));
 	FreezeComponent = CreateDefaultSubobject<UTAFreezeComponent>(TEXT("FreezeComponent"));
 }
@@ -121,6 +130,8 @@ void AThe_AwakeningCharacter::BeginPlay()
 		PromptComponent->ParkourJumpAction = ParkourJumpAction;
 		PromptComponent->ParkourDropAction = ParkourDropAction;
 	}
+	if (NearbyPickupComponent)
+		NearbyPickupComponent->Configure(InteractionDistance, InteractAction, PreviousPickupAction, NextPickupAction);
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UTAInputIconSubsystem* Icons = GI->GetSubsystem<UTAInputIconSubsystem>())
@@ -133,6 +144,7 @@ void AThe_AwakeningCharacter::BeginPlay()
 void AThe_AwakeningCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (NearbyPickupComponent) NearbyPickupComponent->RefreshNearbyItems();
 	UpdateInteractTarget();
 	UpdateHeldGameplayInput();
 	UpdateMovementInput();
@@ -184,6 +196,10 @@ void AThe_AwakeningCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 		}
 
 		// Parkour uses held action values in UpdateHeldGameplayInput, not a one-shot Started event.
+		if (PreviousPickupAction)
+			EnhancedInputComponent->BindAction(PreviousPickupAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::SelectPreviousPickup);
+		if (NextPickupAction)
+			EnhancedInputComponent->BindAction(NextPickupAction, ETriggerEvent::Started, this, &AThe_AwakeningCharacter::SelectNextPickup);
 
 		if (ToggleInventoryAction)
 		{
@@ -570,10 +586,15 @@ void AThe_AwakeningCharacter::TryPlayerInteract()
 
 void AThe_AwakeningCharacter::TryInteract()
 {
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	if (!PC || !PC->AllowsInput(ETAInputCapability::Interact)) return;
 	if (UTAFreezeComponent::IsActorFrozen(this))
 	{
 		return;
 	}
+	if (NearbyPickupComponent && NearbyPickupComponent->TryPickupSelected()) return;
+	// General interactions use a fresh query too; the displayed pickup selection has priority.
+	UpdateInteractTarget();
 	if (CurrentInteractTarget.IsValid())
 	{
 		AActor* Target = CurrentInteractTarget.Get();
@@ -621,6 +642,7 @@ void AThe_AwakeningCharacter::TryInteract()
 		{
 			continue;
 		}
+		if (Cast<ATAWorldItem>(Actor)) continue; // World pickups are validated exclusively by the list.
 
 		const float DistSq = FVector::DistSquared(GetActorLocation(), Actor->GetActorLocation());
 		if (DistSq < ClosestDistanceSq)
@@ -638,6 +660,11 @@ void AThe_AwakeningCharacter::TryInteract()
 
 void AThe_AwakeningCharacter::UpdateInteractTarget()
 {
+	if (NearbyPickupComponent && NearbyPickupComponent->HasItems())
+	{
+		CurrentInteractTarget = NearbyPickupComponent->GetSelectedItem();
+		return;
+	}
 	TArray<FOverlapResult> OverlapResults;
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
@@ -667,6 +694,7 @@ void AThe_AwakeningCharacter::UpdateInteractTarget()
 			{
 				continue;
 			}
+			if (Cast<ATAWorldItem>(Actor)) continue;
 
 			const float DistSq = FVector::DistSquared(GetActorLocation(), Actor->GetActorLocation());
 			if (DistSq < ClosestDistSq)
@@ -678,6 +706,16 @@ void AThe_AwakeningCharacter::UpdateInteractTarget()
 	}
 
 	CurrentInteractTarget = NewTarget;
+}
+
+void AThe_AwakeningCharacter::SelectPreviousPickup()
+{
+	if (NearbyPickupComponent) NearbyPickupComponent->SelectPrevious();
+}
+
+void AThe_AwakeningCharacter::SelectNextPickup()
+{
+	if (NearbyPickupComponent) NearbyPickupComponent->SelectNext();
 }
 
 bool AThe_AwakeningCharacter::IsSafeToMoveToward(const FVector& WorldDirection) const

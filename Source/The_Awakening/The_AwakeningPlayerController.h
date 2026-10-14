@@ -126,6 +126,8 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
 	TArray<UInputMappingContext*> DefaultMappingContexts;
+	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
+	TSoftObjectPtr<UInputMappingContext> PickupInputMappingContext{FSoftObjectPath(TEXT("/Game/Input/IMC_Pickup.IMC_Pickup"))};
 
 	// Serialized template name retained for existing desktop IMC_MouseLook defaults.
 	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings", meta = (DisplayName = "Additional Input Mapping Contexts"))

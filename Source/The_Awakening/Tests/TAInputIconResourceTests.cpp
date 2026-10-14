@@ -17,12 +17,15 @@ bool FTAInputIconResourcesTest::RunTest(const FString&)
  {
   Icons->SetCurrentDeviceType(Device);
   const TArray<FKey> Keys=Device==EInputDeviceType::KeyboardMouse?
-   TArray<FKey>{EKeys::Q,EKeys::Tab,EKeys::SpaceBar,EKeys::LeftMouseButton,EKeys::RightMouseButton}:
+   TArray<FKey>{EKeys::Q,EKeys::Tab,EKeys::SpaceBar,EKeys::LeftMouseButton,EKeys::RightMouseButton,EKeys::MouseScrollUp,EKeys::MouseScrollDown,EKeys::MouseWheelAxis}:
    TArray<FKey>{EKeys::Gamepad_FaceButton_Bottom,EKeys::Gamepad_FaceButton_Right,EKeys::Gamepad_Left2D,EKeys::Gamepad_Special_Left,EKeys::Gamepad_RightStick_Up,EKeys::Gamepad_RightStick_Down,EKeys::Gamepad_LeftStick_Left,EKeys::Gamepad_LeftStick_Right};
   for (const auto& Key:Keys)
   {
    auto* Texture=Icons->GetIconForKey(Key);
    TestNotNull(FString::Printf(TEXT("Device %d key %s loads through the runtime path"),int32(Device),*Key.ToString()),Texture);
+   if (Texture && Key == EKeys::MouseScrollUp) TestEqual(TEXT("Up wheel uses the upward icon"), Texture->GetName(), FString(TEXT("Mouse_Scroll_Up")));
+   if (Texture && Key == EKeys::MouseScrollDown) TestEqual(TEXT("Down wheel uses the downward icon"), Texture->GetName(), FString(TEXT("Mouse_Scroll_Down")));
+   if (Texture && Key == EKeys::MouseWheelAxis) TestEqual(TEXT("Wheel axis uses the bidirectional icon"), Texture->GetName(), FString(TEXT("Mouse_Scroll_Vertical")));
    // NullRHI does not create GPU platform textures. Validate the imported source
    // dimensions here; cooked GPU/display validation belongs to packaged smoke.
 #if WITH_EDITORONLY_DATA
