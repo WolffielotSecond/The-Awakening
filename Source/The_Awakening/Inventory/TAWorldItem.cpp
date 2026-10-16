@@ -30,13 +30,7 @@ ATAWorldItem::ATAWorldItem()
 	MeshComponent->SetupAttachment(RootComponent);
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	PromptWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("PromptWidget"));
-	PromptWidget->SetupAttachment(RootComponent);
-	PromptWidget->SetRelativeLocation(FVector(0.f, 0.f, 80.f));
-	PromptWidget->SetWidgetSpace(EWidgetSpace::Screen);
-	PromptWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PromptWidget->SetDrawAtDesiredSize(true);
-	PromptWidget->SetVisibility(false);
+	// 掉落物品没有头顶提示：交互提示完全由拾取列表 UI（UTANearbyPickupComponent）负责，不加入统一提示系统
 
 	ScannableComponent = CreateDefaultSubobject<UTAScannableComponent>(TEXT("ScannableComponent"));
 	ScannableComponent->ScanInfo.TargetType = ETAScanTargetType::Item;
@@ -169,29 +163,3 @@ bool ATAWorldItem::TryPickupAsInventory(AActor* Interactor, UTAInventoryComponen
 	return true;
 }
 
-void ATAWorldItem::SetPromptVisible(bool bVisible)
-{
-	if (PromptWidget)
-	{
-		PromptWidget->SetVisibility(bVisible);
-		if (bVisible && !PromptWidget->GetUserWidgetObject() && PromptWidget->GetWidgetClass())
-		{
-			PromptWidget->InitWidget();
-		}
-	}
-}
-
-void ATAWorldItem::RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText)
-{
-	if (!PromptWidget)
-	{
-		return;
-	}
-
-	UUserWidget* Widget = PromptWidget->GetUserWidgetObject();
-	if (!Widget)
-	{
-		return;
-	}
-	FTAPromptWidgetUtils::ApplyPrompt(Widget, KeyIcon, PromptText);
-}

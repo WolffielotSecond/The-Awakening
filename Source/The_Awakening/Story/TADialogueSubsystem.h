@@ -6,6 +6,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Story/TADialogueTypes.h"
 #include "Story/TADialogueConditions.h"
+#include "Health/TADamageTypes.h"
+#include "Health/TARollbackSubsystem.h"
 #include "TADialogueSubsystem.generated.h"
 
 class UTADialogueController;
@@ -151,4 +153,14 @@ protected:
 
 	TArray<TSharedPtr<ITADialogueConditionEvaluator>> ConditionEvaluators;
 	TMap<FName, TFunction<void(const FTAStoryEventPayload&)>> ReservedHandlers;
+
+private:
+	/** 对话期间：玩家无敌 + 不会死；回滚日志记录对话做的所有改动，死亡时撤销并强制结束对话。 */
+	void BeginDialogueGuards(class AThe_AwakeningCharacter* PlayerCharacter);
+	void EndDialogueGuards();
+
+	FTARollbackScopeHandle DialogueRollbackScope;
+	FTAHealthProtectionHandle DialogueInvulnerable;
+	FTAHealthProtectionHandle DialogueUndying;
+	TWeakObjectPtr<class UTAHealthComponent> ProtectedHealth;
 };

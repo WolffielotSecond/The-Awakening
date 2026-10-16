@@ -53,7 +53,7 @@ ScrollBox 设置 Vertical、ScrollBarVisibility 为 Visible（保持 AlwaysShowS
 在玩家角色 BP 的 NearbyPickupComponent 中，将 `PickupPanelClass` 设为 `WBP_PickupPanel`。
 拾取半径在 BeginPlay 跟随角色 `InteractionDistance`；之后可通过组件的 PickupRadius 调整。
 `bRequireLineOfSight` 默认为 false，保持原有范围拾取方式；打开后检测到物品原点的 Visibility 遮挡。
-没有配置 WBP 时，列表逻辑仍有效，原世界提示显示选中的物品；配置后由列表替代物品世界提示。
+掉落物品没有头顶世界提示，交互提示只由本列表负责（不加入统一交互提示系统，见 [InteractionPrompts.md](InteractionPrompts.md)）。没有配置 WBP 时列表逻辑仍有效，但不会显示任何物品提示。
 
 ## 输入与提示
 
@@ -100,6 +100,6 @@ ScrollBox 设置 Vertical、ScrollBarVisibility 为 Visible（保持 AlwaysShowS
 4. 背包满、部分堆叠、全部拾取、货币拾取。
 5. 背包／对话／暂停／扫描期间不拾取、不切换；关闭后恢复列表。
 6. 切换三种语言、键鼠／手柄、重绑定后提示刷新。
-7. 无候选时隐藏；未配置 WBP 时仍有选中物品的世界提示；有物品时普通交互不会抢走拾取按键。
+7. 无候选时隐藏；物品头顶没有提示；有物品时普通交互不会抢走拾取按键，其他元素的交互提示也会让出。
 
 界面未创建，因此视觉布局、实际滚轮/手柄输入和 PIE 焦点效果需要上述验收。

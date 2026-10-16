@@ -40,15 +40,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	bool IsCurrencyPickup() const;
 
+	/** 拾取列表行里显示的交互文字 Key。 */
 	FString GetPromptTextId() const;
-
-	UWidgetComponent* GetPromptWidgetComponent() const { return PromptWidget; }
-
-	UFUNCTION(BlueprintCallable, Category = "Interaction")
-	void SetPromptVisible(bool bVisible);
-
-	UFUNCTION(BlueprintCallable, Category = "Interaction")
-	void RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText);
 
 protected:
 	bool TryPickupAsCurrency(AActor* Interactor);
@@ -60,9 +53,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> PromptWidget;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAScannableComponent> ScannableComponent;

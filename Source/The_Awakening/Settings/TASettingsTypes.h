@@ -59,7 +59,7 @@ struct THE_AWAKENING_API FTASettingChoice
  UPROPERTY(EditAnywhere, BlueprintReadWrite) FString NameTextId;
 };
 UENUM(BlueprintType)
-enum class ETASettingDescriptionBlockType : uint8 { Text, Image };
+enum class ETASettingDescriptionBlockType : uint8 { Text, Image, DeadZonePreview };
 /** Ordered localized text and illustration blocks; presentation belongs to the WBP. */
 USTRUCT(BlueprintType)
 struct THE_AWAKENING_API FTASettingDescriptionBlock
@@ -92,6 +92,8 @@ struct THE_AWAKENING_API FTASettingDefinition
  UPROPERTY(EditAnywhere, BlueprintReadOnly) float Maximum = 1;
  /** Step in stored integer slider positions. */
  UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="1",ClampMax="99")) int32 Step = 1;
+ /** Each adjustment moves to the next distinct PhysicalStep value instead of the next position. */
+ UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bStepByPhysicalValue = false;
  /** Optional rounding of the applied physical value; zero disables rounding. */
  UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0")) float PhysicalStep = 0;
  UPROPERTY(EditAnywhere, BlueprintReadOnly) ETASettingDisplayFormat DisplayFormat = ETASettingDisplayFormat::Number;
@@ -102,6 +104,8 @@ struct THE_AWAKENING_API FTASettingDefinition
  bool Normalize(int32 Input, int32& Output) const;
  float ToSliderNumber(int32 StoredValue) const;
  int32 FromSliderNumber(float Number) const;
+ /** Moves by Step and skips positions that round to the same physical value. */
+ int32 StepSliderPosition(int32 Position,int32 Direction) const;
  FName GetChoiceValue(int32 Index) const;
  int32 FindChoiceIndex(FName Value) const;
  bool IsValidDefinition() const;

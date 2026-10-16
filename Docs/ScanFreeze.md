@@ -4,7 +4,7 @@
 
 扫描按淡入进度逐渐减速，完全淡入时冻结；松开、取消或打开 UI 后，随淡出逐渐恢复。扫描组件 EndPlay 时立即释放自己的请求。世界时间、材质 Time、独立扫描 Actor 上的 Niagara 和扫描计时器没有被暂停或缩放。
 
-组件自动向当前 World 的 `TAFreezeSubsystem` 注册。新加入实体立即应用当前强度。RequestFreeze(Source, Strength) 的 Strength 为 0～1，默认 1；多个来源取最大强度，小游戏仍使用立即完全冻结。释放扫描不会清除小游戏请求。请求者必须在 EndPlay 中释放自己的请求。
+组件自动向当前 World 的 `TAFreezeSubsystem` 注册。新加入实体立即应用当前强度。功能代码统一通过 `UTATimeSubsystem` 申请和释放冻结（见 [TimeSystem.md](TimeSystem.md)），不要直接调用 `TAFreezeSubsystem`。RequestFreeze(Source, Strength) 的 Strength 为 0～1，默认 1；多个来源取最大强度，小游戏仍使用立即完全冻结。释放扫描不会清除小游戏请求。请求者必须在 EndPlay 中释放自己的请求。
 
 请求存在性与强度分开：Strength = 0 仍保留请求，只有 `ReleaseFreeze(Source)` 才结束生命周期。组件的 `HasFreezeRequest()` 从现有注册表查询当前参与资格和有效来源，不维护额外 bool。扫描从 FadeIn 起点（包括 0 强度）到 FadeOut 完成一直保留请求；Character 在 Move 被禁止且请求有效时继续提交已接受的移动命令，避免渐入第一帧丢失输入。
 

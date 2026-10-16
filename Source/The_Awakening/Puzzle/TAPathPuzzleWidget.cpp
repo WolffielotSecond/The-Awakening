@@ -6,7 +6,9 @@
 #include "Puzzle/TAPuzzleRewardReceiver.h"
 #include "Puzzle/TAPuzzleRewards.h"
 #include "The_AwakeningPlayerController.h"
-#include "Core/TAFreezeSubsystem.h"
+#include "Core/TATimeSubsystem.h"
+#include "Core/TAGameplayTags.h"
+#include "Health/TAHealthComponent.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
@@ -127,8 +129,9 @@ void UTAPathPuzzleWidget::NativeConstruct()
 	// Keep the freeze through settlement until this screen is removed.
 	if (Session)
 	{
-		if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
-			Freeze->RequestFreeze(this);
+		if (UTATimeSubsystem* Time = UTATimeSubsystem::Get(this))
+			Time->RequestFreeze(this);
+		BeginPuzzleGuards();
 	}
 	if (Session && !Session->IsTerminal() && InputRequestHandle == 0)
 	{
@@ -158,9 +161,10 @@ void UTAPathPuzzleWidget::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(SettlementCloseTimer);
-		if (UTAFreezeSubsystem* Freeze = World->GetSubsystem<UTAFreezeSubsystem>())
-			Freeze->ReleaseFreeze(this);
+		if (UTATimeSubsystem* Time = World->GetSubsystem<UTATimeSubsystem>())
+			Time->ReleaseFreeze(this);
 	}
+	EndPuzzleGuards();
 	const bool bAborting = Session && !Session->IsTerminal();
 	if (Session)
 	{
@@ -211,6 +215,48 @@ bool UTAPathPuzzleWidget::StartPuzzle()
 }
 
 void UTAPathPuzzleWidget::ClosePuzzle() { RemoveFromParent(); }
+
+void UTAPathPuzzleWidget::BeginPuzzleGuards()
+{
+	// NativeConstruct 可能重复进入（重新加入视口），已持有时不重复申请
+	if (!PuzzleRollbackScope.IsValid())
+	{
+		if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this))
+		{
+			// 死亡回滚：撤销结算对主游戏的改动后关闭小游戏，回到“还没开始”
+			PuzzleRollbackScope = Rollback->BeginScope(this, TEXT("Puzzle"),
+				[WeakThis = TWeakObjectPtr<UTAPathPuzzleWidget>(this)] { if (WeakThis.IsValid()) WeakThis->ClosePuzzle(); });
+		}
+	}
+	if (!ProtectedHealth.IsValid())
+	{
+		if (UTAHealthComponent* Health = UTAHealthComponent::FindHealthComponent(GetOwningPlayerPawn()))
+		{
+			PuzzleInvulnerable = Health->AddProtection(ETAHealthProtection::Invulnerable, this,
+				FGameplayTagContainer(TAGameplayTags::Damage_Source_Puzzle));
+			PuzzleUndying = Health->AddProtection(ETAHealthProtection::Undying, this, FGameplayTagContainer());
+			ProtectedHealth = Health;
+		}
+	}
+}
+
+void UTAPathPuzzleWidget::EndPuzzleGuards()
+{
+	// 正常关闭提交（丢弃记录）；死亡回滚时作用域已被回滚，这里无副作用
+	if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this))
+	{
+		Rollback->CommitScope(PuzzleRollbackScope);
+	}
+	PuzzleRollbackScope = FTARollbackScopeHandle();
+	if (UTAHealthComponent* Health = ProtectedHealth.Get())
+	{
+		Health->RemoveProtection(PuzzleInvulnerable);
+		Health->RemoveProtection(PuzzleUndying);
+	}
+	PuzzleInvulnerable = FTAHealthProtectionHandle();
+	PuzzleUndying = FTAHealthProtectionHandle();
+	ProtectedHealth.Reset();
+}
 void UTAPathPuzzleWidget::Undo() { if (Session) Session->Undo(); }
 void UTAPathPuzzleWidget::Retry() { /* Reserved for a future reset flow. */ }
 void UTAPathPuzzleWidget::SelectNode(int32 Index) { if (Session) Session->SelectNode(Index); }

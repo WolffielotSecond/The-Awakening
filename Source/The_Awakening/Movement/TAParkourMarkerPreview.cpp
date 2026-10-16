@@ -1,9 +1,8 @@
 #include "Movement/TAParkourMarker.h"
-#include "Movement/TAParkourComponent.h"
+#include "UI/TAInteractionPromptAnchor.h"
 #include "Components/ChildActorComponent.h"
-#include "Components/WidgetComponent.h"
 
-void ATAParkourMarker::SetLandingPreviewVisible(bool bVisible)
+void ATAParkourMarker::HideLandingAnchor()
 {
 	// The landing actor is only an anchor. Never reveal its sprite/arrow in game.
 	if (LandingTargetComponent)
@@ -11,13 +10,11 @@ void ATAParkourMarker::SetLandingPreviewVisible(bool bVisible)
 		LandingTargetComponent->SetHiddenInGame(true, false);
 		if (AActor* Child = LandingTargetComponent->GetChildActor()) Child->SetActorHiddenInGame(true);
 	}
-	// Keep the attached widget independent of the hidden anchor; prompt selection still controls Visibility.
-	if (PromptWidget) PromptWidget->SetHiddenInGame(!bVisible);
+	// 提示锚点挂在落点下，但不继承上面的隐藏；它的显隐只由统一提示系统控制
+	if (PromptWidget) PromptWidget->SetHiddenInGame(false);
 }
 
-void ATAParkourMarker::RefreshLandingPreview()
+void ATAParkourMarker::SyncPromptType()
 {
-	const UTAParkourComponent* Parkour = CurrentOverlappingActor.IsValid()
-		? CurrentOverlappingActor->FindComponentByClass<UTAParkourComponent>() : nullptr;
-	SetLandingPreviewVisible(Parkour && Parkour->CanPlayerParkourToMarker(this));
+	if (PromptWidget) PromptWidget->PromptType = GetPromptType();
 }

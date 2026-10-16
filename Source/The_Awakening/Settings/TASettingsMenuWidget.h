@@ -82,6 +82,8 @@ protected:
  UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TSubclassOf<UTASettingsPageWidget> PageWidgetClass;
  UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TSubclassOf<UTASettingsSectionWidget> SectionWidgetClass;
  UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TSubclassOf<UTASettingsDescriptionBlockWidget> DescriptionBlockWidgetClass;
+ /** Live dead-zone preview inserted for DeadZonePreview description blocks (WBP_DeadZonePreview). */
+ UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TSubclassOf<class UTADeadZonePreviewWidget> DeadZonePreviewWidgetClass;
  UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TSubclassOf<UTASettingRowWidget> OptionWidgetClass;
  UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TMap<ETASettingType,TSubclassOf<UTASettingRowWidget>> RowWidgetClasses;
  UPROPERTY(EditDefaultsOnly,Category="Settings|Style") TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;
@@ -161,7 +163,7 @@ private:
  UPROPERTY(Transient) TArray<FTASettingsPageDefinition> PageDefinitions;
  UPROPERTY(Transient) TArray<TObjectPtr<UTASettingsPageWidget>> PageEntries;
  UPROPERTY(Transient) TArray<TObjectPtr<UTASettingsSectionWidget>> SectionHeadings;
- UPROPERTY(Transient) TArray<TObjectPtr<UTASettingsDescriptionBlockWidget>> DescriptionEntries;
+ UPROPERTY(Transient) TArray<TObjectPtr<UUserWidget>> DescriptionEntries;
  TArray<FName> SectionHeadingIds;
  UPROPERTY(Transient) TObjectPtr<UTASettingsMenuWidget> ActiveSubmenu;
  UPROPERTY(Transient) TArray<TObjectPtr<UTAActionPromptWidget>> Prompts;

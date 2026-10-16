@@ -33,7 +33,7 @@ public class The_Awakening : ModuleRules
 			"OnlineSubsystemUtils"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore", "RenderCore", "RHI" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore", "RenderCore", "RHI", "DeveloperSettings" });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"The_Awakening"
@@ -41,6 +41,15 @@ public class The_Awakening : ModuleRules
 
 		// 剧情编辑器模块（The_AwakeningEditor）需要引用本模块头文件（Story/...、Core/... 等）
 		PublicIncludePaths.Add(ModuleDirectory);
+
+		// 手柄品牌识别：通过 Steam Input 查询被 Steam 模拟成 Xbox 的真实手柄型号（TAGamepadBrandResolver）
+		bool bWithSteamInput = Target.Platform == UnrealTargetPlatform.Win64;
+		if (bWithSteamInput)
+		{
+			PrivateDependencyModuleNames.Add("SteamShared");
+			AddEngineThirdPartyPrivateStaticDependencies(Target, "Steamworks");
+		}
+		PrivateDefinitions.Add("TA_WITH_STEAM_INPUT=" + (bWithSteamInput ? "1" : "0"));
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

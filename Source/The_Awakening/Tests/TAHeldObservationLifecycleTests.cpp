@@ -100,7 +100,9 @@ bool FTAHeldObservationLifecycleTest::RunTest(const FString&)
 	TestEqual(TEXT("Owned recovery does not synthesize pairing Up"), Processor.ConsumedPresses.Num(), 2);
 	TestEqual(TEXT("Loss retains persistent winner"), PC->GetInputWinner().Handle, Handle);
 	TestTrue(TEXT("Owned accepts a new real analog sample"), PC->ObserveAnalogInput(EKeys::Gamepad_LeftX, .6f, User, EState::Owned));
-	TestEqual(TEXT("New physical sample updates observation"), PC->ReadHeldKey(EKeys::Gamepad_LeftX).X, static_cast<double>(.6f));
+	// Held stick values are recorded after the player's radial dead zone.
+	TestEqual(TEXT("New physical sample updates observation"), PC->ReadHeldKey(EKeys::Gamepad_LeftX).X,
+		static_cast<double>(FTAGamepadDeadZone::Remap(.6f, PC->GetGamepadDeadZone().GetRange(ETADeadZoneInput::LeftStick))), 1.e-5);
 	TestTrue(TEXT("Owned accepts a real analog zero"), PC->ObserveAnalogInput(EKeys::Gamepad_LeftX, 0.f, User, EState::Owned));
 	TestTrue(TEXT("Real analog zero remains an observed key"), PC->HeldKeyValues.Contains(EKeys::Gamepad_LeftX));
 	TestTrue(TEXT("Real analog zero records zero"), PC->ReadHeldKey(EKeys::Gamepad_LeftX).IsNearlyZero());

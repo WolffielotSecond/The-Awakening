@@ -1,6 +1,7 @@
 // Source/The_Awakening/Story/ATAStoryTriggerActor.cpp
 #include "Story/ATAStoryTriggerActor.h"
 #include "Story/TADialogueSubsystem.h"
+#include "Health/TARollbackSubsystem.h"
 #include "Interaction/TADialogueParticipant.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/SphereComponent.h"
@@ -22,14 +23,7 @@ ATAStoryTriggerActor::ATAStoryTriggerActor()
 	TriggerCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 	TriggerCollision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	TriggerCollision->SetGenerateOverlapEvents(true);
-
-	// 直接采用项目现有提示控件，触发器实例不需要再手动指定 Widget Class。
-	static ConstructorHelpers::FClassFinder<UUserWidget> PromptWidgetClass(
-		TEXT("/Game/UI/WBP_InteractPrompt"));
-	if (PromptWidgetClass.Succeeded() && InteractPromptComponent)
-	{
-		InteractPromptComponent->SetWidgetClass(PromptWidgetClass.Class);
-	}
+	// 提示控件不再在这里指定：统一提示锚点会使用项目设置里的默认提示控件。
 }
 
 void ATAStoryTriggerActor::OnInteract_Implementation(AActor* Interactor)
@@ -61,7 +55,16 @@ void ATAStoryTriggerActor::OnInteract_Implementation(AActor* Interactor)
 
 	if (Subsystem->StartDialogueAsset(StoryAsset, this))
 	{
+		const bool bPlayedBefore = bPlayed;
 		bPlayed = true;
+		// 对话中死亡回滚时恢复“未播放”，让触发器可以再次触发
+		if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this); Rollback && Rollback->IsRecording())
+		{
+			Rollback->RecordUndo(TEXT("StoryTrigger.Played"), [WeakThis = TWeakObjectPtr<ATAStoryTriggerActor>(this), bPlayedBefore]
+			{
+				if (ATAStoryTriggerActor* Trigger = WeakThis.Get()) Trigger->bPlayed = bPlayedBefore;
+			});
+		}
 	}
 }
 

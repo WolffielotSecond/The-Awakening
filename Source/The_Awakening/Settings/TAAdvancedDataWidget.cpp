@@ -8,6 +8,8 @@
 #include "Components/TextBlock.h"
 #include "HAL/PlatformTime.h"
 #include "Core/TAVersionLibrary.h"
+#include "Core/TATimeSubsystem.h"
+#include "Misc/ConfigCacheIni.h"
 
 void UTAAdvancedDataWidget::NativeConstruct()
 {
@@ -21,6 +23,33 @@ void UTAAdvancedDataWidget::NativeTick(const FGeometry& G,float Delta)
  Super::NativeTick(G,Delta); ++Frames;
  const double Now=FPlatformTime::Seconds();
  if (Now-LastSample>=FMath::Max(RefreshInterval,0.1f)) { Refresh(); Frames=0; LastSample=Now; }
+}
+FString UTAAdvancedDataWidget::GetPlatformText(const TFunctionRef<FString(const FString&)>& T)
+{
+ // 发行平台来自构建配置（DefaultEngine.ini [OnlineSubsystem] DefaultPlatformService），而不是运行时在线子系统是否初始化成功：
+ // 编辑器里没开 Steam 客户端时在线子系统会退回 NULL，但这个版本的发行平台仍然是 Steam。
+ FString Platform;
+ GConfig->GetString(TEXT("OnlineSubsystem"),TEXT("DefaultPlatformService"),Platform,GEngineIni);
+ if (Platform.IsEmpty()) return T(TEXT("Settings.Value.Unknown"));
+ const FString Key=TEXT("Settings.Platform.")+Platform;
+ const FString Localized=T(Key);
+ return Localized==Key?Platform:Localized;
+}
+FString UTAAdvancedDataWidget::FormatGameTime(double Seconds,float Scale,const FText& Pattern)
+{
+ const int64 Total=FMath::FloorToInt64(FMath::Max(Seconds,0.0));
+ const FString Clock=FString::Printf(TEXT("%02lld:%02lld:%02lld"),Total/3600,(Total/60)%60,Total%60);
+ FNumberFormattingOptions Options; Options.MinimumFractionalDigits=0; Options.MaximumFractionalDigits=2; Options.UseGrouping=false;
+ FFormatNamedArguments Args;
+ Args.Add(TEXT("Time"),FText::FromString(Clock));
+ Args.Add(TEXT("Scale"),FText::AsNumber(Scale,&Options));
+ return FText::Format(FTextFormat(Pattern),Args).ToString();
+}
+FString UTAAdvancedDataWidget::GetGameTimeText(const UTALocalizeSubsystem* Loc) const
+{
+ const UTATimeSubsystem* Time=UTATimeSubsystem::Get(this);
+ const FText Pattern=Loc?Loc->GetText(TEXT("Settings.AdvancedData.GameTime")):FText::FromString(TEXT("{Time}(x{Scale})"));
+ return FormatGameTime(Time?Time->GetGameplayTime():0.0,Time?Time->GetGameplayTimeScale():1.f,Pattern);
 }
 void UTAAdvancedDataWidget::Refresh()
 {
@@ -50,6 +79,7 @@ void UTAAdvancedDataWidget::Refresh()
   const TCHAR* DeviceNames[]={TEXT("KeyboardMouse"),TEXT("Xbox"),TEXT("PS5"),TEXT("Switch")};
   const FString DeviceText=T(FString(TEXT("Settings.Device."))+DeviceNames[static_cast<uint8>(Device)]);
   S+=FString::Printf(TEXT("-%s-%s-%s-%s-%s"),*Version,*Build,*Q,*Language,*DeviceText);
+  S+=TEXT("-")+GetPlatformText(T)+TEXT("-")+GetGameTimeText(Loc);
  }
  Text_AdvancedData->SetText(FText::FromString(S));
 }

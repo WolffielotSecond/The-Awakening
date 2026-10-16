@@ -1,24 +1,22 @@
 #include "UI/TAPromptComponent.h"
-#include "UI/TAPromptTypes.h"
-#include "Interaction/TAInteractable.h"
-#include "Interaction/TAInteractableActor.h"
+#include "UI/TAInteractionPromptAnchor.h"
+#include "Interaction/TAInteractionQuery.h"
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAParkourMarker.h"
+#include "Inventory/TANearbyPickupComponent.h"
+#include "Core/TAFreezeComponent.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Core/TAInputIconSubsystem.h"
-#include "Components/WidgetComponent.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/PlayerController.h"
-#include "Engine/OverlapResult.h"
-#include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
-#include "Inventory/TAWorldItem.h"
-#include "Inventory/TANearbyPickupComponent.h"
 #include "The_AwakeningPlayerController.h"
 
 UTAPromptComponent::UTAPromptComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	// 冻结时也要继续 Tick，才能把提示隐藏掉（否则会停在冻结前的状态）
+	ComponentTags.AddUnique(TEXT("FreezeExempt"));
 }
 
 void UTAPromptComponent::BeginPlay()
@@ -26,6 +24,12 @@ void UTAPromptComponent::BeginPlay()
 	Super::BeginPlay();
 	OwnerPawn = Cast<APawn>(GetOwner());
 	if (GetOwner()) AddTickPrerequisiteActor(GetOwner());
+}
+
+void UTAPromptComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	HideAll();
+	Super::EndPlay(EndPlayReason);
 }
 
 void UTAPromptComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -36,168 +40,77 @@ void UTAPromptComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 void UTAPromptComponent::UpdatePrompts()
 {
-	if (!OwnerPawn.IsValid())
-	{
-		return;
-	}
-
-	TArray<FTAPromptCandidate> Candidates;
-	CollectCandidates(Candidates);
-
 	TMap<ETAPromptType, FTAPromptCandidate> Best;
-	for (const FTAPromptCandidate& C : Candidates)
+	// 完全冻结时执行会被拒绝，提示同样不显示
+	if (OwnerPawn.IsValid() && !UTAFreezeComponent::IsActorFrozen(OwnerPawn.Get()))
 	{
-		if (const FTAPromptCandidate* Existing = Best.Find(C.Type))
-		{
-			if (C.DistanceSq < Existing->DistanceSq)
-			{
-				Best.Add(C.Type, C);
-			}
-		}
-		else
-		{
-			Best.Add(C.Type, C);
-		}
+		CollectInteractCandidate(Best);
+		CollectParkourCandidates(Best);
 	}
-
 	ApplyWinners(Best);
 }
 
-void UTAPromptComponent::CollectCandidates(TArray<FTAPromptCandidate>& OutCandidates)
+void UTAPromptComponent::CollectInteractCandidate(TMap<ETAPromptType, FTAPromptCandidate>& Best) const
 {
-	CollectInteractCandidates(OutCandidates);
-	CollectParkourCandidates(OutCandidates);
+	const APawn* Pawn = OwnerPawn.Get();
+	const auto* PC = Pawn ? Cast<AThe_AwakeningPlayerController>(Pawn->GetController()) : nullptr;
+	if (!PC || !PC->AllowsInput(ETAInputCapability::Interact))
+	{
+		return;
+	}
+	// 执行时交互键优先交给拾取列表（TryPickupSelected），这时交互提示也让给拾取列表
+	if (const auto* Pickup = Pawn->FindComponentByClass<UTANearbyPickupComponent>(); Pickup && Pickup->HasItems())
+	{
+		return;
+	}
+	AActor* Target = FTAInteractionQuery::FindBestInteractable(Pawn, PromptRadius);
+	UTAInteractionPromptAnchor* Anchor = UTAInteractionPromptAnchor::FindAnchor(Target, ETAPromptType::Interact);
+	if (!Anchor)
+	{
+		return;
+	}
+	FTAPromptCandidate Candidate;
+	Candidate.Type = ETAPromptType::Interact;
+	Candidate.Source = Target;
+	Candidate.Action = InteractAction;
+	Candidate.Anchor = Anchor;
+	Best.Add(Candidate.Type, Candidate);
 }
 
-void UTAPromptComponent::CollectInteractCandidates(TArray<FTAPromptCandidate>& OutCandidates)
+void UTAPromptComponent::CollectParkourCandidates(TMap<ETAPromptType, FTAPromptCandidate>& Best) const
 {
-	UWorld* World = GetWorld();
-	if (!World || !OwnerPawn.IsValid())
-	{
-		return;
-	}
-	const auto* PC = Cast<AThe_AwakeningPlayerController>(OwnerPawn->GetController());
-	if (!PC || !PC->AllowsInput(ETAInputCapability::Interact)) return;
-	const auto* Pickup = OwnerPawn->FindComponentByClass<UTANearbyPickupComponent>();
-	// Once configured, the overlay is the sole pickup prompt. Until then retain the
-	// selected world prompt so existing levels still have usable feedback.
-	if (Pickup && Pickup->HasItems() && Pickup->HasPanel()) return;
-
-	TArray<FOverlapResult> Overlaps;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(PromptInteract), false, OwnerPawn.Get());
-
-	const bool bHit = World->OverlapMultiByChannel(
-		Overlaps,
-		OwnerPawn->GetActorLocation(),
-		FQuat::Identity,
-		ECC_Visibility,
-		FCollisionShape::MakeSphere(PromptRadius),
-		Params);
-
-	if (!bHit)
-	{
-		return;
-	}
-
-	const FVector PawnLoc = OwnerPawn->GetActorLocation();
-
-	for (const FOverlapResult& Result : Overlaps)
-	{
-		AActor* Actor = Result.GetActor();
-		if (!Actor || !Actor->Implements<UTAInteractable>())
-		{
-			continue;
-		}
-		if (Pickup && Pickup->HasItems() && Actor != Pickup->GetSelectedItem()) continue;
-		if (Pickup && !Pickup->HasItems() && Cast<ATAWorldItem>(Actor)) continue;
-		if (!ITAInteractable::Execute_CanInteract(Actor, OwnerPawn.Get()))
-		{
-			continue;
-		}
-
-		FTAPromptCandidate C;
-		C.Type = ETAPromptType::Interact;
-		C.Source = Actor;
-		C.WorldLocation = Actor->GetActorLocation();
-		C.DistanceSq = FVector::DistSquared(PawnLoc, C.WorldLocation);
-		C.Action = InteractAction;
-
-		if (ATAWorldItem* WorldItem = Cast<ATAWorldItem>(Actor))
-		{
-			C.TextId = WorldItem->GetPromptTextId();
-			C.PromptWidget = WorldItem->GetPromptWidgetComponent();
-		}
-		else if (ATAInteractableActor* IA = Cast<ATAInteractableActor>(Actor))
-		{
-			C.TextId = IA->GetPromptTextId();
-			C.PromptWidget = IA->GetPromptWidgetComponent();
-		}
-		else
-		{
-			C.TextId = InteractTextId;
-		}
-
-		if (C.TextId.IsEmpty())
-		{
-			C.TextId = InteractTextId;
-		}
-
-		if (C.PromptWidget.IsValid())
-		{
-			OutCandidates.Add(C);
-		}
-	}
-}
-
-void UTAPromptComponent::CollectParkourCandidates(TArray<FTAPromptCandidate>& OutCandidates)
-{
-	if (!OwnerPawn.IsValid())
-	{
-		return;
-	}
-
-	UTAParkourComponent* Parkour = OwnerPawn->FindComponentByClass<UTAParkourComponent>();
+	const APawn* Pawn = OwnerPawn.Get();
+	UTAParkourComponent* Parkour = Pawn ? Pawn->FindComponentByClass<UTAParkourComponent>() : nullptr;
 	if (!Parkour)
 	{
 		return;
 	}
-
-	const FVector PawnLoc = OwnerPawn->GetActorLocation();
-
-	// 需要 ParkourComponent 提供 OverlappingMarkers 访问，见下方「配套修改」
+	const FVector PawnLocation = Pawn->GetActorLocation();
+	// 跨越与跳下分别处理：各自取离角色最近、且与执行同一套条件（CanPlayerParkourToMarker）判定可跑酷的标记
 	for (ATAParkourMarker* Marker : Parkour->GetOverlappingMarkers())
 	{
-		if (!Parkour->CanPlayerParkourToMarker(Marker))
+		if (!IsValid(Marker) || !Parkour->CanPlayerParkourToMarker(Marker))
 		{
 			continue;
 		}
-
-		FTAPromptCandidate C;
-		C.Source = Marker;
-		C.WorldLocation = Marker->GetActorLocation();
-		C.DistanceSq = FVector::DistSquared(PawnLoc, C.WorldLocation);
-		C.PromptWidget = Marker->GetPromptWidgetComponent();
-
-		switch (Marker->MarkerType)
+		const ETAPromptType Type = Marker->GetPromptType();
+		UTAInteractionPromptAnchor* Anchor = Marker->GetPromptAnchor();
+		if (!Anchor)
 		{
-		case ETAParkourMarkerType::JumpToPoint:
-			C.Type = ETAPromptType::ParkourJump;
-			C.Action = ParkourJumpAction;
-			C.TextId = ParkourJumpTextId;
-			break;
-		case ETAParkourMarkerType::DropDown:
-			C.Type = ETAPromptType::ParkourDrop;
-			C.Action = ParkourDropAction;
-			C.TextId = ParkourDropTextId;
-			break;
-		default:
 			continue;
 		}
-
-		if (C.PromptWidget.IsValid())
+		const float DistanceSq = FVector::DistSquared(PawnLocation, Marker->GetActorLocation());
+		if (const FTAPromptCandidate* Existing = Best.Find(Type); Existing && Existing->DistanceSq <= DistanceSq)
 		{
-			OutCandidates.Add(C);
+			continue;
 		}
+		FTAPromptCandidate Candidate;
+		Candidate.Type = Type;
+		Candidate.Source = Marker;
+		Candidate.DistanceSq = DistanceSq;
+		Candidate.Action = Type == ETAPromptType::ParkourDrop ? ParkourDropAction : ParkourJumpAction;
+		Candidate.Anchor = Anchor;
+		Best.Add(Type, Candidate);
 	}
 }
 
@@ -206,175 +119,71 @@ void UTAPromptComponent::ApplyWinners(const TMap<ETAPromptType, FTAPromptCandida
 	for (const TPair<ETAPromptType, FTAPromptCandidate>& Pair : ActivePrompts)
 	{
 		const FTAPromptCandidate* NewBest = Best.Find(Pair.Key);
-		const bool bStillWinner = NewBest
-			&& NewBest->Source.Get() == Pair.Value.Source.Get();
-
-		if (!bStillWinner)
+		if (!NewBest || NewBest->Anchor != Pair.Value.Anchor)
 		{
-			HideCandidate(Pair.Value);
+			if (UTAInteractionPromptAnchor* Anchor = Pair.Value.Anchor.Get()) Anchor->HidePrompt();
 		}
 	}
-
 	TMap<ETAPromptType, FTAPromptCandidate> NewActive;
-
 	for (const TPair<ETAPromptType, FTAPromptCandidate>& Pair : Best)
 	{
 		const FTAPromptCandidate* Old = ActivePrompts.Find(Pair.Key);
-		const bool bSame = Old && Old->Source.Get() == Pair.Value.Source.Get();
-
-		if (!bSame)
+		// 只在新出现时刷新内容；同一目标持续显示不重复查图标和本地化
+		if (!Old || Old->Anchor != Pair.Value.Anchor)
 		{
 			ShowCandidate(Pair.Value);
 		}
-		else
-		{
-			// 同一目标也可定期刷新（可选）
-			RefreshCandidate(Pair.Value);
-		}
 		NewActive.Add(Pair.Key, Pair.Value);
 	}
-
 	ActivePrompts = MoveTemp(NewActive);
-	static const ETAPromptType StackOrder[] = {
-		ETAPromptType::Interact,
-		ETAPromptType::ParkourJump,
-		ETAPromptType::ParkourDrop
-	};
-
-	int32 StackIndex = 0;
-	float BaseZ = 100.f;
-	constexpr float Spacing = 55.f;
-
-	for (ETAPromptType Type : StackOrder)
-	{
-		if (FTAPromptCandidate* C = ActivePrompts.Find(Type))
-		{
-			if (UWidgetComponent* WC = C->PromptWidget.Get())
-			{
-
-				if (StackIndex == 0)
-				{
-
-					//根据交互？跑酷？类型不同设置相对位置
-					switch (Type)
-					{
-					case ETAPromptType::ParkourJump:
-					case ETAPromptType::ParkourDrop:
-						BaseZ = ParkourPromptZ;
-						break;
-
-					case ETAPromptType::Interact:
-						BaseZ = InteractPromptZ;
-						break;
-
-					default:
-						BaseZ = InteractPromptZ;
-						break;
-					}
-				}
-
-
-				WC->SetRelativeLocation(FVector(0.f, 0.f, BaseZ + StackIndex * Spacing));
-				++StackIndex;
-			}
-		}
-	}
 }
 
 void UTAPromptComponent::ShowCandidate(const FTAPromptCandidate& Candidate)
 {
-	if (UWidgetComponent* WidgetComp = Candidate.PromptWidget.Get())
-	{
-		WidgetComp->SetVisibility(true);
-		if (!WidgetComp->GetUserWidgetObject() && WidgetComp->GetWidgetClass())
-		{
-			WidgetComp->InitWidget();
-		}
-	}
-	RefreshCandidate(Candidate);
-}
-
-void UTAPromptComponent::HideCandidate(const FTAPromptCandidate& Candidate)
-{
-	if (UWidgetComponent* Widget = Candidate.PromptWidget.Get())
-	{
-		Widget->SetVisibility(false);
-	}
-}
-
-void UTAPromptComponent::RefreshCandidate(const FTAPromptCandidate& Candidate)
-{
-	AActor* Source = Candidate.Source.Get();
-	if (!Source)
+	UTAInteractionPromptAnchor* Anchor = Candidate.Anchor.Get();
+	if (!Anchor)
 	{
 		return;
 	}
-
-	FText PromptText = FText::FromString(Candidate.TextId);
+	const FString TextId = Anchor->ResolveTextId();
+	FText Text = FText::FromString(TextId);
 	UTexture2D* Icon = nullptr;
-
-	if (UWorld* World = GetWorld())
+	if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
 	{
-		if (UGameInstance* GI = World->GetGameInstance())
+		if (const UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
 		{
-			if (UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
-			{
-				PromptText = Loc->GetText(Candidate.TextId);
-			}
-			if (UTAInputIconSubsystem* Icons = GI->GetSubsystem<UTAInputIconSubsystem>())
-			{
-				if (Candidate.Action)
-				{
-					auto* Pawn = OwnerPawn.Get();
-					auto* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
-					Icon = Icons->GetIconForActionForPlayer(Candidate.Action, PC ? PC->GetLocalPlayer() : nullptr);
-				}
-			}
+			Text = Loc->GetText(TextId);
+		}
+		if (const UTAInputIconSubsystem* Icons = GI->GetSubsystem<UTAInputIconSubsystem>(); Icons && Candidate.Action)
+		{
+			// 读实际键位绑定，随输入设备变化
+			const APawn* Pawn = OwnerPawn.Get();
+			const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+			Icon = Icons->GetIconForActionForPlayer(Candidate.Action, PC ? PC->GetLocalPlayer() : nullptr);
 		}
 	}
-
-	if (ATAWorldItem* WorldItem = Cast<ATAWorldItem>(Source))
-	{
-		WorldItem->RefreshPrompt(Icon, PromptText);
-		return;
-	}
-
-	if (ATAInteractableActor* IA = Cast<ATAInteractableActor>(Source))
-	{
-		IA->RefreshPrompt(Icon, PromptText);
-		return;
-	}
-
-	if (ATAParkourMarker* Marker = Cast<ATAParkourMarker>(Source))
-	{
-		Marker->RefreshPrompt(Icon, PromptText);
-	}
+	Anchor->ShowPrompt(Icon, Text);
 }
 
 void UTAPromptComponent::RefreshVisiblePrompts()
 {
 	for (const TPair<ETAPromptType, FTAPromptCandidate>& Pair : ActivePrompts)
 	{
-		RefreshCandidate(Pair.Value);
+		ShowCandidate(Pair.Value);
 	}
 }
 
-FString UTAPromptComponent::GetDefaultTextId(ETAPromptType Type) const
+void UTAPromptComponent::HideAll()
 {
-	switch (Type)
+	for (const TPair<ETAPromptType, FTAPromptCandidate>& Pair : ActivePrompts)
 	{
-	case ETAPromptType::ParkourJump: return ParkourJumpTextId;
-	case ETAPromptType::ParkourDrop: return ParkourDropTextId;
-	default: return InteractTextId;
+		if (UTAInteractionPromptAnchor* Anchor = Pair.Value.Anchor.Get()) Anchor->HidePrompt();
 	}
+	ActivePrompts.Reset();
 }
 
-UInputAction* UTAPromptComponent::GetActionForType(ETAPromptType Type) const
+AActor* UTAPromptComponent::GetShownSource(ETAPromptType Type) const
 {
-	switch (Type)
-	{
-	case ETAPromptType::ParkourJump: return ParkourJumpAction;
-	case ETAPromptType::ParkourDrop: return ParkourDropAction;
-	default: return InteractAction;
-	}
+	const FTAPromptCandidate* Candidate = ActivePrompts.Find(Type);
+	return Candidate ? Candidate->Source.Get() : nullptr;
 }

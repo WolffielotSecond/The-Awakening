@@ -39,6 +39,8 @@
 #include "The_AwakeningPlayerController.h"
 #include "Puzzle/TAPathPuzzleWidget.h"
 #include "InputCoreTypes.h"
+#include "Health/TAHealthComponent.h"
+#include "Interaction/TAInteractionQuery.h"
 
 AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UTAMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -105,6 +107,7 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& Objec
 	NextPickupAction = NextPickupAsset.Object;
 	PromptComponent = CreateDefaultSubobject<UTAPromptComponent>(TEXT("PromptComponent"));
 	FreezeComponent = CreateDefaultSubobject<UTAFreezeComponent>(TEXT("FreezeComponent"));
+	HealthComponent = CreateDefaultSubobject<UTAHealthComponent>(TEXT("HealthComponent"));
 }
 
 void AThe_AwakeningCharacter::BeginPlay()
@@ -574,6 +577,10 @@ void AThe_AwakeningCharacter::InitAbilityActorInfo()
 		if (UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent())
 		{
 			ASC->InitAbilityActorInfo(PS, this);
+			if (HealthComponent)
+			{
+				HealthComponent->InitializeWithASC(ASC);
+			}
 		}
 	}
 }
@@ -595,66 +602,13 @@ void AThe_AwakeningCharacter::TryInteract()
 	if (NearbyPickupComponent && NearbyPickupComponent->TryPickupSelected()) return;
 	// General interactions use a fresh query too; the displayed pickup selection has priority.
 	UpdateInteractTarget();
-	if (CurrentInteractTarget.IsValid())
+	// UpdateInteractTarget 刚用同一个查询选出目标；没有目标就不交互（原先这里重复做了一次完全相同的查询）
+	if (AActor* Target = CurrentInteractTarget.Get(); Target && Target->Implements<UTAInteractable>())
 	{
-		AActor* Target = CurrentInteractTarget.Get();
-		if (Target && Target->Implements<UTAInteractable>())
+		if (ITAInteractable::Execute_CanInteract(Target, this))
 		{
-			if (ITAInteractable::Execute_CanInteract(Target, this))
-			{
-				ITAInteractable::Execute_OnInteract(Target, this);
-			}
+			ITAInteractable::Execute_OnInteract(Target, this);
 		}
-		return;
-	}
-
-	//如果没有当前目标，再临时检测一次
-	TArray<FOverlapResult> OverlapResults;
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(this);
-
-	const bool bHit = GetWorld()->OverlapMultiByChannel(
-		OverlapResults,
-		GetActorLocation(),
-		FQuat::Identity,
-		ECC_Visibility,
-		FCollisionShape::MakeSphere(InteractionDistance),
-		Params
-	);
-
-	if (!bHit)
-	{
-		return;
-	}
-
-	AActor* ClosestInteractable = nullptr;
-	float ClosestDistanceSq = TNumericLimits<float>::Max();
-
-	for (const FOverlapResult& Result : OverlapResults)
-	{
-		AActor* Actor = Result.GetActor();
-		if (!Actor || !Actor->Implements<UTAInteractable>())
-		{
-			continue;
-		}
-
-		if (!ITAInteractable::Execute_CanInteract(Actor, this))
-		{
-			continue;
-		}
-		if (Cast<ATAWorldItem>(Actor)) continue; // World pickups are validated exclusively by the list.
-
-		const float DistSq = FVector::DistSquared(GetActorLocation(), Actor->GetActorLocation());
-		if (DistSq < ClosestDistanceSq)
-		{
-			ClosestDistanceSq = DistSq;
-			ClosestInteractable = Actor;
-		}
-	}
-
-	if (ClosestInteractable)
-	{
-		ITAInteractable::Execute_OnInteract(ClosestInteractable, this);
 	}
 }
 
@@ -665,47 +619,8 @@ void AThe_AwakeningCharacter::UpdateInteractTarget()
 		CurrentInteractTarget = NearbyPickupComponent->GetSelectedItem();
 		return;
 	}
-	TArray<FOverlapResult> OverlapResults;
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(this);
-
-	const bool bHit = GetWorld()->OverlapMultiByChannel(
-		OverlapResults,
-		GetActorLocation(),
-		FQuat::Identity,
-		ECC_Visibility,
-		FCollisionShape::MakeSphere(InteractionDistance),
-		Params
-	);
-
-	AActor* NewTarget = nullptr;
-	float ClosestDistSq = TNumericLimits<float>::Max();
-
-	if (bHit)
-	{
-		for (const FOverlapResult& Result : OverlapResults)
-		{
-			AActor* Actor = Result.GetActor();
-			if (!Actor || !Actor->Implements<UTAInteractable>())
-			{
-				continue;
-			}
-			if (!ITAInteractable::Execute_CanInteract(Actor, this))
-			{
-				continue;
-			}
-			if (Cast<ATAWorldItem>(Actor)) continue;
-
-			const float DistSq = FVector::DistSquared(GetActorLocation(), Actor->GetActorLocation());
-			if (DistSq < ClosestDistSq)
-			{
-				ClosestDistSq = DistSq;
-				NewTarget = Actor;
-			}
-		}
-	}
-
-	CurrentInteractTarget = NewTarget;
+	// 与世界交互提示共用：提示显示的就是这里选中的目标
+	CurrentInteractTarget = FTAInteractionQuery::FindBestInteractable(this, InteractionDistance);
 }
 
 void AThe_AwakeningCharacter::SelectPreviousPickup()
@@ -842,6 +757,26 @@ void AThe_AwakeningCharacter::NotifyInventoryPanelClosed(UTAInventoryPanelWidget
 	if (InventoryPanelInstance == ClosedPanel)
 	{
 		InventoryPanelInstance = nullptr;
+	}
+}
+
+void AThe_AwakeningCharacter::CloseInventoryIfOpen()
+{
+	if (InventoryPanelInstance)
+	{
+		// RemoveFromParent 内部会释放面板的输入请求并回调 NotifyInventoryPanelClosed 清空实例
+		InventoryPanelInstance->RemoveFromParent();
+		InventoryPanelInstance = nullptr;
+	}
+}
+
+void AThe_AwakeningCharacter::ResetCameraForRespawn()
+{
+	CurrentCameraOffset = FVector::ZeroVector;
+	if (CameraBoom)
+	{
+		CameraBoom->TargetOffset = CurrentCameraOffset;
+		if (auto* ExemptBoom = Cast<UTAFreezeExemptSpringArm>(CameraBoom)) ExemptBoom->SkipLagOnce();
 	}
 }
 

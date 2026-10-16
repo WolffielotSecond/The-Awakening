@@ -2,11 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "UI/TAPromptTypes.h"
 #include "TAParkourMarker.generated.h"
 
 class UBoxComponent;
 class UChildActorComponent;
-class UWidgetComponent;
+class UTAInteractionPromptAnchor;
 class UTexture2D;
 class USplineComponent;
 class USceneComponent;
@@ -41,8 +42,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UChildActorComponent> LandingTargetComponent;
 
+	/** 跑酷提示锚点（统一提示系统），挂在随玩家位置移动的落点上，所以提示显示在落点处。类型随 MarkerType 自动设置。 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> PromptWidget;
+	TObjectPtr<UTAInteractionPromptAnchor> PromptWidget;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USplineComponent> LandingSpline;
@@ -72,13 +74,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
 	FVector GetLandingLocation(const FVector& PlayerWorldLocation) const;
 
-	UWidgetComponent* GetPromptWidgetComponent() const { return PromptWidget; }
-
-	UFUNCTION(BlueprintCallable, Category = "Parkour")
-	void SetPromptVisible(bool bVisible);
-
-	UFUNCTION(BlueprintCallable, Category = "Parkour")
-	void RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText);
+	UTAInteractionPromptAnchor* GetPromptAnchor() const { return PromptWidget; }
+	/** 跨台跳 → 跨越提示，高台跳下 → 跳下提示。 */
+	ETAPromptType GetPromptType() const
+	{
+		return MarkerType == ETAParkourMarkerType::DropDown ? ETAPromptType::ParkourDrop : ETAPromptType::ParkourJump;
+	}
 
 protected:
 	UFUNCTION()
@@ -90,6 +91,7 @@ protected:
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
 	void BindLandingTargetFromChild();
-	void RefreshLandingPreview();
-	void SetLandingPreviewVisible(bool bVisible);
+	/** 落点只是位置锚点，游戏中始终隐藏它的图标 / 箭头。提示的显隐只由提示系统控制。 */
+	void HideLandingAnchor();
+	void SyncPromptType();
 };

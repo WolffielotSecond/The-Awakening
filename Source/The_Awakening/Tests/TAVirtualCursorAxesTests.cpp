@@ -30,7 +30,7 @@ bool FTAVirtualCursorAxesTest::RunTest(const FString&)
 	};
 	auto AssertRemappedAxis = [&](const TCHAR* Label, FVector2D Actual, FVector2D Expected)
 	{
-		// The original remap uses float arithmetic; check analytic .5 to float precision.
+		// Expected values come from the same float dead-zone remap as ingress.
 		TestEqual(FString(Label) + TEXT(" X"), Actual.X, Expected.X, 1.e-7);
 		TestEqual(FString(Label) + TEXT(" Y"), Actual.Y, Expected.Y, 1.e-7);
 	};
@@ -40,23 +40,33 @@ bool FTAVirtualCursorAxesTest::RunTest(const FString&)
 		FStickKeys{EKeys::Gamepad_LeftX, EKeys::Gamepad_LeftY, EKeys::Gamepad_Left2D},
 		FStickKeys{EKeys::Gamepad_RightX, EKeys::Gamepad_RightY, EKeys::Gamepad_Right2D}})
 	{
+		// Held values and the cursor use the player's radial dead zone (min 20%, max 5%).
+		const FTADeadZoneRange Range{.2f, .05f};
+		PC->GamepadDeadZone.SetRange(ETADeadZoneInput::LeftStick, Range);
+		PC->GamepadDeadZone.SetRange(ETADeadZoneInput::RightStick, Range);
+		const double Single = FTAGamepadDeadZone::Remap(.59f, Range);
+		const FVector2D Diagonal = FTAGamepadDeadZone::RemapStick(FVector2D(.59, -.59), Range);
 		Analog(Stick.X, .59f);
-		TestEqual(TEXT("Single axis updates raw observation"), PC->ReadHeldKey(Stick.X), FVector(.59f, 0.f, 0.f));
-		AssertRemappedAxis(TEXT("Single axis derives cursor with original remap"), PC->ReadCursorStick(Stick.Pair), FVector2D(.5, 0.));
+		TestEqual(TEXT("Single axis updates filtered observation"), PC->ReadHeldKey(Stick.X).X, Single, 1.e-5);
+		AssertRemappedAxis(TEXT("Single axis derives cursor from the filtered value"), PC->ReadCursorStick(Stick.Pair), FVector2D(PC->ReadHeldKey(Stick.X).X, 0.));
 		Analog(Stick.Y, -.59f);
-		TestEqual(TEXT("Separate events update paired Held axes"), PC->ReadHeldKey(Stick.Pair), FVector(.59f, -.59f, 0.f));
-		AssertRemappedAxis(TEXT("Both components use per-axis dead zone"), PC->ReadCursorStick(Stick.Pair), FVector2D(.5, -.5));
+		TestEqual(TEXT("Separate events update both paired Held axes radially X"), PC->ReadHeldKey(Stick.Pair).X, Diagonal.X, 1.e-5);
+		TestEqual(TEXT("Separate events update both paired Held axes radially Y"), PC->ReadHeldKey(Stick.Pair).Y, Diagonal.Y, 1.e-5);
 		Analog(Stick.X, 0.f);
-		TestEqual(TEXT("Real X zero preserves Y"), PC->ReadHeldKey(Stick.Pair), FVector(0.f, -.59f, 0.f));
-		AssertRemappedAxis(TEXT("Real X zero immediately updates derived cursor"), PC->ReadCursorStick(Stick.Pair), FVector2D(0., -.5));
+		TestEqual(TEXT("Real X zero preserves Y"), PC->ReadHeldKey(Stick.Pair).Y, -Single, 1.e-5);
+		TestTrue(TEXT("Real X zero clears X"), FMath::IsNearlyZero(PC->ReadHeldKey(Stick.Pair).X));
 		Analog(Stick.Y, 0.f);
 		TestTrue(TEXT("Centered stick derives zero"), PC->ReadCursorStick(Stick.Pair).IsNearlyZero());
 		TestTrue(TEXT("Real zero remains an observation, not invalidation"), PC->HeldKeyValues.Contains(Stick.X) && PC->HeldKeyValues.Contains(Stick.Y));
-		Analog(Stick.X, .18f); Analog(Stick.Y, -.18f);
-		TestTrue(TEXT("Dead zone is per component, not radial"), PC->ReadCursorStick(Stick.Pair).IsNearlyZero());
+		Analog(Stick.X, .14f); Analog(Stick.Y, -.14f);
+		TestTrue(TEXT("Dead zone is radial: combined radius below min is ignored"), PC->ReadCursorStick(Stick.Pair).IsNearlyZero());
+		Analog(Stick.X, .15f); Analog(Stick.Y, -.15f);
+		TestFalse(TEXT("Dead zone is radial: combined radius above min passes"), PC->ReadCursorStick(Stick.Pair).IsNearlyZero());
 		Analog(Stick.X, 0.f); Analog(Stick.Y, 0.f);
 	}
 
+	// Single-axis .59 after the stick dead zone set above (both sticks share the range).
+	const double HeldSingle = FTAGamepadDeadZone::Remap(.59f, PC->GetGamepadDeadZone().GetRange(ETADeadZoneInput::LeftStick));
 	// Both sticks are already held before any cursor consumer is enabled.
 	Analog(EKeys::Gamepad_LeftX, .59f);
 	Analog(EKeys::Gamepad_RightY, .59f);
@@ -79,13 +89,13 @@ bool FTAVirtualCursorAxesTest::RunTest(const FString&)
 	Scan.Allowed = {ETAInputCapability::Look, ETAInputCapability::Cursor};
 	const auto ScanHandle = PC->AcquireInputRequest(Scan);
 	TestTrue(TEXT("Cursor+Look is active without a new analog event"), PC->IsCursorStickLookActive());
-	AssertRemappedAxis(TEXT("Cursor+Look combines both sticks"), PC->GetCursorInputAxis(), FVector2D(.5, .5));
+	AssertRemappedAxis(TEXT("Cursor+Look combines both sticks"), PC->GetCursorInputAxis(), FVector2D(HeldSingle, HeldSingle));
 	AssertObservationUnchanged();
 	FTAInputRequest Menu; Menu.Owner = PC; Menu.Priority = 200;
 	Menu.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor};
 	const auto MenuHandle = PC->AcquireInputRequest(Menu);
 	TestFalse(TEXT("Menu stops cursor-look without clearing sticks"), PC->IsCursorStickLookActive());
-	AssertRemappedAxis(TEXT("Menu cursor uses LS only"), PC->GetCursorInputAxis(), FVector2D(.5, 0.));
+	AssertRemappedAxis(TEXT("Menu cursor uses LS only"), PC->GetCursorInputAxis(), FVector2D(HeldSingle, 0.));
 	AssertObservationUnchanged();
 	FTAInputRequest Covered; Covered.Owner = PC; Covered.Priority = 300;
 	Covered.Allowed = {ETAInputCapability::Pan};
@@ -94,9 +104,9 @@ bool FTAVirtualCursorAxesTest::RunTest(const FString&)
 	PC->TickVirtualCursor(.016f);
 	AssertObservationUnchanged();
 	PC->ReleaseInputRequest(CoveredHandle);
-	AssertRemappedAxis(TEXT("Uncover resumes menu cursor without new samples"), PC->GetCursorInputAxis(), FVector2D(.5, 0.));
+	AssertRemappedAxis(TEXT("Uncover resumes menu cursor without new samples"), PC->GetCursorInputAxis(), FVector2D(HeldSingle, 0.));
 	PC->ReleaseInputRequest(MenuHandle);
-	AssertRemappedAxis(TEXT("Uncover resumes both Cursor+Look axes without reseed"), PC->GetCursorInputAxis(), FVector2D(.5, .5));
+	AssertRemappedAxis(TEXT("Uncover resumes both Cursor+Look axes without reseed"), PC->GetCursorInputAxis(), FVector2D(HeldSingle, HeldSingle));
 	AssertObservationUnchanged();
 
 	Analog(EKeys::Gamepad_LeftX, 1.f); Analog(EKeys::Gamepad_LeftY, 1.f);

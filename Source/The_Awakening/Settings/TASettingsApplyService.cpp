@@ -1,6 +1,7 @@
 #include "Settings/TASettingsApplyService.h"
 #include "Settings/TADisplaySettingsService.h"
 #include "Core/TALocalizeSubsystem.h"
+#include "Core/TAInputIconSubsystem.h"
 #include "Story/TADialogueSubsystem.h"
 #include "Engine/Engine.h"
 #include "GameFramework/GameUserSettings.h"
@@ -23,6 +24,13 @@ bool FTASettingsApplyService::Apply(ULocalPlayer* Player,const FTASettingDefinit
   if (!Dialogue) return false; Dialogue->CharsPerSecond=Number; return true;
  }
  if (Handler==TEXT("Display.Brightness")) { if (!GEngine) return false; GEngine->DisplayGamma=Number; return true; }
+ if (Handler==TEXT("Controller.IconStyle"))
+ {
+  auto* Icons=Player && Player->GetGameInstance()?Player->GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>():nullptr;
+  if (!Icons) return false;
+  Icons->SetGamepadIconStyle(Choice==TEXT("Xbox")?ETAGamepadIconStyle::Xbox:Choice==TEXT("DualSense")?ETAGamepadIconStyle::DualSense:ETAGamepadIconStyle::Auto);
+  return true;
+ }
  const FString Id=Handler.ToString();
  // Input consumers query stored settings at their existing, authorized ingress.
  if (Id.StartsWith(TEXT("MouseKeyboard.")) || Id.StartsWith(TEXT("Controller.")) || Handler==TEXT("Display.AdvancedData")) return true;

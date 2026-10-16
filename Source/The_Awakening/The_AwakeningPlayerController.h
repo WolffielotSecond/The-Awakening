@@ -9,6 +9,7 @@
 #include "Core/TAInputOwnershipAdapter.h"
 #include "Components/SlateWrapperTypes.h"
 #include "UI/Cursor/TACursorSettings.h"
+#include "Core/TAGamepadDeadZone.h"
 #include "The_AwakeningPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -23,6 +24,7 @@ class UTAPauseMenuWidget;
 class UTASettingsMenuWidget;
 class UTAAdvancedDataWidget;
 class UTACommonDialogWidget;
+class UTAHealthHUDWidget;
 struct FInputActionValue;
 struct FInputKeyEventArgs;
 class FTAGameCursor;
@@ -50,8 +52,12 @@ public:
 private:
 	AThe_AwakeningPlayerController* Owner = nullptr;
 	TSet<FKey> ConsumedPresses;
+	// Stick-direction / trigger keys pressed inside the dead zone, and those accepted after leaving it.
+	TSet<FKey> DeadZoneIgnoredPresses;
+	TSet<FKey> DeadZoneAcceptedPresses;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FTAHeldObservationLifecycleTest;
+	friend class FTAGamepadDeadZoneInputTest;
 #endif
 };
 
@@ -121,6 +127,10 @@ public:
 
 	bool UsesCursorLook() const;
 	bool IsCursorStickLookActive() const;
+	/** Player dead zones; raw values feed the settings preview. */
+	const FTAGamepadDeadZone& GetGamepadDeadZone() const { return GamepadDeadZone; }
+	/** Reads the applied dead-zone settings. Called once per frame by the input processor. */
+	void RefreshGamepadDeadZones();
 	bool GetPlayerCursorPosition(float& X, float& Y) const;
 
 protected:
@@ -155,6 +165,13 @@ protected:
  TSoftClassPtr<UTAAdvancedDataWidget> AdvancedDataWidgetClass{FSoftObjectPath(TEXT("/Game/UI/WBP_AdvancedData.WBP_AdvancedData_C"))};
  UPROPERTY(Transient)
  TObjectPtr<UTAAdvancedDataWidget> AdvancedDataWidgetInstance;
+	/** 血量 HUD，BeginPlay 时加到本地玩家屏幕；没配或资源不存在时不创建，只打 Warning。布局归 WBP。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Health")
+	TSoftClassPtr<UTAHealthHUDWidget> HealthHUDWidgetClass{FSoftObjectPath(TEXT("/Game/UI/HUD/WBP_HealthHUD.WBP_HealthHUD_C"))};
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Health")
+	int32 HealthHUDZOrder = 10;
+	UPROPERTY(Transient)
+	TObjectPtr<UTAHealthHUDWidget> HealthHUDWidgetInstance;
 	UPROPERTY(Transient)
 	TObjectPtr<UTAPauseMenuWidget> PauseMenuInstance;
 	UPROPERTY(Transient)
@@ -167,6 +184,9 @@ protected:
 	FDelegateHandle ApplicationActivationHandle;
 	FDelegateHandle DeviceConnectionHandle;
 	TMap<FKey, FVector> HeldKeyValues;
+	FTAGamepadDeadZone GamepadDeadZone;
+	// Virtual stick/trigger keys whose press reached Enhanced Input.
+	TSet<FKey> DeadZonePassedKeyDowns;
 	FTAInputRouter InputRouter;
 	// Output deduplication only. Never used to restore policy or grant permission.
 	TOptional<FTAInputRouter::FHandle> ObservedWinnerHandle;
@@ -184,6 +204,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
 	void HandlePauseAction(const FInputActionValue& Value);
+	void CreateHealthHUD();
 	UFUNCTION()
 	void HandleSettingsRequested();
 
@@ -224,6 +245,7 @@ private:
 	friend class FTAVirtualCursorAxesTest;
 	friend class FTASyntheticClickSurfaceTest;
 	friend class FTAParkourPhysicalReleaseTest;
+	friend class FTAGamepadDeadZoneInputTest;
 #endif
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Scan", meta = (AllowPrivateAccess = "true"))

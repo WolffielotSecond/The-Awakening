@@ -1,4 +1,5 @@
 #include "Settings/TASettingsTypes.h"
+#include "Core/TAGamepadDeadZone.h"
 #include "Settings/TADisplaySettingsService.h"
 #include "Settings/TASettingsMenuWidget.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -20,7 +21,7 @@ TArray<FTASettingsPageDefinition> FTASettingsCatalog::BuildPages()
  Add(TEXT("Settings.Page.Display"),{TEXT("Settings.Section.Display.Video"),TEXT("Settings.Section.Display.Information")});
  Add(TEXT("Settings.Page.Audio"),{TEXT("Settings.Section.Audio.Volume")});
  Add(TEXT("Settings.Page.MouseKeyboard"),{TEXT("Settings.Section.MouseKeyboard.Camera"),TEXT("Settings.Section.MouseKeyboard.Bindings")});
- Add(TEXT("Settings.Page.Controller"),{TEXT("Settings.Section.Controller.Camera"),TEXT("Settings.Section.Controller.Bindings"),TEXT("Settings.Section.Controller.Cursor")});
+ Add(TEXT("Settings.Page.Controller"),{TEXT("Settings.Section.Controller.Camera"),TEXT("Settings.Section.Controller.DeadZone"),TEXT("Settings.Section.Controller.Bindings"),TEXT("Settings.Section.Controller.Cursor")});
  return Pages;
 }
 void FTASettingsCatalog::SortPages(TArray<FTASettingsPageDefinition>& Pages)
@@ -115,6 +116,15 @@ int32 FTASettingDefinition::FromSliderNumber(float Number) const
  if (!FMath::IsFinite(Number) || Maximum<=Minimum) return 1;
  return FMath::Clamp(1+FMath::RoundToInt((FMath::Clamp(Number,Minimum,Maximum)-Minimum)/(Maximum-Minimum)*99.f),1,100);
 }
+int32 FTASettingDefinition::StepSliderPosition(int32 Position,int32 Direction) const
+{
+ const int32 Delta=FMath::Max(1,Step)*(Direction<0?-1:1);
+ const float Before=ToSliderNumber(Position);
+ int32 Next=Position+Delta;
+ if (!bStepByPhysicalValue || PhysicalStep<=0) return Next;
+ while (Next>=1 && Next<=100 && FMath::IsNearlyEqual(ToSliderNumber(Next),Before)) Next+=Delta;
+ return FMath::Clamp(Next,1,100);
+}
 FName FTASettingDefinition::GetChoiceValue(int32 Index) const
 { return Choices.IsValidIndex(Index)?Choices[Index].Value:NAME_None; }
 int32 FTASettingDefinition::FindChoiceIndex(FName Value) const
@@ -152,6 +162,8 @@ TArray<FTASettingDefinition> FTASettingsCatalog::Build(UObject* Outer)
   const FString Setting(Id);
   if (Setting.EndsWith(TEXT("KeyBindingsMenu"))) Suffix=TEXT(".Bindings");
   if (Setting==TEXT("Controller.MenuCursorSpeed")) Suffix=TEXT(".Cursor");
+  if (Setting==TEXT("Controller.IconStyle")) Suffix=TEXT(".Bindings");
+  if (Setting.Contains(TEXT("DeadZone"))) Suffix=TEXT(".DeadZone");
   if (Setting==TEXT("Display.AdvancedData")) Suffix=TEXT(".Information");
   FTASettingLocation L; L.PageId=Page; L.SectionId=FName(*(Section+Suffix)); D.Locations.Items.Add(L); D.DefaultValue=Default;
   D.NameTextId=FString(TEXT("Settings."))+Id+TEXT(".Name"); D.DescriptionTextId=FString(TEXT("Settings."))+Id+TEXT(".Description");
@@ -201,5 +213,20 @@ TArray<FTASettingDefinition> FTASettingsCatalog::Build(UObject* Outer)
    P==FName(TEXT("Settings.Page.Controller"))?TEXT("Menu.ControllerKeyBindings"):TEXT("Menu.KeyBindings"));
  }
  Slider(TEXT("Controller.MenuCursorSpeed"),FName(TEXT("Settings.Page.Controller")),1,0.25f,2,0.05f,ETASettingDisplayFormat::Percent);
+ auto& IconStyle=Add(TEXT("Controller.IconStyle"),FName(TEXT("Settings.Page.Controller")),ETASettingType::Choice,0);
+ Choices(IconStyle,{TEXT("Auto"),TEXT("Xbox"),TEXT("DualSense")});
+ // Order matches the preview: left trigger, left stick, right stick, right trigger.
+ for (int32 Index=0;Index<FTAGamepadDeadZone::InputCount;++Index)
+  for (const bool bMax:{false,true})
+  {
+   const auto Input=static_cast<ETADeadZoneInput>(Index);
+   const bool bStick=Input==ETADeadZoneInput::LeftStick || Input==ETADeadZoneInput::RightStick;
+   const float Default=bMax?0.05f:(bStick?0.2f:0.05f);
+   auto& Zone=Slider(*FTAGamepadDeadZone::GetSettingId(Input,bMax).ToString(),FName(TEXT("Settings.Page.Controller")),Default,0.01f,0.45f,0.01f,ETASettingDisplayFormat::Percent);
+   Zone.bStepByPhysicalValue=true;
+   Zone.DescriptionTextId=bMax?TEXT("Settings.Controller.DeadZoneMax.Description"):TEXT("Settings.Controller.DeadZoneMin.Description");
+   FTASettingDescriptionBlock Text; Text.TextId=Zone.DescriptionTextId; Zone.DescriptionBlocks.Add(Text);
+   FTASettingDescriptionBlock Preview; Preview.Type=ETASettingDescriptionBlockType::DeadZonePreview; Zone.DescriptionBlocks.Add(Preview);
+  }
  return Result;
 }

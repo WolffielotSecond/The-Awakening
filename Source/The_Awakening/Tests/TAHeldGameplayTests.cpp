@@ -9,6 +9,7 @@
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAMovementComponent.h"
 #include "Movement/TAParkourMarker.h"
+#include "UI/TAInteractionPromptAnchor.h"
 #include "EnhancedInputSubsystemInterface.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -291,7 +292,8 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	Move->Velocity = FVector(0, -500, 0);
 	TestFalse(TEXT("Moving backward cannot parkour"), Parkour->CanParkourToMarker(Marker));
 	static_cast<AActor*>(Marker)->Tick(.016f);
-	TestTrue(TEXT("Unavailable landing preview hidden"), Marker->GetPromptWidgetComponent()->bHiddenInGame);
+	// 落点提示的显隐由统一提示系统按 CanPlayerParkourToMarker 决定（与执行同一条件）
+	TestFalse(TEXT("Unavailable marker is not promptable"), Parkour->CanPlayerParkourToMarker(Marker));
 	for (float Yaw : {0.f, 90.f, 180.f})
 	{
 		Pawn->SetActorRotation(FRotator(0, Yaw, 0));
@@ -303,7 +305,8 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Stationary exception can be disabled"), Parkour->CanParkourToMarker(Marker));
 	Parkour->bAllowStationaryBackFacing = true;
 	static_cast<AActor*>(Marker)->Tick(.016f);
-	TestFalse(TEXT("Stationary exception also allows preview"), Marker->GetPromptWidgetComponent()->bHiddenInGame);
+	TestTrue(TEXT("Stationary exception also allows the prompt"), Parkour->CanPlayerParkourToMarker(Marker));
+	TestFalse(TEXT("Prompt anchor is not hidden together with the landing anchor"), Marker->GetPromptAnchor()->bHiddenInGame);
 	TestTrue(TEXT("Landing anchor stays hidden when preview allowed"), Marker->LandingTargetComponent->bHiddenInGame);
 	if (AActor* Anchor = Marker->LandingTargetComponent->GetChildActor())
 		TestTrue(TEXT("Landing child actor stays hidden"), Anchor->IsHidden());
@@ -312,7 +315,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Launch faces landing direction"), Pawn->GetActorForwardVector().Equals(FVector(0, 1, 0), .001f));
 	TestFalse(TEXT("Movement auto rotation suspended"), Move->bOrientRotationToMovement);
 	static_cast<AActor*>(Marker)->Tick(.016f);
-	TestTrue(TEXT("Preview hidden in flight"), Marker->GetPromptWidgetComponent()->bHiddenInGame);
+	TestFalse(TEXT("Not promptable in flight"), Parkour->CanPlayerParkourToMarker(Marker));
 	Pawn->SetActorRotation(FRotator(0, -90, 0));
 	Parkour->TickComponent(.1f, LEVELTICK_All, nullptr);
 	TestTrue(TEXT("Flight keeps launch facing"), Pawn->GetActorForwardVector().Equals(FVector(0, 1, 0), .001f));

@@ -93,7 +93,7 @@ bool UTASettingsSubsystem::AdjustValue(FName Id,int32 Direction)
  const auto* D=FindDefinition(Id); int32 V=0;
  if (!D || !Direction || !GetValue(Id,V)) return false;
  if (D->Type==ETASettingType::Toggle) V=V==0?1:0;
- else if (D->Type==ETASettingType::Slider) V+=D->Step*(Direction<0?-1:1);
+ else if (D->Type==ETASettingType::Slider) V=D->StepSliderPosition(V,Direction);
  else if (D->Type==ETASettingType::Choice && !D->Choices.IsEmpty())
  {
   V=(V+(Direction<0?-1:1)+D->Choices.Num())%D->Choices.Num();
@@ -294,7 +294,7 @@ bool UTASettingsSubsystem::AdjustDraftValue(FName Id,int32 Dir)
  const auto* D=FindEditableDefinition(Id); if (!D || !Dir) return false;
  int32 V=GetEditableInteger(Id);
  if (D->Type==ETASettingType::Toggle) V=1-V;
- else if (D->Type==ETASettingType::Slider) V+=D->Step*(Dir<0?-1:1);
+ else if (D->Type==ETASettingType::Slider) V=D->StepSliderPosition(V,Dir);
  else if (D->Type==ETASettingType::Choice && !D->Choices.IsEmpty()) V=(V+(Dir<0?-1:1)+D->Choices.Num())%D->Choices.Num();
  else return false;
  return SetDraftValue(Id,V);

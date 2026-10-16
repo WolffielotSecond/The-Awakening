@@ -260,6 +260,23 @@ int32 UTAInventoryComponent::RemoveFromSlot(int32 SlotIndex, int32 Count)
 	return Removed;
 }
 
+int32 UTAInventoryComponent::RemoveItem(UTAItemDefinition* ItemDef, int32 Count)
+{
+	int32 Removed = 0;
+	while (ItemDef && Removed < Count)
+	{
+		// RemoveFromSlot 会重排格子，每次都重新查找
+		const int32 SlotIndex = FlattenedSlots.IndexOfByPredicate([ItemDef](const FTAInventorySlot& Slot) { return Slot.ItemDef == ItemDef; });
+		const int32 Step = SlotIndex == INDEX_NONE ? 0 : RemoveFromSlot(SlotIndex, Count - Removed);
+		if (Step <= 0)
+		{
+			break;
+		}
+		Removed += Step;
+	}
+	return Removed;
+}
+
 int32 UTAInventoryComponent::GetItemCount(UTAItemDefinition* ItemDef) const
 {
 	if (!ItemDef)

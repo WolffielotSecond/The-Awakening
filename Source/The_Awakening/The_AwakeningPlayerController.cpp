@@ -33,11 +33,15 @@
 #include "Widgets/SWindow.h"
 #include "Layout/WidgetPath.h"
 #include "Framework/Application/SlateUser.h"
+#include "Core/TACheatManager.h"
+#include "UI/TAHealthHUDWidget.h"
+#include "Core/TATimeSubsystem.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
 {
 	OverridePlayerInputClass = UTAPlayerInput::StaticClass();
+	CheatClass = UTACheatManager::StaticClass();
 	ScanningComponent = CreateDefaultSubobject<UTAScanningComponent>(TEXT("ScanComponent"));
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> UIContextAsset(
@@ -64,10 +68,22 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 	}
 	if (Owner)
 	{
-		Owner->NotifyRawInputKey(InKeyEvent.GetKey());
-		Owner->RecordHeldInput(InKeyEvent.GetKey(), 1.f, InKeyEvent.GetUserIndex());
-		if (Owner->RoutePlayerInputKey(InKeyEvent.GetKey(), InKeyEvent.IsRepeat(), InKeyEvent.GetUserIndex()))
-		{ ConsumedPresses.Add(InKeyEvent.GetKey()); return true; }
+		const FKey Key = InKeyEvent.GetKey();
+		bool bRepeat = InKeyEvent.IsRepeat();
+		// Engine stick-direction and trigger keys use fixed thresholds; inside the player's
+		// dead zone they are ignored, and the first repeat after leaving it acts as the press.
+		ETADeadZoneInput DeadZoneInput;
+		if (FTAGamepadDeadZone::FindVirtualKeyInput(Key, DeadZoneInput) && !DeadZoneAcceptedPresses.Contains(Key))
+		{
+			if (!Owner->GetGamepadDeadZone().IsActive(DeadZoneInput)) { DeadZoneIgnoredPresses.Add(Key); return true; }
+			DeadZoneIgnoredPresses.Remove(Key);
+			DeadZoneAcceptedPresses.Add(Key);
+			bRepeat = false;
+		}
+		Owner->NotifyRawInputKey(Key);
+		Owner->RecordHeldInput(Key, 1.f, InKeyEvent.GetUserIndex());
+		if (Owner->RoutePlayerInputKey(Key, bRepeat, InKeyEvent.GetUserIndex()))
+		{ ConsumedPresses.Add(Key); return true; }
 	}
 	return false;
 }
@@ -90,7 +106,9 @@ void AThe_AwakeningPlayerController::TACursorTest()
 bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& Event)
 {
 	if (Owner) Owner->RecordHeldInput(Event.GetKey(), 0.f, Event.GetUserIndex());
-	return ConsumedPresses.Remove(Event.GetKey()) > 0;
+	DeadZoneAcceptedPresses.Remove(Event.GetKey());
+	const bool bIgnoredPress = DeadZoneIgnoredPresses.Remove(Event.GetKey()) > 0;
+	return ConsumedPresses.Remove(Event.GetKey()) > 0 || bIgnoredPress;
 }
 
 bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, const FAnalogInputEvent& InAnalogInputEvent)
@@ -123,6 +141,7 @@ void FTAInputDeviceDetector::Tick(const float DeltaTime, FSlateApplication& Soft
 	if (Owner)
 	{
 		Owner->RefreshInputOwnership();
+		Owner->RefreshGamepadDeadZones();
 		Owner->TickVirtualCursor(DeltaTime);
 		Owner->UpdateGameCursor();
   if (Owner->GetLocalPlayer())
@@ -212,6 +231,7 @@ void AThe_AwakeningPlayerController::BeginPlay()
    }
    else UE_LOG(LogThe_Awakening,Warning,TEXT("AdvancedDataWidgetClass is not available on %s."),*GetName());
   }
+		CreateHealthHUD();
 		if (auto* Icons = GetGameInstance()->GetSubsystem<UTAInputIconSubsystem>(); Icons && GetLocalPlayer())
 			Icons->RefreshCurrentDeviceForUser(GetLocalPlayer()->GetPlatformUserId());
 		InputDeviceDetector = MakeShared<FTAInputDeviceDetector>(this);
@@ -235,9 +255,37 @@ void AThe_AwakeningPlayerController::BeginPlay()
 	}
 }
 
+void AThe_AwakeningPlayerController::CreateHealthHUD()
+{
+	if (!GetLocalPlayer() || HealthHUDWidgetInstance)
+	{
+		return;
+	}
+	UClass* WidgetClass = HealthHUDWidgetClass.LoadSynchronous();
+	if (!WidgetClass)
+	{
+		UE_LOG(LogThe_Awakening, Warning, TEXT("HealthHUDWidgetClass is not available on %s; health HUD not created."), *GetName());
+		return;
+	}
+	HealthHUDWidgetInstance = CreateWidget<UTAHealthHUDWidget>(this, WidgetClass);
+	if (!HealthHUDWidgetInstance)
+	{
+		return;
+	}
+	// HUD 只显示，不参与命中测试、不申请输入所有权，不影响光标和焦点规则
+	HealthHUDWidgetInstance->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (!HealthHUDWidgetInstance->AddToPlayerScreen(HealthHUDZOrder))
+	{
+		HealthHUDWidgetInstance->RemoveFromParent();
+		HealthHUDWidgetInstance = nullptr;
+		UE_LOG(LogThe_Awakening, Warning, TEXT("Cannot add health HUD to the local player's screen."));
+	}
+}
+
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
  if (AdvancedDataWidgetInstance) { AdvancedDataWidgetInstance->RemoveFromParent(); AdvancedDataWidgetInstance=nullptr; }
+	if (HealthHUDWidgetInstance) { HealthHUDWidgetInstance->RemoveFromParent(); HealthHUDWidgetInstance = nullptr; }
  bClosePauseAfterSettings=false;
  if (GetLocalPlayer()) if (auto* Dialogs=GetLocalPlayer()->GetSubsystem<UTACommonDialogSubsystem>())
   if (auto* Dialog=Dialogs->GetActiveDialog()) Dialog->Dismiss();
@@ -483,9 +531,29 @@ bool AThe_AwakeningPlayerController::ObserveAnalogInput(FKey Key, float Value, i
 {
 	ObservePlayerInputOwnership(State);
 	if (State != TAInputOwnershipAdapter::EState::Owned) return false;
-	NotifyRawInputKey(Key);
-	RecordHeldInput(Key, Value, UserIndex);
+	bool bIgnored = false;
+	const float Filtered = GamepadDeadZone.Filter(Key, Value, bIgnored);
+	// Drift inside the inner dead zone never switches the active input device.
+	if (!bIgnored) NotifyRawInputKey(Key);
+	RecordHeldInput(Key, Filtered, UserIndex);
+	// A radial dead zone changes both axes; Slate only reports the axis that moved.
+	const FKey OtherAxis = FTAGamepadDeadZone::GetOtherStickAxis(Key);
+	if (OtherAxis.IsValid()) RecordHeldInput(OtherAxis, GamepadDeadZone.GetFilteredAxis(OtherAxis), UserIndex);
 	return true;
+}
+
+void AThe_AwakeningPlayerController::RefreshGamepadDeadZones()
+{
+	const auto* Settings = GetLocalPlayer() ? GetLocalPlayer()->GetSubsystem<UTASettingsSubsystem>() : nullptr;
+	if (!Settings) return;
+	for (int32 Index = 0; Index < FTAGamepadDeadZone::InputCount; ++Index)
+	{
+		const auto Input = static_cast<ETADeadZoneInput>(Index);
+		FTADeadZoneRange Range = GamepadDeadZone.GetRange(Input);
+		Range.Min = Settings->GetNumber(FTAGamepadDeadZone::GetSettingId(Input, false), Range.Min);
+		Range.Max = Settings->GetNumber(FTAGamepadDeadZone::GetSettingId(Input, true), Range.Max);
+		GamepadDeadZone.SetRange(Input, Range);
+	}
 }
 
 void AThe_AwakeningPlayerController::InvalidatePhysicalObservationForExternalOwnership()
@@ -506,18 +574,14 @@ void AThe_AwakeningPlayerController::InvalidateGamepadObservationOnDisconnect()
 		if (It.Key().IsGamepadKey()) It.RemoveCurrent();
 	for (auto It = ConsumedInventoryKeys.CreateIterator(); It; ++It)
 		if (It->IsGamepadKey()) It.RemoveCurrent();
+	GamepadDeadZone.Reset();
 }
 
 FVector2D AThe_AwakeningPlayerController::ReadCursorStick(FKey PairedAxisKey) const
 {
+	// Held stick values are already filtered by the player's dead zone at ingress.
 	const FVector Observed = ReadHeldKey(PairedAxisKey);
-	auto Remap = [](float Value)
-	{
-		constexpr float DeadZone = 0.18f;
-		const float Magnitude = FMath::Abs(Value);
-		return Magnitude <= DeadZone ? 0.0f : FMath::Sign(Value) * ((Magnitude - DeadZone) / (1.0f - DeadZone));
-	};
-	return FVector2D(Remap(Observed.X), Remap(Observed.Y));
+	return FVector2D(Observed.X, Observed.Y);
 }
 
 FVector2D AThe_AwakeningPlayerController::GetCursorInputAxis()
@@ -604,11 +668,43 @@ bool AThe_AwakeningPlayerController::GetPlayerCursorPosition(float& X, float& Y)
 bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	if (!OwnsPlayerInput() && Params.Event != IE_Released) return false;
-	if (Params.Key.IsValid())
+	FInputKeyEventArgs Args = Params;
+	ETADeadZoneInput DeadZoneInput; int32 Axis = 0;
+	if (FTAGamepadDeadZone::FindAnalogInput(Args.Key, DeadZoneInput, Axis))
 	{
-		NotifyRawInputKey(Params.Key);
+		// Enhanced Input receives the dead-zone filtered value; mapping modifiers no longer add their own.
+		bool bIgnored = false;
+		Args.AmountDepressed = GamepadDeadZone.Filter(Args.Key, Params.AmountDepressed, bIgnored);
+		if (!bIgnored) NotifyRawInputKey(Args.Key);
+		const bool bResult = Super::InputKey(Args);
+		const FKey OtherAxis = FTAGamepadDeadZone::GetOtherStickAxis(Args.Key);
+		if (OtherAxis.IsValid())
+		{
+			FInputKeyEventArgs Other = Args;
+			Other.Key = OtherAxis;
+			Other.AmountDepressed = GamepadDeadZone.GetFilteredAxis(OtherAxis);
+			Super::InputKey(Other);
+		}
+		return bResult;
 	}
-	return Super::InputKey(Params);
+	if (FTAGamepadDeadZone::FindVirtualKeyInput(Args.Key, DeadZoneInput))
+	{
+		if (Args.Event == IE_Released)
+		{
+			if (DeadZonePassedKeyDowns.Remove(Args.Key) == 0) return false;
+		}
+		else if (!DeadZonePassedKeyDowns.Contains(Args.Key))
+		{
+			if (!GamepadDeadZone.IsActive(DeadZoneInput)) return false;
+			Args.Event = IE_Pressed;
+			DeadZonePassedKeyDowns.Add(Args.Key);
+		}
+	}
+	if (Args.Key.IsValid())
+	{
+		NotifyRawInputKey(Args.Key);
+	}
+	return Super::InputKey(Args);
 }
 
 bool AThe_AwakeningPlayerController::RoutePlayerInputKey(FKey Key, bool bRepeat, int32 UserIndex)
@@ -905,7 +1001,11 @@ void AThe_AwakeningPlayerController::OpenPauseMenu()
 	PauseMenuInstance->SetPlayerInputRequest(this, PauseInputRequestHandle);
 	PauseMenuInstance->OnSettingsRequested.AddUniqueDynamic(this, &AThe_AwakeningPlayerController::HandleSettingsRequested);
 
-	SetPause(true);
+	// 以暂停页实例为来源申请全局暂停；关闭时只释放自己的请求，不会解除其他来源的暂停
+	if (UTATimeSubsystem* Time = UTATimeSubsystem::Get(this))
+	{
+		Time->RequestPause(PauseMenuInstance);
+	}
 }
 
 void AThe_AwakeningPlayerController::HandleSettingsRequested()
@@ -978,9 +1078,12 @@ void AThe_AwakeningPlayerController::ClosePauseMenu()
 		ReleaseInputRequest(Handle);
 	}
 	PauseMenuInstance->SetPlayerInputRequest(nullptr, 0);
+	if (UTATimeSubsystem* Time = UTATimeSubsystem::Get(this))
+	{
+		Time->ReleasePause(PauseMenuInstance);
+	}
 	PauseMenuInstance->RemoveFromParent();
 	PauseMenuInstance = nullptr;
-	SetPause(false);
 }
 
 bool AThe_AwakeningPlayerController::IsPauseMenuOpen() const

@@ -18,6 +18,7 @@ class UTAInventoryComponent;
 class UTANearbyPickupComponent;
 class UTAPromptComponent;
 class UTAFreezeComponent;
+class UTAHealthComponent;
 class UTAInventoryPanelWidget;
 class UTADialogueWidget;
 class UTADialoguePortraitLayerWidget;
@@ -120,6 +121,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAFreezeComponent> FreezeComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTAHealthComponent> HealthComponent;
 
 	/** 相机跟随距离 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
@@ -229,6 +233,11 @@ public:
 	/** Explicit gameplay stop for normal movement/landing, never a permission side effect. */
 	UFUNCTION(BlueprintCallable, Category="Movement")
 	void StopCurrentMovement();
+	/** 背包打开就关闭，走 RemoveFromParent → NotifyInventoryPanelClosed 的现有流程，释放背包自己的输入请求。 */
+	void CloseInventoryIfOpen();
+	/** 复活传送后调用：镜头偏移归零，SpringArm 跳过一次 Camera Lag。 */
+	void ResetCameraForRespawn();
+	UTAParkourComponent* GetParkourComponent() const { return ParkourComponent; }
 	float GetMenuCursorSpeed() const;
 
 	// IAbilitySystemInterface
@@ -275,10 +284,10 @@ protected:
 		meta = (ClampMin = "0.0"))
 	float SprintSpeed = 750.f;
 
-	// 避免摇杆回中漂移；设为 0 可取消此死区
+	// 额外的起步阈值（作用于已按玩家死区设置过滤后的摇杆值）；默认 0，死区由“控制器-死区”设置统一负责
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement",
 		meta = (ClampMin = "0.0", ClampMax = "0.49"))
-	float StickDeadZone = 0.1f;
+	float StickDeadZone = 0.f;
 
 	bool bSprintHeld = false;
 	FVector2D StickInput = FVector2D::ZeroVector;
@@ -297,6 +306,7 @@ public:
 public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	FORCEINLINE UTAHealthComponent* GetHealthComponent() const { return HealthComponent; }
 	FORCEINLINE TSubclassOf<UTADialogueWidget> GetDialogueWidgetClass() const { return DialogueWidgetClass; }
 	FORCEINLINE TSubclassOf<UTADialoguePortraitLayerWidget> GetDialoguePortraitLayerClass() const { return DialoguePortraitLayerClass; }
 	FORCEINLINE TSubclassOf<UTADialogueHistoryWidget> GetDialogueHistoryWidgetClass() const { return DialogueHistoryWidgetClass; }

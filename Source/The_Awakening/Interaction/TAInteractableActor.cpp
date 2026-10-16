@@ -1,10 +1,6 @@
 #include "Interaction/TAInteractableActor.h"
+#include "UI/TAInteractionPromptAnchor.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/WidgetComponent.h"
-#include "Blueprint/UserWidget.h"
-#include "Components/Image.h"
-#include "Components/TextBlock.h"
-#include "UI/TAPromptWidgetUtils.h"
 
 ATAInteractableActor::ATAInteractableActor()
 {
@@ -13,13 +9,12 @@ ATAInteractableActor::ATAInteractableActor()
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	RootComponent = MeshComponent;
 
-	InteractPromptComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("InteractPromptComponent"));
+	// 保留原组件名，已有蓝图 / 关卡实例对它的设置（例如 Widget Class）继续生效
+	InteractPromptComponent = CreateDefaultSubobject<UTAInteractionPromptAnchor>(TEXT("InteractPromptComponent"));
 	InteractPromptComponent->SetupAttachment(RootComponent);
-	InteractPromptComponent->SetRelativeLocation(FVector(0.f, 0.f, 120.f));
-	InteractPromptComponent->SetWidgetSpace(EWidgetSpace::Screen);
-	InteractPromptComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	InteractPromptComponent->SetDrawAtDesiredSize(true);
-	InteractPromptComponent->SetVisibility(false);
+	// 原先显示时被提示组件改写为 Z=100，这里直接用这个实际显示位置
+	InteractPromptComponent->SetRelativeLocation(FVector(0.f, 0.f, 100.f));
+	InteractPromptComponent->PromptType = ETAPromptType::Interact;
 }
 
 void ATAInteractableActor::BeginPlay()
@@ -57,27 +52,4 @@ FString ATAInteractableActor::GetPromptTextId() const
 		return InteractTextId;
 	}
 	return InteractText.ToString();
-}
-
-void ATAInteractableActor::SetPromptVisible(bool bVisible)
-{
-	if (InteractPromptComponent)
-	{
-		InteractPromptComponent->SetVisibility(bVisible);
-	}
-}
-
-void ATAInteractableActor::RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText)
-{
-	if (!InteractPromptComponent)
-	{
-		return;
-	}
-
-	UUserWidget* Widget = InteractPromptComponent->GetUserWidgetObject();
-	if (!Widget)
-	{
-		return;
-	}
-	FTAPromptWidgetUtils::ApplyPrompt(Widget, KeyIcon, PromptText);
 }

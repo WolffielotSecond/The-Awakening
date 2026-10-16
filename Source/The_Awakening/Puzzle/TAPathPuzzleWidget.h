@@ -7,6 +7,8 @@
 #include "Styling/SlateBrush.h"
 #include "TimerManager.h"
 #include "Puzzle/TAPathPuzzleSession.h"
+#include "Health/TADamageTypes.h"
+#include "Health/TARollbackSubsystem.h"
 #include "TAPathPuzzleWidget.generated.h"
 
 class UCanvasPanel;
@@ -142,6 +144,14 @@ protected:
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_Retry;
 
 private:
+	/** 小游戏期间：无敌（放行 Damage.Source.Puzzle）+ 不会死；回滚日志记录结算对主游戏的改动，死亡时撤销并关闭小游戏。 */
+	void BeginPuzzleGuards();
+	void EndPuzzleGuards();
+	FTARollbackScopeHandle PuzzleRollbackScope;
+	FTAHealthProtectionHandle PuzzleInvulnerable;
+	FTAHealthProtectionHandle PuzzleUndying;
+	TWeakObjectPtr<class UTAHealthComponent> ProtectedHealth;
+
 	FTimerHandle SettlementCloseTimer;
 	static UTAPathPuzzleWidget* OpenPuzzleInternal(APlayerController* Player,
 		TSubclassOf<UTAPathPuzzleWidget> WidgetClass, const FTAPuzzleSettings* Settings,

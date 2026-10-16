@@ -5,8 +5,7 @@
 #include "Interaction/TAInteractable.h"
 #include "TAInteractableActor.generated.h"
 
-class UWidgetComponent;
-class UTexture2D;
+class UTAInteractionPromptAnchor;
 
 UCLASS()
 class THE_AWAKENING_API ATAInteractableActor : public AActor, public ITAInteractable
@@ -25,14 +24,7 @@ public:
 	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
 	virtual FText GetInteractText_Implementation() const override;
 
-	UFUNCTION(BlueprintCallable, Category = "Interaction")
-	void SetPromptVisible(bool bVisible);
-
-	/** 供 PromptComponent 刷新图标与文字 */
-	UFUNCTION(BlueprintCallable, Category = "Interaction")
-	void RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText);
-
-	UWidgetComponent* GetPromptWidgetComponent() const { return InteractPromptComponent; }
+	UTAInteractionPromptAnchor* GetPromptAnchor() const { return InteractPromptComponent; }
 
 	/** 本地化 ID（与物品 DisplayName 一样填 ID 字符串） */
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
@@ -42,8 +34,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
 
+	/** 交互提示锚点（统一提示系统）。控件类不填时使用项目设置的默认提示控件；位置就是提示显示的位置。 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> InteractPromptComponent;
+	TObjectPtr<UTAInteractionPromptAnchor> InteractPromptComponent;
 
 	/**
 	 * 本地化 ID，例如 Interact_Default

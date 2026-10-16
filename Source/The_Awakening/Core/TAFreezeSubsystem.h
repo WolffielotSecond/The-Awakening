@@ -6,7 +6,11 @@
 
 class UTAFreezeComponent;
 
-/** Local gameplay freeze registry. World time and rendering remain untouched. */
+/**
+ * Local gameplay freeze registry. World time and rendering remain untouched.
+ * 功能代码不要直接调用本类的 RequestFreeze / ReleaseFreeze，统一走 UTATimeSubsystem；
+ * 这里保留为实体冻结的执行层（参与者注册、强度应用），供 UTATimeSubsystem 和冻结测试使用。
+ */
 UCLASS()
 class THE_AWAKENING_API UTAFreezeSubsystem : public UWorldSubsystem
 {

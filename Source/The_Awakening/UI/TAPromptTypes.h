@@ -4,7 +4,7 @@
 #include "TAPromptTypes.generated.h"
 
 class UInputAction;
-class UWidgetComponent;
+class UTAInteractionPromptAnchor;
 class AActor;
 
 UENUM(BlueprintType)
@@ -15,6 +15,7 @@ enum class ETAPromptType : uint8
 	ParkourDrop  UMETA(DisplayName = "跳下")
 };
 
+/** 某一类型本帧选中的提示目标。 */
 USTRUCT(BlueprintType)
 struct FTAPromptCandidate
 {
@@ -27,17 +28,11 @@ struct FTAPromptCandidate
 	TWeakObjectPtr<AActor> Source;
 
 	UPROPERTY(BlueprintReadOnly)
-	FVector WorldLocation = FVector::ZeroVector;
-
-	UPROPERTY(BlueprintReadOnly)
 	float DistanceSq = 0.f;
-
-	UPROPERTY(BlueprintReadOnly)
-	FString TextId;
 
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<UInputAction> Action = nullptr;
 
 	UPROPERTY(BlueprintReadOnly)
-	TWeakObjectPtr<UWidgetComponent> PromptWidget;
+	TWeakObjectPtr<UTAInteractionPromptAnchor> Anchor;
 };

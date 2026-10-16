@@ -39,9 +39,21 @@ public:
 	FGameplayAttributeData AttackMultiplier;
 	ATTRIBUTE_ACCESSORS(UTAAttributeSet, AttackMultiplier)
 
-		UPROPERTY(BlueprintReadOnly, Category = "Combat", ReplicatedUsing = OnRep_DamageReduction)
-	FGameplayAttributeData DamageReduction;
-	ATTRIBUTE_ACCESSORS(UTAAttributeSet, DamageReduction)
+	/** 防御力：角色基础属性，普通伤害在易伤之后、减伤之前减去 防御力 × (1 + 防御力加成)。不参与伤害 Tag 匹配。 */
+	UPROPERTY(BlueprintReadOnly, Category = "Combat", ReplicatedUsing = OnRep_Defense)
+	FGameplayAttributeData Defense;
+	ATTRIBUTE_ACCESSORS(UTAAttributeSet, Defense)
+
+	/** 防御力加成：0.5 表示防御力按 150% 计算。 */
+	UPROPERTY(BlueprintReadOnly, Category = "Combat", ReplicatedUsing = OnRep_DefenseBonus)
+	FGameplayAttributeData DefenseBonus;
+	ATTRIBUTE_ACCESSORS(UTAAttributeSet, DefenseBonus)
+
+	// -------------------- Meta --------------------
+	/** 本次 GE 执行的待结算伤害。不复制、不存档，结算后立即清零。 */
+	UPROPERTY(BlueprintReadOnly, Category = "Meta")
+	FGameplayAttributeData IncomingDamage;
+	ATTRIBUTE_ACCESSORS(UTAAttributeSet, IncomingDamage)
 
 		virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -56,8 +68,13 @@ protected:
 	virtual void OnRep_AttackMultiplier(const FGameplayAttributeData& OldAttackMultiplier);
 
 	UFUNCTION()
-	virtual void OnRep_DamageReduction(const FGameplayAttributeData& OldDamageReduction);
+	virtual void OnRep_Defense(const FGameplayAttributeData& OldDefense);
+
+	UFUNCTION()
+	virtual void OnRep_DefenseBonus(const FGameplayAttributeData& OldDefenseBonus);
 
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+	virtual void PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue) override;
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 };

@@ -33,6 +33,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
 	bool IsParkouring() const { return bIsParkouring; }
 
+	/**
+	 * 立即中止跑酷（死亡等外部打断）：恢复转向设置，丢弃起跳惯性，切到 Falling 靠重力落地。
+	 * 与 FinishParkour 不同，不触发落地惯性；已消耗的按住标记保持不变，松开后照常重新武装。
+	 */
+	void AbortParkour();
+
 	/** Shared by execution and landing previews. Includes overlap and held-marker rearm rules. */
 	UFUNCTION(BlueprintPure, Category = "Parkour")
 	bool CanParkourToMarker(ATAParkourMarker* Marker) const;

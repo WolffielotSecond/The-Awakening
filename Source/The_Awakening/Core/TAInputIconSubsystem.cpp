@@ -8,6 +8,10 @@
 #include "GameFramework/InputDeviceSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Core/TALocalizeSubsystem.h"
+#include "GenericPlatform/GenericApplicationMessageHandler.h"
+#include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogTAInputIcon, Log, All);
 
 void UTAInputIconSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -19,6 +23,8 @@ void UTAInputIconSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	GetGameInstance()->OnLocalPlayerAddedEvent.AddUObject(this, &UTAInputIconSubsystem::RegisterLocalPlayer);
 	GetGameInstance()->OnLocalPlayerRemovedEvent.AddUObject(this, &UTAInputIconSubsystem::UnregisterLocalPlayer);
 	for (ULocalPlayer* Player : GetGameInstance()->GetLocalPlayers()) RegisterLocalPlayer(Player);
+	DeviceConnectionHandle = IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().AddUObject(
+		this, &UTAInputIconSubsystem::HandleInputDeviceConnectionChange);
 }
 
 void UTAInputIconSubsystem::Deinitialize()
@@ -31,6 +37,11 @@ void UTAInputIconSubsystem::Deinitialize()
 		if (auto* Input = Observed.Get())
 			Input->ControlMappingsRebuiltDelegate.RemoveDynamic(this, &UTAInputIconSubsystem::NotifyInputPromptsChanged);
 	ObservedInputSubsystems.Reset();
+	IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().Remove(DeviceConnectionHandle);
+	DeviceConnectionHandle.Reset();
+	BrandResolver.Shutdown();
+	IconCache.Reset();
+	MissingIconPaths.Reset();
 	Super::Deinitialize();
 }
 
@@ -61,9 +72,15 @@ void UTAInputIconSubsystem::NotifyInputPromptsChanged()
 
 void UTAInputIconSubsystem::SetCurrentDeviceType(EInputDeviceType NewType)
 {
+	ApplyDeviceType(NewType);
+}
+
+void UTAInputIconSubsystem::ApplyDeviceType(EInputDeviceType NewType)
+{
 	if (CurrentDeviceType != NewType)
 	{
 		CurrentDeviceType = NewType;
+		UE_LOG(LogTAInputIcon, Log, TEXT("Input device changed to %s"), *UEnum::GetValueAsString(NewType));
 		OnInputDeviceChanged.Broadcast();
 		NotifyInputPromptsChanged();
 	}
@@ -75,25 +92,83 @@ void UTAInputIconSubsystem::NotifyInputKey(const FKey& Key)
 	{
 		return;
 	}
-
-	EInputDeviceType NewType = CurrentDeviceType;
-
-	if (Key.IsGamepadKey())
+	if (!Key.IsGamepadKey())
 	{
-		NewType = EInputDeviceType::Xbox;
+		ApplyDeviceType(EInputDeviceType::KeyboardMouse);
+		return;
 	}
-	else
-	{
-		NewType = EInputDeviceType::KeyboardMouse;
-	}
+	// Switching from keyboard/mouse to a gamepad always checks which pad it is.
+	UpdateGamepadBrand(GetCurrentXInputSlot(), CurrentDeviceType == EInputDeviceType::KeyboardMouse);
+	ApplyDeviceType(GetGamepadDeviceType());
+}
 
-	if (NewType != CurrentDeviceType)
+int32 UTAInputIconSubsystem::GetCurrentXInputSlot()
+{
+	// XInput dispatches each pad inside a device scope whose handle is the XInput user index.
+	static const FName XInputInterfaceName(TEXT("XInputInterface"));
+	const FInputDeviceScope* Scope = FInputDeviceScope::GetCurrent();
+	return Scope && Scope->InputDeviceName == XInputInterfaceName ? Scope->HardwareDeviceHandle : INDEX_NONE;
+}
+
+void UTAInputIconSubsystem::UpdateGamepadBrand(int32 XInputSlot, bool bForceProbe)
+{
+	if (XInputSlot != LastGamepadSlot)
 	{
-		CurrentDeviceType = NewType;
-		OnInputDeviceChanged.Broadcast();
-		NotifyInputPromptsChanged();
-		UE_LOG(LogTemp, Log, TEXT("Input device changed"));
+		LastGamepadSlot = XInputSlot;
+		bForceProbe = true;
 	}
+	if (const ETAGamepadBrand* Cached = GamepadBrandCache.Find(XInputSlot))
+	{
+		DetectedGamepadBrand = *Cached;
+		return;
+	}
+	const double Now = TimeSource ? TimeSource() : FPlatformTime::Seconds();
+	if (!bForceProbe && LastBrandProbeTime >= 0.0 && Now - LastBrandProbeTime < GamepadBrandRetryInterval)
+	{
+		return;
+	}
+	LastBrandProbeTime = Now;
+	DetectedGamepadBrand = BrandProbe ? BrandProbe(XInputSlot) : BrandResolver.Resolve(XInputSlot);
+	if (DetectedGamepadBrand != ETAGamepadBrand::Unknown)
+	{
+		GamepadBrandCache.Add(XInputSlot, DetectedGamepadBrand);
+	}
+}
+
+EInputDeviceType UTAInputIconSubsystem::GetGamepadDeviceType() const
+{
+	switch (GamepadIconStyle)
+	{
+	case ETAGamepadIconStyle::Xbox: return EInputDeviceType::Xbox;
+	case ETAGamepadIconStyle::DualSense: return EInputDeviceType::PS5;
+	default: return DetectedGamepadBrand == ETAGamepadBrand::PlayStation ? EInputDeviceType::PS5 : EInputDeviceType::Xbox;
+	}
+}
+
+void UTAInputIconSubsystem::SetGamepadIconStyle(ETAGamepadIconStyle NewStyle)
+{
+	if (GamepadIconStyle == NewStyle) return;
+	GamepadIconStyle = NewStyle;
+	if (CurrentDeviceType != EInputDeviceType::KeyboardMouse) ApplyDeviceType(GetGamepadDeviceType());
+	else NotifyInputPromptsChanged();
+}
+
+void UTAInputIconSubsystem::InvalidateGamepadBrands()
+{
+	GamepadBrandCache.Reset();
+	LastGamepadSlot = INDEX_NONE;
+	LastBrandProbeTime = -1.0;
+}
+
+void UTAInputIconSubsystem::SetGamepadBrandProbe(TFunction<ETAGamepadBrand(int32)> Probe)
+{
+	BrandProbe = MoveTemp(Probe);
+	InvalidateGamepadBrands();
+}
+
+void UTAInputIconSubsystem::HandleInputDeviceConnectionChange(EInputDeviceConnectionState, FPlatformUserId, FInputDeviceId)
+{
+	InvalidateGamepadBrands();
 }
 
 FString UTAInputIconSubsystem::KeyToAssetName(FKey Key) const
@@ -241,7 +316,7 @@ FString UTAInputIconSubsystem::PSAssetName(const FString& Logical) const
 	return FString::Printf(TEXT("PlayStation_%s"), *Logical);
 }
 
-FString UTAInputIconSubsystem::BuildIconPath(FKey Key) const
+FString UTAInputIconSubsystem::BuildIconPath(FKey Key, EInputDeviceType Device) const
 {
 	const FString Name = KeyToAssetName(Key);
 	if (Name.IsEmpty())
@@ -252,7 +327,7 @@ FString UTAInputIconSubsystem::BuildIconPath(FKey Key) const
 	FString Folder;
 	FString AssetName;
 
-	switch (CurrentDeviceType)
+	switch (Device)
 	{
 	case EInputDeviceType::KeyboardMouse:
 		Folder = TEXT("Keyboard_Mouse");
@@ -266,19 +341,14 @@ FString UTAInputIconSubsystem::BuildIconPath(FKey Key) const
 		}
 		break;
 
-	case EInputDeviceType::Xbox:
-		Folder = TEXT("Xbox");
-		AssetName = XboxAssetName(Name);
-		break;
-
 	case EInputDeviceType::PS5:
 		Folder = TEXT("PS");
 		AssetName = PSAssetName(Name);
 		break;
 
-	default:
-		Folder = TEXT("Keyboard_Mouse");
-		AssetName = FString::Printf(TEXT("Keyboard_%s"), *Name);
+	default: // Xbox; Switch pads are not supported and use Xbox prompts.
+		Folder = TEXT("Xbox");
+		AssetName = XboxAssetName(Name);
 		break;
 	}
 
@@ -292,27 +362,52 @@ UTexture2D* UTAInputIconSubsystem::LoadIconFromPath(const FString& Path) const
 		return nullptr;
 	}
 
-	return LoadObject<UTexture2D>(nullptr, *Path);
+	if (const TStrongObjectPtr<UTexture2D>* Cached = IconCache.Find(Path))
+	{
+		return Cached->Get();
+	}
+	if (MissingIconPaths.Contains(Path))
+	{
+		return nullptr;
+	}
+	UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (Texture)
+	{
+		IconCache.Add(Path, TStrongObjectPtr<UTexture2D>(Texture));
+	}
+	else
+	{
+		MissingIconPaths.Add(Path);
+		UE_LOG(LogTAInputIcon, Warning, TEXT("Input icon is missing: %s"), *Path);
+	}
+	return Texture;
+}
+
+UTexture2D* UTAInputIconSubsystem::LoadIconForDevice(FKey Key, EInputDeviceType Device) const
+{
+	if (UTexture2D* Icon = LoadIconFromPath(BuildIconPath(Key, Device)))
+	{
+		return Icon;
+	}
+	if (Device == EInputDeviceType::PS5 && bFallbackToXboxIcons && Key.IsGamepadKey())
+	{
+		return LoadIconFromPath(BuildIconPath(Key, EInputDeviceType::Xbox));
+	}
+	return nullptr;
 }
 
 UTexture2D* UTAInputIconSubsystem::GetIconForKey(FKey Key) const
 {
-	const FString Path = BuildIconPath(Key);
-	return LoadIconFromPath(Path);
+	return LoadIconForDevice(Key, CurrentDeviceType);
 }
 
 UTexture2D* UTAInputIconSubsystem::GetGamepadIconForKey(FKey Key) const
 {
-	const FString LogicalName = KeyToAssetName(Key);
-	if (LogicalName.IsEmpty() || !Key.IsGamepadKey())
+	if (!Key.IsGamepadKey())
 	{
 		return GetIconForKey(Key);
 	}
-
-	const bool bUsePlayStationIcons = CurrentDeviceType == EInputDeviceType::PS5;
-	const FString Folder = bUsePlayStationIcons ? TEXT("PS") : TEXT("Xbox");
-	const FString AssetName = bUsePlayStationIcons ? PSAssetName(LogicalName) : XboxAssetName(LogicalName);
-	return LoadIconFromPath(FString::Printf(TEXT("%s/%s/%s"), *IconRootPath, *Folder, *AssetName));
+	return LoadIconForDevice(Key, CurrentDeviceType == EInputDeviceType::KeyboardMouse ? GetGamepadDeviceType() : CurrentDeviceType);
 }
 
 UTexture2D* UTAInputIconSubsystem::GetIconForAction(UInputAction* Action) const
@@ -357,7 +452,8 @@ void UTAInputIconSubsystem::RefreshCurrentDeviceForUser(FPlatformUserId UserId)
 	switch (Hardware.PrimaryDeviceType)
 	{
 	case EHardwareDevicePrimaryType::Gamepad:
-		SetCurrentDeviceType(EInputDeviceType::Xbox);
+		UpdateGamepadBrand(INDEX_NONE, true);
+		ApplyDeviceType(GetGamepadDeviceType());
 		break;
 	case EHardwareDevicePrimaryType::KeyboardAndMouse:
 		SetCurrentDeviceType(EInputDeviceType::KeyboardMouse);

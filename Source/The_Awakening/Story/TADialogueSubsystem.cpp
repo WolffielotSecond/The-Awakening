@@ -5,6 +5,7 @@
 #include "Story/TADialogueWidget.h"
 #include "Story/TADialoguePortraitLayerWidget.h"
 #include "The_AwakeningCharacter.h"
+#include "Health/TAHealthComponent.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -59,6 +60,20 @@ void UTADialogueSubsystem::SetFlagInt(const FString& Flag, int32 Value)
 	if (Flag.IsEmpty())
 	{
 		return;
+	}
+	if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this); Rollback && Rollback->IsRecording())
+	{
+		// 用 Find 区分“原来没有”和“原来是 0”：原来没有的回滚时删除
+		const int32* Previous = Flags.Find(Flag);
+		Rollback->RecordUndo(TEXT("Dialogue.Flag"), [WeakThis = TWeakObjectPtr<UTADialogueSubsystem>(this), Flag,
+			bHadValue = Previous != nullptr, PreviousValue = Previous ? *Previous : 0]
+		{
+			if (UTADialogueSubsystem* Self = WeakThis.Get())
+			{
+				if (bHadValue) Self->Flags.Add(Flag, PreviousValue);
+				else Self->Flags.Remove(Flag);
+			}
+		});
 	}
 	Flags.Add(Flag, Value);
 }
@@ -708,6 +723,8 @@ bool UTADialogueSubsystem::StartDialogueFromData(const FTAStoryData& Story, UObj
 	}
 
 	ActiveController = Controller;
+	// 必须在 Controller->Start() 之前：入口节点的事件在 Start 里同步执行，也要被记录
+	BeginDialogueGuards(PlayerCharacter);
 	// Successful normal dialogue entry explicitly stops movement. UI reconstruction,
 	// history and input permission changes must never perform this gameplay action.
 	PlayerCharacter->StopCurrentMovement();
@@ -743,6 +760,7 @@ void UTADialogueSubsystem::StopDialogue()
 	ActiveController->Shutdown();
 	ActiveController = nullptr;
 	ActiveStoryAsset = nullptr;
+	EndDialogueGuards();
 
 	OnDialogueEnded.Broadcast();
 }
@@ -771,6 +789,19 @@ void UTADialogueSubsystem::UpdateStoryProgress(const FString& StoryId, const FSt
 {
 	if (!StoryId.IsEmpty())
 	{
+		if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this); Rollback && Rollback->IsRecording())
+		{
+			const FString* Previous = StoryProgress.Find(StoryId);
+			Rollback->RecordUndo(TEXT("Dialogue.Progress"), [WeakThis = TWeakObjectPtr<UTADialogueSubsystem>(this), StoryId,
+				bHadValue = Previous != nullptr, PreviousValue = Previous ? *Previous : FString()]
+			{
+				if (UTADialogueSubsystem* Self = WeakThis.Get())
+				{
+					if (bHadValue) Self->StoryProgress.Add(StoryId, PreviousValue);
+					else Self->StoryProgress.Remove(StoryId);
+				}
+			});
+		}
 		StoryProgress.Add(StoryId, NodeId);
 	}
 }
@@ -779,6 +810,49 @@ void UTADialogueSubsystem::MarkStoryCompleted(const FString& StoryId)
 {
 	if (!StoryId.IsEmpty())
 	{
+		if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this);
+			Rollback && Rollback->IsRecording() && !CompletedStories.Contains(StoryId))
+		{
+			Rollback->RecordUndo(TEXT("Dialogue.Completed"), [WeakThis = TWeakObjectPtr<UTADialogueSubsystem>(this), StoryId]
+			{
+				if (UTADialogueSubsystem* Self = WeakThis.Get()) Self->CompletedStories.Remove(StoryId);
+			});
+		}
 		CompletedStories.AddUnique(StoryId);
 	}
+}
+
+void UTADialogueSubsystem::BeginDialogueGuards(AThe_AwakeningCharacter* PlayerCharacter)
+{
+	EndDialogueGuards();
+	if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this))
+	{
+		// 死亡回滚：撤销完对话的所有改动后强制结束对话，回到“还没开始”
+		DialogueRollbackScope = Rollback->BeginScope(this, TEXT("Dialogue"),
+			[WeakThis = TWeakObjectPtr<UTADialogueSubsystem>(this)] { if (WeakThis.IsValid()) WeakThis->StopDialogue(); });
+	}
+	if (UTAHealthComponent* Health = PlayerCharacter ? PlayerCharacter->GetHealthComponent() : nullptr)
+	{
+		DialogueInvulnerable = Health->AddProtection(ETAHealthProtection::Invulnerable, this, FGameplayTagContainer());
+		DialogueUndying = Health->AddProtection(ETAHealthProtection::Undying, this, FGameplayTagContainer());
+		ProtectedHealth = Health;
+	}
+}
+
+void UTADialogueSubsystem::EndDialogueGuards()
+{
+	// 正常结束提交（丢弃记录）；死亡回滚时作用域已被回滚，这里无副作用
+	if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this))
+	{
+		Rollback->CommitScope(DialogueRollbackScope);
+	}
+	DialogueRollbackScope = FTARollbackScopeHandle();
+	if (UTAHealthComponent* Health = ProtectedHealth.Get())
+	{
+		Health->RemoveProtection(DialogueInvulnerable);
+		Health->RemoveProtection(DialogueUndying);
+	}
+	DialogueInvulnerable = FTAHealthProtectionHandle();
+	DialogueUndying = FTAHealthProtectionHandle();
+	ProtectedHealth.Reset();
 }

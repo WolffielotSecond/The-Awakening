@@ -24,7 +24,7 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Core/TAInputIconSubsystem.h"
-#include "Core/TAFreezeSubsystem.h"
+#include "Core/TATimeSubsystem.h"
 
 // Sets default values for this component's properties
 UTAScanningComponent::UTAScanningComponent()
@@ -125,9 +125,9 @@ void UTAScanningComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		PC->OnPlayerInputOwnershipLost.Remove(PlayerInputOwnershipLostHandle);
 	}
 	ReleaseInput();
-	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+	if (UTATimeSubsystem* Time = UTATimeSubsystem::Get(this))
 	{
-		Freeze->ReleaseFreeze(this);
+		Time->ReleaseFreeze(this);
 	}
 	if (IsScanning())
 	{
@@ -329,7 +329,7 @@ bool UTAScanningComponent::UpdateScanState(ETAScanState NewState, bool bForce)
 
 void UTAScanningComponent::UpdateTimeFreezeBlend()
 {
-	if (UTAFreezeSubsystem* Freeze = GetWorld()->GetSubsystem<UTAFreezeSubsystem>())
+	if (UTATimeSubsystem* Freeze = UTATimeSubsystem::Get(this))
 	{
 		// Request lifetime spans FadeIn (even at zero) through FadeOut completion.
 		if (ScanState == ETAScanState::FadedOut || ScanState == ETAScanState::Invalid)

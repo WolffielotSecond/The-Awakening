@@ -1,0 +1,34 @@
+#pragma once
+
+#include "NativeGameplayTags.h"
+
+/** 项目原生 Gameplay Tag。代码里统一引用这里的声明，不写 Tag 字符串。 */
+namespace TAGameplayTags
+{
+	/** 伤害 GE 的 SetByCaller 数值。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
+
+	/** 死亡到复活完成期间挂在 ASC 上。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+	/** 无敌：普通伤害和真实伤害完全无效（可按来源放行）。强制伤害不受影响。由生命组件的保护入口维护，不要直接加减。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
+	/** 不会死：普通伤害和真实伤害照常扣血，但 Health 不会低于 1。强制伤害不受影响。由生命组件的保护入口维护。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Undying);
+
+	/** 伤害类型（每次伤害必有且只有一个）。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type_Normal);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type_True);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type_Forced);
+
+	/** 伤害来源（每次伤害必填）。新增来源在这里加一行。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Enemy);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Puzzle);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Console);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Environment);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Script);
+
+	/** 复活时移除带此 Tag 的持续 GE（给以后的 GE 型效果预留；伤害修改器的清理见 UTAHealthComponent）。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_ClearOnRespawn);
+}

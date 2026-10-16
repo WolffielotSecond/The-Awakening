@@ -1,4 +1,5 @@
 #include "Settings/TASettingsMenuWidget.h"
+#include "Settings/TADeadZonePreviewWidget.h"
 #include "Settings/TASettingRowWidget.h"
 #include "Settings/TASettingsPageWidget.h"
 #include "Settings/TASettingsSectionWidget.h"
@@ -187,16 +188,25 @@ void UTASettingsMenuWidget::RefreshSettingDetails(const FTASettingDefinition* D)
  if (!Box_Description) return;
  Box_Description->SetVisibility(UseBlocks && !Blocks.IsEmpty()?ESlateVisibility::SelfHitTestInvisible:ESlateVisibility::Collapsed);
  const int32 Count=UseBlocks?Blocks.Num():0;
+ auto IsPreview=[&](int32 I){return Blocks[I].Type==ETASettingDescriptionBlockType::DeadZonePreview;};
  // Reuse blocks while changing values or hovering so the details scroll position stays stable.
- if (DescriptionEntries.Num()!=Count)
+ bool bRebuild=DescriptionEntries.Num()!=Count;
+ for (int32 I=0;!bRebuild && I<Count;++I) bRebuild=!DescriptionEntries[I] || DescriptionEntries[I]->IsA<UTADeadZonePreviewWidget>()!=IsPreview(I);
+ if (bRebuild)
  {
   Box_Description->ClearChildren(); DescriptionEntries.Reset();
   for (int32 I=0;I<Count;++I)
-   if (auto* Entry=CreateWidget<UTASettingsDescriptionBlockWidget>(this,DescriptionBlockWidgetClass))
-   { Box_Description->AddChild(Entry); DescriptionEntries.Add(Entry); }
+  {
+   UUserWidget* Entry=IsPreview(I)
+    ?static_cast<UUserWidget*>(CreateWidget<UTADeadZonePreviewWidget>(this,DeadZonePreviewWidgetClass?DeadZonePreviewWidgetClass.Get():UTADeadZonePreviewWidget::StaticClass()))
+    :static_cast<UUserWidget*>(CreateWidget<UTASettingsDescriptionBlockWidget>(this,DescriptionBlockWidgetClass));
+   if (Entry) Box_Description->AddChild(Entry);
+   DescriptionEntries.Add(Entry);
+  }
  }
  for (int32 I=0;I<DescriptionEntries.Num();++I)
-  DescriptionEntries[I]->Configure(Blocks[I],Blocks[I].Type==ETASettingDescriptionBlockType::Text && !Blocks[I].TextId.IsEmpty()?Text(Blocks[I].TextId):FText::GetEmpty());
+  if (auto* Block=Cast<UTASettingsDescriptionBlockWidget>(DescriptionEntries[I]))
+   Block->Configure(Blocks[I],Blocks[I].Type==ETASettingDescriptionBlockType::Text && !Blocks[I].TextId.IsEmpty()?Text(Blocks[I].TextId):FText::GetEmpty());
 }
 void UTASettingsMenuWidget::SelectPage(FName PageId)
 {

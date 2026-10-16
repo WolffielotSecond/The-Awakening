@@ -2,12 +2,11 @@
 #include "Movement/TAParkourComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/ChildActorComponent.h"
-#include "Components/WidgetComponent.h"
+#include "UI/TAInteractionPromptAnchor.h"
 #include "Engine/TargetPoint.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
-#include "UI/TAPromptWidgetUtils.h"
 #include "Components/SplineComponent.h"
 
 ATAParkourMarker::ATAParkourMarker()
@@ -52,19 +51,20 @@ ATAParkourMarker::ATAParkourMarker()
 
 	LandingSpline->UpdateSpline();
 
-	PromptWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("PromptWidget"));
+	// 保留原组件名，BP_ParkourMarker 对它的 Widget Class 设置继续生效
+	PromptWidget = CreateDefaultSubobject<UTAInteractionPromptAnchor>(TEXT("PromptWidget"));
 	PromptWidget->SetupAttachment(LandingTargetComponent);
-	PromptWidget->SetRelativeLocation(FVector(0.f, 0.f, 100.f));
-	PromptWidget->SetWidgetSpace(EWidgetSpace::Screen);
-	PromptWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PromptWidget->SetDrawAtDesiredSize(true);
-	PromptWidget->SetVisibility(false);
+	// 原先显示时被提示组件改写为 Z=-50，这里直接用这个实际显示位置
+	PromptWidget->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
+	PromptWidget->PromptType = ETAPromptType::ParkourJump;
 }
 
 void ATAParkourMarker::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	BindLandingTargetFromChild();
+	SyncPromptType();
+	HideLandingAnchor();
 }
 
 void ATAParkourMarker::BeginPlay()
@@ -75,7 +75,8 @@ void ATAParkourMarker::BeginPlay()
 
 	TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &ATAParkourMarker::OnBeginOverlap);
 	TriggerBox->OnComponentEndOverlap.AddDynamic(this, &ATAParkourMarker::OnEndOverlap);
-	SetLandingPreviewVisible(false);
+	SyncPromptType();
+	HideLandingAnchor();
 }
 
 void ATAParkourMarker::BindLandingTargetFromChild()
@@ -199,22 +200,6 @@ FVector ATAParkourMarker::GetLandingLocation(const FVector& PlayerWorldLocation)
 	);
 }
 
-void ATAParkourMarker::RefreshPrompt(UTexture2D* KeyIcon, const FText& PromptText)
-{
-	if (!PromptWidget)
-	{
-		return;
-	}
-
-	UUserWidget* Widget = PromptWidget->GetUserWidgetObject();
-	if (!Widget)
-	{
-		return;
-	}
-
-	FTAPromptWidgetUtils::ApplyPrompt(Widget, KeyIcon, PromptText);
-}
-
 void ATAParkourMarker::OnBeginOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -233,7 +218,6 @@ void ATAParkourMarker::OnBeginOverlap(
 		CurrentOverlappingActor = OtherActor;
 		SetActorTickEnabled(true);
 		ParkourComp->RegisterMarker(this);
-		RefreshLandingPreview();
 	}
 }
 
@@ -256,23 +240,13 @@ void ATAParkourMarker::OnEndOverlap(
 		{
 			CurrentOverlappingActor.Reset();
 			SetActorTickEnabled(false);
-			SetLandingPreviewVisible(false);
 		}
-	}
-}
-
-void ATAParkourMarker::SetPromptVisible(bool bVisible)
-{
-	if (PromptWidget)
-	{
-		PromptWidget->SetVisibility(bVisible);
 	}
 }
 
 void ATAParkourMarker::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	RefreshLandingPreview();
 
 	if (!CurrentOverlappingActor.IsValid() || !LandingTargetComponent)
 	{

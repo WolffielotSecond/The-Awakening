@@ -145,6 +145,37 @@ void UTAParkourComponent::FinishParkour()
 	OwnerCharacter->bUseControllerRotationYaw = bSavedUseControllerRotationYaw;
 }
 
+void UTAParkourComponent::AbortParkour()
+{
+	if (!bIsParkouring)
+	{
+		return;
+	}
+
+	bIsParkouring = false;
+	for (auto It = ConsumedHeldMarkers.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid()) It.RemoveCurrent();
+	}
+
+	if (!OwnerCharacter.IsValid())
+	{
+		return;
+	}
+
+	if (UCharacterMovementComponent* Move = OwnerCharacter->GetCharacterMovement())
+	{
+		Move->StopMovementImmediately();
+		Move->Velocity = FVector::ZeroVector;
+		Move->bOrientRotationToMovement = bSavedOrientRotationToMovement;
+		Move->bUseControllerDesiredRotation = bSavedUseControllerDesiredRotation;
+		// 空中中止：交给重力落地，落地后 CharacterMovement 自动切回 Walking
+		Move->SetMovementMode(MOVE_Falling);
+		if (auto* LandingMove = Cast<UTAMovementComponent>(Move)) LandingMove->CancelParkourLanding();
+	}
+	OwnerCharacter->bUseControllerRotationYaw = bSavedUseControllerRotationYaw;
+}
+
 bool UTAParkourComponent::HasLanded() const
 {
 	if (!OwnerCharacter.IsValid())

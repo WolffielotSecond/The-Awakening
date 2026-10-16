@@ -20,7 +20,7 @@
 
 移动中，角色水平前向与“当前位置到落点”的水平向量点积必须 ≥ 0（含微小浮点容差），即以跑酷方向为中心的前方 180°，两条边界均包含。纯竖直路线不限制水平朝向。开始时固定本次落点和方向并立即转向，飞行期间保持该朝向；自动转向设置在结束后恢复，动画使用固定起跳方向，避免到达落点时翻面。
 
-`CanParkourToMarker` 是蓝图可读的统一资格查询，包含触发框、有效 Marker、冻结、移动禁用、正在跑酷、同框重复触发及朝向条件；CanPlayerParkourToMarker 在其上检查玩家 Parkour capability。玩家执行和提示共用这一资格；落点 Widget 随资格显隐，LandingTargetComponent 及其 Child Actor 始终在游戏中隐藏，只负责定位，不向附着的 Widget 传播隐藏状态。触发框本身保持可用。Marker 在 PostPhysics 更新落点显示，角色先更新当帧移动朝向，再尝试持续跑酷。
+`CanParkourToMarker` 是蓝图可读的统一资格查询，包含触发框、有效 Marker、冻结、移动禁用、正在跑酷、同框重复触发及朝向条件；CanPlayerParkourToMarker 在其上检查玩家 Parkour capability。玩家执行和提示共用这一资格；落点处的提示由统一交互提示系统按这一资格显隐（见 [InteractionPrompts.md](InteractionPrompts.md)），LandingTargetComponent 及其 Child Actor 始终在游戏中隐藏，只负责定位，不向附着的提示锚点传播隐藏状态。触发框本身保持可用。Marker 在 PostPhysics 更新落点显示，角色先更新当帧移动朝向，再尝试持续跑酷。
 
 ## 实现位置
 

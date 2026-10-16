@@ -89,6 +89,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 RemoveFromSlot(int32 SlotIndex, int32 Count = 1);
 
+	/** 按物品定义移除最多 Count 个（普通格，不含剧情格），返回实际移除数。用于回滚等不关心具体格子的场合。 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 RemoveItem(UTAItemDefinition* ItemDef, int32 Count = 1);
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 GetItemCount(UTAItemDefinition* ItemDef) const;
 
