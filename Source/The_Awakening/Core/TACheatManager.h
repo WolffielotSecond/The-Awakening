@@ -30,6 +30,10 @@ public:
 	UFUNCTION(Exec)
 	void TAKill();
 
+	/** TAHeal [Amount]：回血，不填或 <= 0 时回满。回血不是伤害，直接改 Health；死亡状态下无效（不能用来复活）。 */
+	UFUNCTION(Exec)
+	void TAHeal(float Amount = 0.f);
+
 	/** TAGod：切换一条永久无敌保护（不挡强制伤害）。 */
 	UFUNCTION(Exec)
 	void TAGod();

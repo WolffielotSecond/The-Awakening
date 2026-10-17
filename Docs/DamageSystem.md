@@ -86,7 +86,7 @@ D4 = max(0, D3 − Σ固定值减伤)
 
 ## 调试命令
 
-`TADamage <数值>`（普通）、`TATrueDamage <数值>`（真实）、`TAKill`（强制，扣光）、`TAGod`（切换无敌）。来源均为 `Damage.Source.Console`。
+`TADamage <数值>`（普通）、`TATrueDamage <数值>`（真实）、`TAKill`（强制，扣光）、`TAGod`（切换无敌）、`TAHeal [数值]`（回血，不填回满；不是伤害）。伤害来源均为 `Damage.Source.Console`。
 
 ## 已知限制
 

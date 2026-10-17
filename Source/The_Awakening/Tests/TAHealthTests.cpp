@@ -15,6 +15,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Health/TARollbackSubsystem.h"
 #include "Core/TATimeSubsystem.h"
+#include "Core/TACheatManager.h"
 #include "Puzzle/TAPuzzleRewards.h"
 #include "Puzzle/TAPathPuzzleTypes.h"
 #include "AbilitySystemComponent.h"
@@ -574,6 +575,31 @@ bool FTARollbackOnDeathTest::RunTest(const FString&)
 	TestEqual(TEXT("Health restored to the pre-puzzle value"), F.HealthValue(), 100.f, 0.001f);
 	TestTrue(TEXT("Still dead: rollback does not cancel death"), F.Health->IsDead());
 	TestEqual(TEXT("Scope closed"), Rollback->GetScopeCount(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAHealthCheatHealTest, "TheAwakening.Health.CheatHeal",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTAHealthCheatHealTest::RunTest(const FString&)
+{
+	TAHealthTests::FPlayerFixture F;
+	if (!F.Validate(*this)) return false;
+	auto* Cheat = NewObject<UTACheatManager>(F.PC);
+
+	F.SetHealth(40.f);
+	Cheat->TAHeal(25.f);
+	TestEqual(TEXT("TAHeal <Amount> adds health"), F.HealthValue(), 65.f, 0.001f);
+	Cheat->TAHeal(1000.f);
+	TestEqual(TEXT("TAHeal never exceeds MaxHealth"), F.HealthValue(), F.Health->GetMaxHealth(), 0.001f);
+	F.SetHealth(10.f);
+	Cheat->TAHeal();
+	TestEqual(TEXT("TAHeal without amount heals to full"), F.HealthValue(), F.Health->GetMaxHealth(), 0.001f);
+
+	F.Kill();
+	AddExpectedMessage(TEXT("healing does not revive"), EAutomationExpectedErrorFlags::Contains, 1, false);
+	Cheat->TAHeal();
+	TestEqual(TEXT("TAHeal does nothing while dead"), F.HealthValue(), 0.f, 0.001f);
+	TestTrue(TEXT("Still dead"), F.Health->IsDead());
 	return true;
 }
 

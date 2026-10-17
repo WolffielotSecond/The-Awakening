@@ -36,9 +36,9 @@
 
 只在提示出现、语言切换、输入设备切换、改键位时刷新图标和文字（图标读本玩家的实际键位绑定）。同一个目标持续显示期间不重复查询。
 
-## 推荐：给 WBP_InteractPrompt 设父类
+## 提示控件父类
 
-打开 `Content/UI/WBP_InteractPrompt` → File → Reparent Blueprint → `TAWorldPromptWidget`。控件名保持 `Image_Key`、`Text_Prompt`，可选加一个包住图标的 `SizeBox_Key`。不改父类也能用：系统会按这几个控件名查找并填充。
+`WBP_InteractPrompt` 的父类已设为 `TAWorldPromptWidget`。控件名保持 `Image_Key`、`Text_Prompt`，可选加一个包住图标的 `SizeBox_Key`。新建的提示控件也建议用这个父类；父类不是它的旧控件仍可用，系统会按这几个控件名查找并填充。
 
 ## 与之前的差异
 

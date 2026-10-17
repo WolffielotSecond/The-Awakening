@@ -4,6 +4,7 @@
 #include "Health/TAHealthComponent.h"
 #include "Health/TARespawnSubsystem.h"
 #include "Health/TACheckpoint.h"
+#include "Health/TARollbackSubsystem.h"
 #include "AbilitySystem/TAAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -55,6 +56,35 @@ void UTACheatManager::TAKill()
 	const UAbilitySystemComponent* ASC = GetPlayerASC();
 	const float Health = ASC ? ASC->GetNumericAttribute(UTAAttributeSet::GetHealthAttribute()) : 0.f;
 	ApplyConsoleDamage(Health, ETADamageType::Forced, TEXT("TAKill"));
+}
+
+void UTACheatManager::TAHeal(float Amount)
+{
+	UAbilitySystemComponent* ASC = GetPlayerASC();
+	const UTAHealthComponent* Health = GetPlayerHealth();
+	if (!ASC || !Health)
+	{
+		UE_LOG(LogTACheat, Warning, TEXT("TAHeal: no controlled pawn with a health component."));
+		return;
+	}
+	if (Health->IsDead())
+	{
+		UE_LOG(LogTACheat, Warning, TEXT("TAHeal: player is dead; healing does not revive. Wait for respawn."));
+		return;
+	}
+	const float Before = ASC->GetNumericAttributeBase(UTAAttributeSet::GetHealthAttribute());
+	const float Max = ASC->GetNumericAttribute(UTAAttributeSet::GetMaxHealthAttribute());
+	const float After = Amount > 0.f ? FMath::Min(Max, Before + Amount) : Max;
+	// 对话 / 小游戏进行中：和其他改动一样记入回滚日志
+	if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(GetOuterAPlayerController()); Rollback && Rollback->IsRecording())
+	{
+		Rollback->RecordUndo(TEXT("Cheat.Heal"), [WeakASC = TWeakObjectPtr<UAbilitySystemComponent>(ASC), Before]
+		{
+			if (UAbilitySystemComponent* Target = WeakASC.Get()) Target->SetNumericAttributeBase(UTAAttributeSet::GetHealthAttribute(), Before);
+		});
+	}
+	ASC->SetNumericAttributeBase(UTAAttributeSet::GetHealthAttribute(), After);
+	UE_LOG(LogTACheat, Log, TEXT("TAHeal %.2f: Health %.2f -> %.2f"), Amount, Before, ASC->GetNumericAttribute(UTAAttributeSet::GetHealthAttribute()));
 }
 
 void UTACheatManager::TACheckpoint(FName CheckpointId)

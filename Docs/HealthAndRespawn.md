@@ -50,9 +50,42 @@ Pawn 不销毁、不走 `RestartPlayer`，背包和组件状态都保留。所�
 
 `UTARespawnSubsystem::Get(this)->OnWorldReset` 在复位时广播一次：敌人回到初始位置和状态、可重置机关复位。已开的门、已拾的物品、剧情旗标**不**重置（设计上没有死亡惩罚）。复活期间 `IsRespawning()` 为 true，敌人 AI 用它停止攻击。
 
+## 血量 HUD
+
+C++ 只提供数据和事件，界面全部在 WBP 里拼装。
+
+1. 在 `Content/UI/HUD/` 新建 Widget Blueprint `WBP_HealthHUD`，父类 `TAHealthHUDWidget`。
+2. 可选控件（按名字绑定，都可以不放）：
+
+   | 控件名 | 类型 | C++ 做的事 |
+   |---|---|---|
+   | `ProgressBar_Health` | ProgressBar | 设置百分比 Health / MaxHealth |
+   | `Text_Health` | TextBlock | 按本地化 Key `HUD_Health_Format`（`{Current} / {Max}`）显示，数值向上取整；切换语言时刷新 |
+
+3. 心电图、受伤闪红等表现：覆写蓝图事件 `OnHealthPresentationChanged(Current, Max, Delta)`。它在每次数值变化后调用（包括绑定时的一次初始同步，Delta 为 0）；Delta < 0 表示受伤。
+4. 创建：PlayerController 在 BeginPlay 按 `HealthHUDWidgetClass`（默认 `/Game/UI/HUD/WBP_HealthHUD`，`UI|Health` 分类）创建，层级 `HealthHUDZOrder`（默认 10）。HUD 设为 HitTestInvisible，不申请输入、不影响光标和焦点。没配或资源不存在时不创建，只打 Warning。
+5. HUD 自己找到本玩家角色的 `UTAHealthComponent` 并订阅，换 Pawn 时自动跟随。
+
+需要更多数据时直接用生命组件（蓝图可用）：
+
+| 名称 | 说明 |
+|---|---|
+| `IsDead` / `GetHealth` / `GetMaxHealth` / `GetHealthNormalized` | 查询 |
+| `OnHealthChanged(Current, Max, Delta)` | Health 或 MaxHealth 变化 |
+| `OnDamageTaken(Amount, Type, Source)` | 实际扣血的伤害（被保护完全挡住的不广播），可按来源做不同受击反馈 |
+| `OnDeathStarted` / `OnRespawned` | 进入死亡 / 复活完成 |
+| `GetLastDamageSource` / `GetLastDamageType` | 最近一次伤害的来源与类型（例如死亡原因） |
+| `HasProtection` | 是否处于无敌 / 不会死 |
+
 ## 调试命令
 
-`TAKill`、`TACheckpoint <Id>`，其余见 DamageSystem.md。
+| 命令 | 作用 |
+|---|---|
+| `TAKill` | 强制伤害，扣光 Health（任何保护都挡不住） |
+| `TAHeal [数值]` | 回血；不填数值则回满。死亡状态下无效，不能用来复活 |
+| `TACheckpoint <Id>` | 直接设为当前复活点 |
+
+伤害相关的 `TADamage`、`TATrueDamage`、`TAGod` 见 DamageSystem.md。只在 PIE / 开发版可用，Shipping 包没有。
 
 ## 与原实现方案的差异
 

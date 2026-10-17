@@ -9,7 +9,7 @@
 - 保护：无敌（可按来源放行）与不会死（最低 1 血），均挡不住强制伤害；小游戏、对话、复活后、TAGod 统一走保护入口。
 - 死亡流程：死亡时锁住输入、关闭所有页面并取消扫描；对话与小游戏期间的改动记入回滚日志，死亡时按逆序撤销并恢复到未开始状态。
 - 复活：复活点（最后交互的生效，无复活点时回到 PlayerStart）、死亡中 → 黑屏 → 复位 → 淡入流程、复活无敌、OnWorldReset、杀死体积；参数在项目设置 The Awakening Respawn 中调整。
-- 血量 HUD 的 C++ 父类与生命组件事件；调试命令 TADamage、TATrueDamage、TAKill、TAGod、TACheckpoint。
+- 血量 HUD 的 C++ 父类与生命组件事件；调试命令 TADamage、TATrueDamage、TAKill、TAHeal、TAGod、TACheckpoint。
 - 统一时停：冻结与全局暂停按来源申请和释放，新增游戏时间时钟与游戏时间计时器；扫描、小游戏、暂停菜单改用统一入口。
 - 设置“显示高级数据”的完整模式新增平台（读构建配置，当前为 Steam）和游戏时间（HH:MM:SS(倍率X)）。
 - 手柄：通过 Steam Input 识别 PlayStation 手柄并显示对应按键图标（Switch 仍显示 Xbox 图标）；摇杆与扳机的最小 / 最大死区设置及预览。
@@ -25,14 +25,6 @@
 
 ### 移除
 - 删除属性 DamageReduction（由百分比减伤修改器替代）。
-
-### 已知限制
-- 物品回滚后格子顺序会重排，武器耐久不保证与原实例一致；即时 GE 奖励只能恢复角色属性快照。
-- 两个同类型跑酷标记重叠时，提示与实际跳跃目标可能不同。
-- `Content/UI/Setting/` 下 4 个中文文件名资源会导致 UBT 自适应构建崩溃，本机已在 `Saved/UnrealBuildTool/BuildConfiguration.xml` 中关闭 git 工作集作为临时绕过。
-
-### 验证
-- headless 自动化测试 63 项中 62 项通过（新增 Health、Respawn、Time、Prompt 及手柄相关测试）。`TheAwakening.Puzzle.Scope` 失败、`Settings.CatalogValidation` 与 `Settings.EnglishLayout` 在 headless 下失败或崩溃（未计入），尚未在编辑器内对比确认是否与本次改动有关。PIE 与打包验证待完成。
 
 ## 0.2.3-alpha.1
 
@@ -55,9 +47,6 @@
 - 附近多物品拾取列表、稳定选择、范围复核和拾取结果反馈；沿用部分拾取与货币处理。
 - 拾取面板和条目 C++ 父类；WBP 由设计者拼装，超过可视高度自动滚动到选中条目。
 - 可编辑 IMC_Pickup、滚轮／手柄方向键选择动作，以及多语言和实际绑定按键提示。
-
-### 验证
-- 新增拾取列表、背包交易、输入资产与多语言自动化检查；界面需完成 WBP 后进行 PIE 验收。
 
 ## 0.1.0-alpha.1
 
