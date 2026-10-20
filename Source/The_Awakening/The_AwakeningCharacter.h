@@ -19,7 +19,12 @@ class UTANearbyPickupComponent;
 class UTAPromptComponent;
 class UTAFreezeComponent;
 class UTAHealthComponent;
+class UTACharacterActionComponent;
 class UTAInventoryPanelWidget;
+class UTAPickupBannerWidget;
+class UTAItemDefinition;
+class UTADocumentDefinition;
+struct FTAPickupBannerEntry;
 class UTADialogueWidget;
 class UTADialoguePortraitLayerWidget;
 class UTADialogueHistoryWidget;
@@ -125,6 +130,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAHealthComponent> HealthComponent;
 
+	/** 拿起 / 放下文本、塞入日记本等动作，PaperZD 动画蓝图订阅它的事件 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTACharacterActionComponent> CharacterActionComponent;
+
 	/** 相机跟随距离 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraDistance = 600.f;
@@ -206,6 +215,18 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTAInventoryPanelWidget> InventoryPanelInstance;
 
+	/** 拾取后屏幕右侧的提示。为空时用 /Game/UI/PickUp/WBP_PickupBanner */
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UTAPickupBannerWidget> PickupBannerClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTAPickupBannerWidget> PickupBannerInstance;
+
+	UTAPickupBannerWidget* GetPickupBanner();
+
+	/** 拾取提示显示期间打开背包：按条目类型直接进入检视 / 日记本 / 文本预览 */
+	void OpenPickupQuickView(const FTAPickupBannerEntry& Entry);
+
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ToggleInventory();
 
@@ -235,6 +256,9 @@ public:
 	void StopCurrentMovement();
 	/** 背包打开就关闭，走 RemoveFromParent → NotifyInventoryPanelClosed 的现有流程，释放背包自己的输入请求。 */
 	void CloseInventoryIfOpen();
+	/** 物品拾取进背包、文本收集进日记本后调用：屏幕右侧弹出拾取提示 */
+	void NotifyItemPickedUp(UTAItemDefinition* Item);
+	void NotifyDocumentCollected(UTADocumentDefinition* Document);
 	/** 复活传送后调用：镜头偏移归零，SpringArm 跳过一次 Camera Lag。 */
 	void ResetCameraForRespawn();
 	UTAParkourComponent* GetParkourComponent() const { return ParkourComponent; }
@@ -307,6 +331,7 @@ public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	FORCEINLINE UTAHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE UTACharacterActionComponent* GetCharacterActionComponent() const { return CharacterActionComponent; }
 	FORCEINLINE TSubclassOf<UTADialogueWidget> GetDialogueWidgetClass() const { return DialogueWidgetClass; }
 	FORCEINLINE TSubclassOf<UTADialoguePortraitLayerWidget> GetDialoguePortraitLayerClass() const { return DialoguePortraitLayerClass; }
 	FORCEINLINE TSubclassOf<UTADialogueHistoryWidget> GetDialogueHistoryWidgetClass() const { return DialogueHistoryWidgetClass; }

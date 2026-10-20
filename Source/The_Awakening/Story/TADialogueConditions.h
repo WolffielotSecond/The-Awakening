@@ -77,6 +77,22 @@ public:
 	virtual bool Evaluate(const FTAStoryCondition& Condition, const FTADialogueConditionContext& Context) const override;
 };
 
+/** HasDocument：已收集指定文本 */
+class FTADialogueHasDocumentEvaluator : public ITADialogueConditionEvaluator
+{
+public:
+	virtual FString GetTypeName() const override { return TEXT("HasDocument"); }
+	virtual bool Evaluate(const FTAStoryCondition& Condition, const FTADialogueConditionContext& Context) const override;
+};
+
+/** ReadDocument：已在阅读界面读过指定文本 */
+class FTADialogueReadDocumentEvaluator : public ITADialogueConditionEvaluator
+{
+public:
+	virtual FString GetTypeName() const override { return TEXT("ReadDocument"); }
+	virtual bool Evaluate(const FTAStoryCondition& Condition, const FTADialogueConditionContext& Context) const override;
+};
+
 /** Attribute：GAS 属性比较（属性名如 Health） */
 class FTADialogueAttributeEvaluator : public ITADialogueConditionEvaluator
 {

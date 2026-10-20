@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/CheatManager.h"
 #include "Health/TADamageTypes.h"
+#include "Styling/SlateBrush.h"
 #include "TACheatManager.generated.h"
 
 class UAbilitySystemComponent;
@@ -42,7 +43,46 @@ public:
 	UFUNCTION(Exec)
 	void TACheckpoint(FName CheckpointId);
 
+	/** TAAction <Tag>：播放角色动作（例如 Anim.Pickup），日志输出关键帧和结束；不写 Tag 时打断当前动作。 */
+	UFUNCTION(Exec)
+	void TAAction(const FString& ActionTag = TEXT(""));
+
+	/** TAPreview [MeshPath | off]：在屏幕左上角显示 3D 预览台画面（静态或骨骼网格体）；不填路径显示占位立方体，off 关闭。 */
+	UFUNCTION(Exec)
+	void TAPreview(const FString& MeshPath = TEXT(""));
+
+	/** TAGiveDiary：把项目设置里配置的日记本放进剧情槽。 */
+	UFUNCTION(Exec)
+	void TAGiveDiary();
+
+	/** TADocList：在日志和屏幕上列出已收集（按页序）和已读的文本。 */
+	UFUNCTION(Exec)
+	void TADocList();
+
+	/** TADocReset：清空文本收集、已读记录和日记本页码（不会恢复已销毁的场景文本，重新开始 PIE 即可）。 */
+	UFUNCTION(Exec)
+	void TADocReset();
+
+	/** TASave：立即存档到默认槽 */
+	UFUNCTION(Exec)
+	void TASave();
+
+	/** TALoad：从默认槽读档（主菜单完成前的读档入口） */
+	UFUNCTION(Exec)
+	void TALoad();
+
+	/** TASaveDelete：删除默认槽的存档 */
+	UFUNCTION(Exec)
+	void TASaveDelete();
+
+	/** TASaveInfo：在日志和屏幕上显示存档头（版本、时间、关卡、复活点、文本数） */
+	UFUNCTION(Exec)
+	void TASaveInfo();
+
 	bool IsGodModeEnabled() const { return GodProtection.IsValid(); }
+
+	/** 关卡切换或 PIE 结束时控制器被销毁：先把调试画面从视口移除，避免 Slate 持有失效的画刷 */
+	virtual void BeginDestroy() override;
 
 private:
 	UAbilitySystemComponent* GetPlayerASC() const;
@@ -52,4 +92,13 @@ private:
 	// 只持有自己这一条保护，关闭时只移除它，不影响对话、小游戏、复活保护等其他来源
 	FTAHealthProtectionHandle GodProtection;
 	TWeakObjectPtr<UTAHealthComponent> GodHealth;
+
+	// TAPreview：直接用 Slate 贴到视口（UUserWidget 是抽象类，不能不经 WBP 直接创建）
+	void CloseDebugPreview(bool bDestroyStage);
+	TWeakObjectPtr<class ATAPreviewStage> DebugPreviewStage;
+	TSharedPtr<class SWidget> DebugPreviewSlate;
+	TWeakObjectPtr<class UGameViewportClient> DebugPreviewViewport;
+	/** UPROPERTY：让画刷引用的 RenderTarget 在画面移除前不被回收 */
+	UPROPERTY(Transient)
+	FSlateBrush DebugPreviewBrush;
 };

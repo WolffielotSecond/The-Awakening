@@ -138,7 +138,7 @@ bool UTANearbyPickupComponent::TryPickupSelected()
     const int32 Added = FMath::Max(0, Before - Remaining);
     RefreshNearbyItems();
     FText Message;
-    if (Added == 0)
+    if (Added == 0 && IsValid(Item) && Item->ShouldReportPickupFailure())
         if (auto* GI = GetWorld()->GetGameInstance())
             if (auto* Loc = GI->GetSubsystem<UTALocalizeSubsystem>()) Message = Loc->GetText(TEXT("Pickup_Failed"));
     OnPickupResult.Broadcast(Added, Message);

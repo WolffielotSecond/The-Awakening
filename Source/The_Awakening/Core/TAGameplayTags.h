@@ -31,4 +31,10 @@ namespace TAGameplayTags
 
 	/** 复活时移除带此 Tag 的持续 GE（给以后的 GE 型效果预留；伤害修改器的清理见 UTAHealthComponent）。 */
 	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_ClearOnRespawn);
+
+	/** 角色动作（UTACharacterActionComponent::PlayAction），由 PaperZD 动画蓝图响应。新增动作在这里加一行。 */
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Anim);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Anim_Pickup);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Anim_PutDown);
+	THE_AWAKENING_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Anim_InsertPage);
 }

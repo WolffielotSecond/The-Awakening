@@ -38,7 +38,7 @@ void FTAStoryConditionCustomization::CustomizeChildren(TSharedRef<IPropertyHandl
 		.OnGetMenuContent_Lambda([TypeHandle]()
 		{
 			FMenuBuilder Menu(true, nullptr);
-			for (const FString Type : { FString(TEXT("Flag")), FString(TEXT("HasItem")), FString(TEXT("Money")), FString(TEXT("Attribute")) })
+			for (const FString Type : { FString(TEXT("Flag")), FString(TEXT("HasItem")), FString(TEXT("Money")), FString(TEXT("Attribute")), FString(TEXT("HasDocument")), FString(TEXT("ReadDocument")) })
 			{
 				Menu.AddMenuEntry(FText::FromString(Type), FText::GetEmpty(), FSlateIcon(),
 					FUIAction(FExecuteAction::CreateLambda([TypeHandle, Type]() { TypeHandle->SetValue(Type); })));
@@ -74,6 +74,7 @@ void FTAStoryConditionCustomization::CustomizeChildren(TSharedRef<IPropertyHandl
 	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Flag), { TEXT("Flag") });
 	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Item), { TEXT("HasItem") });
 	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Count), { TEXT("HasItem") });
+	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Document), { TEXT("HasDocument"), TEXT("ReadDocument") });
 	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Attribute), { TEXT("Attribute") });
 	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Op), { TEXT("Flag"), TEXT("Money"), TEXT("Attribute") });
 	AddField(GET_MEMBER_NAME_CHECKED(FTAStoryCondition, Value), { TEXT("Flag"), TEXT("Money"), TEXT("Attribute") });

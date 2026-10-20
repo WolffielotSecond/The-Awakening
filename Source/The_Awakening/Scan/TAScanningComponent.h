@@ -59,6 +59,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scan")
 	void NotifyScanInputReleased(bool bCanceled = false);
 
+	/** 扫描键对应的输入动作，用于在等待松开期间读物理按键观测 */
+	void SetScanInputAction(const class UInputAction* InAction);
+
 	UFUNCTION(BlueprintPure, Category = "Scan")
 	bool IsScanning() const;
 
@@ -257,6 +260,8 @@ private:
 	float TargetRefreshAccumulator = 0.0f;
 	bool bScanInputHeld = false;
 	bool bWaitingForInputRelease = false;
+	/** 资产由角色持有，这里只弱引用 */
+	TWeakObjectPtr<const class UInputAction> ScanInputAction;
 
 	TSet<TWeakObjectPtr<UTAScannableComponent>> HighlightedTargets;
 	TWeakObjectPtr<UTAScannableComponent> HoveredTarget;

@@ -1,4 +1,5 @@
 #include "UI/Inventory/TAInventorySlotWidget.h"
+#include "Inventory/TAItemSettings.h"
 #include "UI/Inventory/TAInventoryPanelWidget.h"
 #include "Inventory/TAItemDefinition.h"
 #include "Core/TALocalizeSubsystem.h"
@@ -20,7 +21,7 @@ void UTAInventorySlotWidget::NativeConstruct()
 FReply UTAInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	if (!AllowsPlayerDrag()) return FReply::Handled();
-	if (!IsEmpty() && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	if (!IsEmpty() && !IsStorySlot() && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
 	}
@@ -46,7 +47,7 @@ void UTAInventorySlotWidget::NativeOnDragDetected(
 {
 	if (!AllowsPlayerDrag()) return;
 	Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
-	if (IsEmpty() || !Inventory)
+	if (IsEmpty() || IsStorySlot() || !Inventory)
 	{
 		return;
 	}
@@ -104,6 +105,11 @@ bool UTAInventorySlotWidget::NativeOnDrop(
 void UTAInventorySlotWidget::SetInputOwner(UTAInventoryPanelWidget* InOwner)
 {
 	InputOwner = InOwner;
+}
+
+bool UTAInventorySlotWidget::IsStorySlot() const
+{
+	return UTAInventoryComponent::IsStorySlotUIIndex(FlatIndex);
 }
 
 bool UTAInventorySlotWidget::AllowsPlayerDrag() const
@@ -169,7 +175,8 @@ void UTAInventorySlotWidget::RefreshVisuals()
 	{
 		if (bHasItem)
 		{
-			UTexture2D* Icon = CachedSlot.ItemDef->Icon.Get(); // 若是 Soft 则 LoadSynchronous
+			// 没有图标的物品用项目设置里的默认图标
+			UTexture2D* Icon = UTAItemSettings::ResolveIcon(CachedSlot.ItemDef->Icon.Get());
 			if (Icon)
 			{
 				Image_item->SetBrushFromTexture(Icon);

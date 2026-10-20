@@ -90,6 +90,11 @@ protected:
 	void UpdateItemInfoWidgetPosition();
 	UFUNCTION()
 	void HandleInventorySlotHovered(UTAInventorySlotWidget* HoveredSlot, UTAItemDefinition* ItemDef);
+	/** 在光标处打开该格子物品的交互菜单；没有可用选项时不打开 */
+	void OpenItemActionMenu(UTAInventorySlotWidget* InventorySlot);
+	void HandleItemAction(FName ActionId, TWeakObjectPtr<UTAInventorySlotWidget> SourceSlot);
+	/** 在背包里显示一条提示（WBP 中有 Text_Message 时用它，没有时退回屏幕调试文字） */
+	void ShowMessage(const FString& TextId);
 	UFUNCTION()
 	void HandleInventorySlotUnhovered(UTAInventorySlotWidget* HoveredSlot);
 
@@ -154,6 +159,15 @@ protected:
 	TSubclassOf<UTAInventorySlotWidget> SlotWidgetClass;
 
 	/** 顶栏「背包」按钮上的文字 */
+	/** 可选：背包里的提示文字（例如“当前位置无法掉落物品”），显示 MessageDuration 秒后隐藏 */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Message;
+
+	UPROPERTY(EditAnywhere, Category = "InventoryUI", meta = (ClampMin = "0.5", Units = "s"))
+	float MessageDuration = 2.5f;
+
+	float MessageTimeLeft = 0.f;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Inventory;
 
@@ -199,6 +213,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TObjectPtr<UInputAction> GamepadDragModeAction;
 
+	/** 光标停在物品上时打开它的交互菜单。为空时用 /Game/Input/Actions/UI/IA_ItemActions，按键（键鼠、手柄）都在 IMC_UI 中配置 */
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
+	TObjectPtr<UInputAction> ItemActionsAction;
+
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;
 
@@ -242,6 +260,8 @@ protected:
 private:
 	FTAInputRouter::FHandle InputRequestHandle = 0;
 	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
+	/** 背包打开期间时停（策划文档：背包打开时也会时停）。与输入请求一起申请、一起释放。 */
+	bool bFreezeRequested = false;
 	void ReleaseInput();
 
 };

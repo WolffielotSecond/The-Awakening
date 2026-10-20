@@ -40,7 +40,7 @@ Pawn 不销毁、不走 `RestartPlayer`，背包和组件状态都保留。所�
 
 - 最后一次交互的复活点生效，回头交互旧复活点也会生效；只路过不交互不改变。
 - 没有任何复活点时退回关卡的 PlayerStart 并打 Warning；连 PlayerStart 都没有则原地复活。
-- 复活点只在本局有效，不存档。
+- 当前复活点会进存档，交互或新激活复活点时自动存档，见 [SaveSystem.md](SaveSystem.md)。
 
 ## 杀死体积 `ATAKillVolume`
 

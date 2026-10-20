@@ -100,23 +100,41 @@ bool FTASettingsEnglishLayoutTest::RunTest(const FString&)
  auto* Menu=MenuClass?CreateWidget<UTASettingsMenuWidget>(PC,MenuClass):nullptr;
  if (!TestNotNull(TEXT("Real settings menu template"),Menu)) return false;
  Menu->InitializeResetHoldVisual();
- TMap<UButton*,FMargin> OuterDefaults,InnerDefaults;
- for (UButton* Button:{Menu->Button_RestoreDefaults.Get(),Menu->Button_ConfirmVideoMode.Get(),Menu->Button_RevertVideoMode.Get()})
+ // 三个底部按钮在 WBP 中都是必需的。按钮或其 Slot 缺失时逐个报出并判失败，而不是空指针崩溃
+ struct FFooterButton { const TCHAR* Name; UHorizontalBoxSlot* Outer; UButtonSlot* Inner; FMargin OuterDefault; FMargin InnerDefault; };
+ TArray<FFooterButton> Footer;
+ struct FFooterSource { const TCHAR* Name; UButton* Button; };
+ const FFooterSource FooterButtons[]={
+  {TEXT("Button_RestoreDefaults"),Menu->Button_RestoreDefaults.Get()},
+  {TEXT("Button_ConfirmVideoMode"),Menu->Button_ConfirmVideoMode.Get()},
+  {TEXT("Button_RevertVideoMode"),Menu->Button_RevertVideoMode.Get()}};
+ bool bFooterValid=true;
+ for (const FFooterSource& Entry:FooterButtons)
  {
-  OuterDefaults.Add(Button,Cast<UHorizontalBoxSlot>(Button->Slot)->GetPadding());
-  InnerDefaults.Add(Button,Cast<UButtonSlot>(Button->GetContent()->Slot)->GetPadding());
+  UButton* Button=Entry.Button;
+  auto* Outer=Button?Cast<UHorizontalBoxSlot>(Button->Slot):nullptr;
+  auto* Inner=Button&&Button->GetContent()?Cast<UButtonSlot>(Button->GetContent()->Slot):nullptr;
+  if (!Button||!Outer||!Inner)
+  {
+   AddError(FString::Printf(TEXT("Footer %s: %s"),Entry.Name,
+    !Button?TEXT("button not bound"):!Outer?TEXT("not inside a HorizontalBox"):TEXT("has no content in a ButtonSlot")));
+   bFooterValid=false;
+   continue;
+  }
+  Footer.Add({Entry.Name,Outer,Inner,Outer->GetPadding(),Inner->GetPadding()});
  }
+ if (!bFooterValid) return false;
  Menu->ApplyLanguageLayout(true);
- for (const auto& Entry:OuterDefaults)
+ for (const FFooterButton& Entry:Footer)
  {
-  TestTrue(TEXT("English footer button gap"),Cast<UHorizontalBoxSlot>(Entry.Key->Slot)->GetPadding().Right>=16.f);
-  TestEqual(TEXT("English footer content padding"),Cast<UButtonSlot>(Entry.Key->GetContent()->Slot)->GetPadding(),FMargin(12,8));
+  TestTrue(FString::Printf(TEXT("English footer button gap (%s)"),Entry.Name),Entry.Outer->GetPadding().Right>=16.f);
+  TestEqual(FString::Printf(TEXT("English footer content padding (%s)"),Entry.Name),Entry.Inner->GetPadding(),FMargin(12,8));
  }
  Menu->ApplyLanguageLayout(false);
- for (const auto& Entry:OuterDefaults)
+ for (const FFooterButton& Entry:Footer)
  {
-  TestEqual(TEXT("Chinese footer gap restored"),Cast<UHorizontalBoxSlot>(Entry.Key->Slot)->GetPadding(),Entry.Value);
-  TestEqual(TEXT("Chinese footer padding restored"),Cast<UButtonSlot>(Entry.Key->GetContent()->Slot)->GetPadding(),InnerDefaults.FindChecked(Entry.Key));
+  TestEqual(FString::Printf(TEXT("Chinese footer gap restored (%s)"),Entry.Name),Entry.Outer->GetPadding(),Entry.OuterDefault);
+  TestEqual(FString::Printf(TEXT("Chinese footer padding restored (%s)"),Entry.Name),Entry.Inner->GetPadding(),Entry.InnerDefault);
  }
  return true;
 }

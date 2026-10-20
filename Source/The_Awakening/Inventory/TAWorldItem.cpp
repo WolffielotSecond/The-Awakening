@@ -1,4 +1,5 @@
 #include "Inventory/TAWorldItem.h"
+#include "Inventory/TAItemSettings.h"
 #include "Inventory/TAItemDefinition.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Core/TAPlayerState.h"
@@ -12,6 +13,9 @@
 #include "GameFramework/PlayerState.h"
 #include "UI/TAPromptWidgetUtils.h"
 #include "Scan/TAScannableComponent.h"
+#include "Engine/StaticMesh.h"
+#include "The_AwakeningCharacter.h"
+#include "UObject/ConstructorHelpers.h"
 
 ATAWorldItem::ATAWorldItem()
 {
@@ -35,12 +39,36 @@ ATAWorldItem::ATAWorldItem()
 	ScannableComponent = CreateDefaultSubobject<UTAScannableComponent>(TEXT("ScannableComponent"));
 	ScannableComponent->ScanInfo.TargetType = ETAScanTargetType::Item;
 	ScannableComponent->CustomDepthStencilValue = 2;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	FallbackMesh = CubeAsset.Object;
+}
+
+void ATAWorldItem::ApplyFallbackMesh()
+{
+	if (!MeshComponent || MeshComponent->GetStaticMesh())
+	{
+		return;
+	}
+	if (ItemDef && ItemDef->PreviewMesh)
+	{
+		MeshComponent->SetStaticMesh(ItemDef->PreviewMesh);
+		MeshComponent->SetRelativeTransform(ItemDef->PreviewTransform);
+	}
+	else if (FallbackMesh)
+	{
+		MeshComponent->SetStaticMesh(FallbackMesh);
+		MeshComponent->SetRelativeScale3D(FVector(0.25f));
+	}
 }
 
 void ATAWorldItem::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ApplyFallbackMesh();
+	// 丢失材质（槽位为空或引擎默认材质）换成项目设置里的兜底材质
+	UTAItemSettings::ApplyMissingMaterialFallback(MeshComponent);
 	if (MeshComponent)
 	{
 		MeshComponent->SetRenderCustomDepth(true);
@@ -80,6 +108,16 @@ FString ATAWorldItem::GetPromptTextId() const
 	return PromptTextId.IsEmpty() ? TEXT("Interact_PickUp") : PromptTextId;
 }
 
+FString ATAWorldItem::GetDisplayNameTextId() const
+{
+	return ItemDef ? ItemDef->DisplayName.ToString() : FString();
+}
+
+UTexture2D* ATAWorldItem::GetDisplayIcon() const
+{
+	return ItemDef ? UTAItemSettings::ResolveIcon(ItemDef->Icon.Get()) : nullptr;
+}
+
 bool ATAWorldItem::CanInteract_Implementation(AActor* Interactor) const
 {
 	return ItemDef != nullptr && Count > 0 && Interactor != nullptr;
@@ -114,6 +152,11 @@ void ATAWorldItem::OnInteract_Implementation(AActor* Interactor)
 
 	if (TryPickupAsInventory(Interactor, Inventory))
 	{
+		// 屏幕右侧拾取提示（钱直接加金额，不弹提示）
+		if (AThe_AwakeningCharacter* Character = Cast<AThe_AwakeningCharacter>(Interactor))
+		{
+			Character->NotifyItemPickedUp(ItemDef);
+		}
 		// 全部捡完才销毁；部分捡起时 Count 已在内部减少
 		if (Count <= 0)
 		{

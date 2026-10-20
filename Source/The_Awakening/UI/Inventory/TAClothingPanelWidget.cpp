@@ -1,4 +1,5 @@
 #include "UI/Inventory/TAClothingPanelWidget.h"
+#include "Inventory/TAItemSettings.h"
 #include "UI/Inventory/TAInventoryPanelWidget.h"
 #include "Inventory/TAClothingDefinition.h"
 #include "UI/Inventory/TAInventorySlotWidget.h"
@@ -86,6 +87,8 @@ void UTAClothingPanelWidget::SetClothingIcon(UTAClothingDefinition* Def)
 			Icon = Def->Icon.LoadSynchronous();
 		}
 		// TObjectPtr 则改为：Icon = Def->Icon.Get();
+		// 没有图标时用项目设置里的默认图标
+		Icon = UTAItemSettings::ResolveIcon(Icon);
 	}
 
 	if (Icon)

@@ -2,6 +2,7 @@
 
 
 #include "Scan/TAScanningComponent.h"
+#include "InputAction.h"
 
 #include "Scan/TAScanningActor.h"
 #include "Scan/TA_HighlightPPActor.h"
@@ -144,6 +145,21 @@ void UTAScanningComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UTAScanningComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// 扫描被背包等界面取消后，松开事件可能被界面接收，动作收不到 Completed；
+	// 物理观测确认松开就解除等待，否则下一次按下会被当成“还没松开”而无效
+	if (bWaitingForInputRelease && ScanInputAction.IsValid())
+		if (const auto* TAController = Cast<AThe_AwakeningPlayerController>(PlayerController);
+			TAController && TAController->IsActionObservedReleased(ScanInputAction.Get()))
+		{
+			bWaitingForInputRelease = false;
+			bScanInputHeld = false;
+			if (ScanState == ETAScanState::FadedOut && HighlightShowProgress <= 0.0f)
+			{
+				SetComponentTickEnabled(false);
+				return;
+			}
+		}
 
 	UpdateHighlight(DeltaTime);
 	UpdateScanTime(DeltaTime);
@@ -314,7 +330,8 @@ bool UTAScanningComponent::UpdateScanState(ETAScanState NewState, bool bForce)
 
 			DestroyScanPPActor();
 
-			if (HighlightShowProgress <= 0.0f)
+			// 等待松开期间保持 Tick：要在这里读物理按键观测
+			if (HighlightShowProgress <= 0.0f && !bWaitingForInputRelease)
 			{
 				SetComponentTickEnabled(false);
 			}
@@ -607,7 +624,7 @@ void UTAScanningComponent::UpdateHighlight(float DeltaTime)
 		);
 
 		if (HighlightShowProgress <= 0.0f &&
-			ScanState == ETAScanState::FadedOut)
+			ScanState == ETAScanState::FadedOut && !bWaitingForInputRelease)
 		{
 			SetComponentTickEnabled(false);
 		}
@@ -793,6 +810,10 @@ void UTAScanningComponent::SetScanEnabled(bool bEnabled)
 	{
 		// Preserve the release requirement even if no scan is active (e.g. during fade-out).
 		bWaitingForInputRelease |= bScanInputHeld;
+		if (bWaitingForInputRelease)
+		{
+			SetComponentTickEnabled(true);
+		}
 		CancelScan(ETAScanEndReason::Canceled, true);
 	}
 }
@@ -804,6 +825,7 @@ bool UTAScanningComponent::StartScan()
 	{
 		// Unlocking the ability while the key is held must not restart scanning.
 		bWaitingForInputRelease = true;
+		SetComponentTickEnabled(true);
 		return false;
 	}
 	if (bWaitingForInputRelease || !PlayerController || !PlayerController->GetPawn())
@@ -833,7 +855,9 @@ bool UTAScanningComponent::StartScan()
 				FTAInputRequest Request;
 				Request.Owner = this;
 				Request.Priority = 100;
-				Request.Allowed = {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor, ETAInputCapability::OpenDebugUI};
+				// InventoryToggle：扫描中按背包键会取消扫描并打开背包（由角色的 ToggleInventory 处理）
+				Request.Allowed = {ETAInputCapability::Scan, ETAInputCapability::Look, ETAInputCapability::Cursor, ETAInputCapability::OpenDebugUI,
+					ETAInputCapability::InventoryToggle};
 				Request.Presentation.bShowCursor = true;
 				InputRequestController = TAController;
 				InputRequestHandle = TAController->AcquireInputRequest(Request);
@@ -870,6 +894,11 @@ bool UTAScanningComponent::EndScan()
 	const bool bWasScanning = IsScanning();
 	NotifyScanInputReleased(false);
 	return bWasScanning;
+}
+
+void UTAScanningComponent::SetScanInputAction(const UInputAction* InAction)
+{
+	ScanInputAction = InAction;
 }
 
 void UTAScanningComponent::NotifyScanInputReleased(bool bCanceled)
@@ -916,6 +945,10 @@ void UTAScanningComponent::StopScan(ETAScanEndReason Reason, bool bRequireInputR
 	}
 
 	bWaitingForInputRelease = bRequireInputRelease && bScanInputHeld;
+	if (bWaitingForInputRelease)
+	{
+		SetComponentTickEnabled(true);
+	}
 	if (IsValid(HighlightPPActor))
 	{
 		StartHighlightHideTimer();

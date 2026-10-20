@@ -45,6 +45,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "InventorySlot")
 	int32 GetFlatIndex() const { return FlatIndex; }
 
+	/** 左侧剧情格：可悬停、可选中，但不能拖拽 */
+	UFUNCTION(BlueprintPure, Category = "InventorySlot")
+	bool IsStorySlot() const;
+
 	UFUNCTION(BlueprintCallable, Category = "InventorySlot")
 	bool IsEmpty() const;
 

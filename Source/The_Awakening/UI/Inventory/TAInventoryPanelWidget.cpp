@@ -16,6 +16,7 @@
 #include "Components/SizeBox.h"
 #include "GameFramework/PlayerController.h"
 #include "Core/TALocalizeSubsystem.h"
+#include "Engine/Engine.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "Scan/TAScanInfoWidget.h"
 #include "Scan/TAScanTypes.h"
@@ -32,6 +33,12 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Core/TATimeSubsystem.h"
+#include "UI/Inventory/TAItemActionMenuWidget.h"
+#include "UI/Inventory/TAQuantityDialogWidget.h"
+#include "UI/Inventory/TAItemInspectWidget.h"
+#include "UI/Document/TADiaryWidget.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
 
 FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
@@ -43,6 +50,14 @@ FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry
 void UTAInventoryPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (!ItemActionsAction)
+	{
+		ItemActionsAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/UI/IA_ItemActions.IA_ItemActions"));
+	}
+	if (Text_Message)
+	{
+		Text_Message->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	SetIsFocusable(true);
 
 	if (!SlotWidgetClass)
@@ -111,6 +126,13 @@ void UTAInventoryPanelWidget::NativeConstruct()
 			InputRequestController = PC;
 			InputRequestHandle = PC->AcquireInputRequest(Request);
 		}
+	// 时停：只冻结挂了冻结组件的角色和敌人，UI 动画照常；扫描中打开时由背包接管，冻结不会出现空档
+	if (!bFreezeRequested)
+		if (UTATimeSubsystem* Time = UTATimeSubsystem::Get(this))
+		{
+			Time->RequestFreeze(this, 1.f);
+			bFreezeRequested = true;
+		}
 }
 
 void UTAInventoryPanelWidget::NativeDestruct()
@@ -155,6 +177,14 @@ void UTAInventoryPanelWidget::NativeDestruct()
 void UTAInventoryPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (MessageTimeLeft > 0.f)
+	{
+		MessageTimeLeft -= InDeltaTime;
+		if (MessageTimeLeft <= 0.f && Text_Message)
+		{
+			Text_Message->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
 	const bool bItemDragActive = bGamepadDragModeActive || UWidgetBlueprintLibrary::IsDragDropping();
 	if (bItemDragActive)
 	{
@@ -387,7 +417,7 @@ void UTAInventoryPanelWidget::HandleInventorySlotUnhovered(UTAInventorySlotWidge
 
 void UTAInventoryPanelWidget::BeginGamepadDragMode(UTAInventorySlotWidget* SourceSlot)
 {
-	if (!SourceSlot || SourceSlot->IsEmpty() || !SourceSlot->GetItemDef() || !Inventory)
+	if (!SourceSlot || SourceSlot->IsEmpty() || SourceSlot->IsStorySlot() || !SourceSlot->GetItemDef() || !Inventory)
 	{
 		return;
 	}
@@ -719,7 +749,7 @@ void UTAInventoryPanelWidget::RefreshAll()
 		}
 		if (Stories.IsValidIndex(i) && !Stories[i].IsEmpty())
 		{
-			StorySlots[i]->SetSlotData(Stories[i], -100 - i);
+			StorySlots[i]->SetSlotData(Stories[i], UTAInventoryComponent::ToStorySlotUIIndex(i));
 		}
 		else
 		{
@@ -805,6 +835,11 @@ void UTAInventoryPanelWidget::ReleaseInput()
 	InputRequestController.Reset();
 	if (Handle)
 		if (auto* PC = Issuer.Get()) PC->ReleaseInputRequest(Handle);
+	if (bFreezeRequested)
+	{
+		bFreezeRequested = false;
+		if (UTATimeSubsystem* Time = UTATimeSubsystem::Get(this)) Time->ReleaseFreeze(this);
+	}
 }
 
 void UTAInventoryPanelWidget::RemoveFromParent()
@@ -829,6 +864,8 @@ TOptional<ETAInputCapability> UTAInventoryPanelWidget::ResolvePlayerInput(FKey K
 	if (!PC) return {};
 	if (PC->IsKeyMappedToAction(Key, CloseAction)) return ETAInputCapability::InventoryToggle;
 	if (PC->IsKeyMappedToAction(Key, PreviousPageAction) || PC->IsKeyMappedToAction(Key, NextPageAction)) return ETAInputCapability::Navigate;
+	// 物品交互先于确认判断：两者共用 Confirm 权限
+	if (ItemActionsAction && PC->IsKeyMappedToAction(Key, ItemActionsAction)) return ETAInputCapability::Confirm;
 	if (PC->IsKeyMappedToAction(Key, ConfirmAction)) return ETAInputCapability::Confirm;
 	if (PC->IsKeyMappedToAction(Key, GamepadDragModeAction)) return ETAInputCapability::ToggleDrag;
 	return {};
@@ -843,6 +880,121 @@ void UTAInventoryPanelWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Ca
 		if (InputRequestController->ConsumeInventoryTogglePress(CloseAction)) RemoveFromParent();
 	}
 	else if (Capability == ETAInputCapability::Navigate) ChangePage(PC->IsKeyMappedToAction(Key, PreviousPageAction) ? -1 : 1);
+	else if (Capability == ETAInputCapability::Confirm && ItemActionsAction && PC->IsKeyMappedToAction(Key, ItemActionsAction))
+		OpenItemActionMenu(CurrentHoveredInventorySlot.Get());
 	else if (Capability == ETAInputCapability::Confirm) HandleConfirmPressed();
 	else if (Capability == ETAInputCapability::ToggleDrag) ToggleGamepadDragMode(FInputActionValue(true));
+}
+
+// ==================== 物品交互菜单 / 日记本 ====================
+
+void UTAInventoryPanelWidget::OpenItemActionMenu(UTAInventorySlotWidget* InventorySlot)
+{
+	if (!InventorySlot || InventorySlot->IsEmpty() || bGamepadDragModeActive || !Inventory)
+	{
+		return;
+	}
+	TArray<FTAItemActionOption> Options = UTAItemActionMenuWidget::GetOptionsForSlot(InventorySlot->GetSlotData(), Inventory->HasEmptySlot());
+	if (Options.IsEmpty())
+	{
+		return;
+	}
+	HideItemInfo(InventorySlot);
+	UTAItemActionMenuWidget::Open(GetOwningPlayer(), nullptr, MoveTemp(Options),
+		[WeakThis = TWeakObjectPtr<UTAInventoryPanelWidget>(this), WeakSlot = TWeakObjectPtr<UTAInventorySlotWidget>(InventorySlot)](FName ActionId)
+		{
+			if (UTAInventoryPanelWidget* Self = WeakThis.Get())
+			{
+				Self->HandleItemAction(ActionId, WeakSlot);
+			}
+		});
+}
+
+void UTAInventoryPanelWidget::HandleItemAction(FName ActionId, TWeakObjectPtr<UTAInventorySlotWidget> SourceSlot)
+{
+	if (ActionId == UTAItemActionMenuWidget::ActionViewContent)
+	{
+		// 书从剧情格里日记本的位置放大，关闭时缩回去
+		TOptional<FVector2D> Source;
+		if (const UTAInventorySlotWidget* SlotWidget = SourceSlot.Get())
+		{
+			const FGeometry& Geometry = SlotWidget->GetCachedGeometry();
+			FVector2D PixelPosition, ViewportPosition;
+			USlateBlueprintLibrary::AbsoluteToViewport(this, Geometry.GetAbsolutePositionAtCoordinates(FVector2D(0.5f, 0.5f)), PixelPosition, ViewportPosition);
+			Source = ViewportPosition;
+		}
+		UTADiaryWidget::Open(GetOwningPlayer(), nullptr, Source);
+	}
+	else if (ActionId == UTAItemActionMenuWidget::ActionInspect)
+	{
+		if (const UTAInventorySlotWidget* SlotWidget = SourceSlot.Get(); SlotWidget && !SlotWidget->IsEmpty())
+		{
+			UTAItemInspectWidget::Open(GetOwningPlayer(), nullptr, SlotWidget->GetItemDef());
+		}
+	}
+	else if (ActionId == UTAItemActionMenuWidget::ActionPartialDrop || ActionId == UTAItemActionMenuWidget::ActionSplit)
+	{
+		const UTAInventorySlotWidget* SlotWidget = SourceSlot.Get();
+		if (!SlotWidget || !Inventory || SlotWidget->IsEmpty())
+		{
+			return;
+		}
+		// 记下格子下标而不是控件：背包打开时物品不会被别处改动，下标在窗口关闭前保持有效
+		const int32 FlatIndex = SlotWidget->GetFlatIndex();
+		const bool bSplit = ActionId == UTAItemActionMenuWidget::ActionSplit;
+		UTAQuantityDialogWidget::Open(GetOwningPlayer(), nullptr, bSplit ? TEXT("UI_Item_Split") : TEXT("UI_Item_PartialDrop"),
+			1, SlotWidget->GetSlotData().Count,
+			[WeakThis = TWeakObjectPtr<UTAInventoryPanelWidget>(this), FlatIndex, bSplit](int32 Quantity)
+			{
+				UTAInventoryPanelWidget* Self = WeakThis.Get();
+				if (!Self || !Self->Inventory)
+				{
+					return;
+				}
+				if (bSplit)
+				{
+					Self->Inventory->SplitStack(FlatIndex, Quantity);
+				}
+				else if (!Self->Inventory->DropSlotToWorld(FlatIndex, Quantity, Self->GetOwningPlayerPawn()))
+				{
+					Self->ShowMessage(TEXT("Inventory_DropBlocked"));
+				}
+			});
+	}
+	else if (ActionId == UTAItemActionMenuWidget::ActionDrop)
+	{
+		const UTAInventorySlotWidget* SlotWidget = SourceSlot.Get();
+		if (!SlotWidget || !Inventory)
+		{
+			return;
+		}
+		// 丢弃整叠；找不到落点时物品留在原格子
+		if (!Inventory->DropSlotToWorld(SlotWidget->GetFlatIndex(), SlotWidget->GetSlotData().Count, GetOwningPlayerPawn()))
+		{
+			ShowMessage(TEXT("Inventory_DropBlocked"));
+		}
+	}
+}
+
+void UTAInventoryPanelWidget::ShowMessage(const FString& TextId)
+{
+	FText Message = FText::FromString(TextId);
+	if (const UGameInstance* GI = GetGameInstance())
+	{
+		if (const UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
+		{
+			Message = Loc->GetText(TextId);
+		}
+	}
+	if (Text_Message)
+	{
+		Text_Message->SetText(Message);
+		Text_Message->SetVisibility(ESlateVisibility::HitTestInvisible);
+		MessageTimeLeft = MessageDuration;
+	}
+	else if (GEngine)
+	{
+		// 【临时】WBP 里还没有 Text_Message 时的退路
+		GEngine->AddOnScreenDebugMessage(-1, MessageDuration, FColor::Orange, Message.ToString());
+	}
 }

@@ -12,6 +12,7 @@ class UWidgetComponent;
 class UTexture2D;
 class UTAInventoryComponent;
 class UTAScannableComponent;
+class UStaticMesh;
 
 UCLASS()
 class THE_AWAKENING_API ATAWorldItem : public AActor, public ITAInteractable
@@ -43,6 +44,13 @@ public:
 	/** 拾取列表行里显示的交互文字 Key。 */
 	FString GetPromptTextId() const;
 
+	/** 拾取列表行里显示的名称（本地化 ID）和图标。子类（如场景文本）可以不用物品定义。 */
+	virtual FString GetDisplayNameTextId() const;
+	virtual UTexture2D* GetDisplayIcon() const;
+
+	/** 交互后数量没减少时，拾取列表是否提示“无法拾取”。拿起阅读再放回的文本返回 false。 */
+	virtual bool ShouldReportPickupFailure() const { return true; }
+
 protected:
 	bool TryPickupAsCurrency(AActor* Interactor);
 	bool TryPickupAsInventory(AActor* Interactor, UTAInventoryComponent* Inventory);
@@ -65,4 +73,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	FString PromptTextId = TEXT("Interact_PickUp");
+
+	/** 蓝图没有设置模型时：用物品定义的 PreviewMesh；也没有时用这个占位模型（缩小的立方体） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UStaticMesh> FallbackMesh;
+
+	virtual void ApplyFallbackMesh();
 };

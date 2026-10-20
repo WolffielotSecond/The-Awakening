@@ -1,4 +1,5 @@
 #include "Health/TACheckpoint.h"
+#include "Save/TASaveSubsystem.h"
 #include "Health/TARespawnSubsystem.h"
 #include "Health/TAHealthComponent.h"
 #include "Components/ArrowComponent.h"
@@ -75,6 +76,11 @@ void ATACheckpoint::OnInteract_Implementation(AActor* Interactor)
 	if (UTARespawnSubsystem* Respawn = UTARespawnSubsystem::Get(this))
 	{
 		Respawn->ActivateCheckpoint(this);
+		// 玩家交互复活点时自动存档
+		if (UTASaveSubsystem* Save = UTASaveSubsystem::Get(this))
+		{
+			Save->AutoSave();
+		}
 	}
 }
 
@@ -85,7 +91,13 @@ void ATACheckpoint::HandleRangeBeginOverlap(UPrimitiveComponent*, AActor* OtherA
 	{
 		if (UTARespawnSubsystem* Respawn = UTARespawnSubsystem::Get(this))
 		{
+			// 走进范围自动激活：只在它新成为当前复活点时存档，来回走动不重复存
+			const bool bNewlyActive = Respawn->GetActiveCheckpoint() != this;
 			Respawn->ActivateCheckpoint(this);
+			if (UTASaveSubsystem* Save = UTASaveSubsystem::Get(this); Save && bNewlyActive)
+			{
+				Save->AutoSave();
+			}
 		}
 	}
 }

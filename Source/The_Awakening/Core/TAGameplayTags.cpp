@@ -21,4 +21,9 @@ namespace TAGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Source_Script, "Damage.Source.Script", "Story and scripted events.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_ClearOnRespawn, "Effect.ClearOnRespawn", "Duration effects removed on respawn.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim, "Anim", "Character actions played through UTACharacterActionComponent.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim_Pickup, "Anim.Pickup", "Pick up a document from the world.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim_PutDown, "Anim.PutDown", "Put a document back into the world.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim_InsertPage, "Anim.InsertPage", "Insert a collected document into the diary.");
 }

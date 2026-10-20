@@ -123,6 +123,11 @@ public:
 	TOptional<FVector> FindHeldKeyObservation(FKey Key) const;
 	/** Nonzero physical sources among resolved mappings; does not evaluate modifiers/triggers. */
 	TArray<FKey> GetObservedHeldKeysForAction(const UInputAction* Action) const;
+	/**
+	 * 动作映射的按键在物理观测中已明确松开：至少有一个映射键被观测到，且没有任何映射键按着。
+	 * 没有观测记录（例如失去输入所有权后）不算松开。界面接收了松开事件、动作没收到 Completed 时用它补判。
+	 */
+	bool IsActionObservedReleased(const UInputAction* Action) const;
 	void NotifyApplicationActivationChanged(bool bIsActive);
 
 	bool UsesCursorLook() const;

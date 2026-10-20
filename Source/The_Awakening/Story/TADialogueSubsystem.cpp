@@ -30,6 +30,8 @@ void UTADialogueSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	RegisterConditionEvaluator(MakeShared<FTADialogueHasItemEvaluator>());
 	RegisterConditionEvaluator(MakeShared<FTADialogueMoneyEvaluator>());
 	RegisterConditionEvaluator(MakeShared<FTADialogueAttributeEvaluator>());
+	RegisterConditionEvaluator(MakeShared<FTADialogueHasDocumentEvaluator>());
+	RegisterConditionEvaluator(MakeShared<FTADialogueReadDocumentEvaluator>());
 
 	// 内置保留名处理器：SetFlag（分支条件依赖旗标，必须由剧情系统自己可靠维护）
 	RegisterReservedEventHandler(TEXT("SetFlag"),
@@ -259,6 +261,7 @@ namespace
 
 		Out.Flag = GetOptionalStringField(Obj, TEXT("flag"));
 		Out.Item = GetOptionalStringField(Obj, TEXT("item"));
+		Out.Document = GetOptionalStringField(Obj, TEXT("document"));
 		Out.Attribute = GetOptionalStringField(Obj, TEXT("attribute"));
 
 		FString Op;
@@ -616,6 +619,7 @@ bool UTADialogueSubsystem::StoryToJson(const FTAStoryData& Story, FString& OutJs
 						CondObj->SetStringField(TEXT("type"), Cond.Type);
 						if (!Cond.Flag.IsEmpty())      CondObj->SetStringField(TEXT("flag"), Cond.Flag);
 						if (!Cond.Item.IsEmpty())      CondObj->SetStringField(TEXT("item"), Cond.Item);
+						if (!Cond.Document.IsEmpty())  CondObj->SetStringField(TEXT("document"), Cond.Document);
 						if (!Cond.Attribute.IsEmpty()) CondObj->SetStringField(TEXT("attribute"), Cond.Attribute);
 						CondObj->SetStringField(TEXT("op"), Cond.Op);
 						CondObj->SetStringField(TEXT("value"), Cond.Value);

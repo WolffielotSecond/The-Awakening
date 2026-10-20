@@ -5,6 +5,7 @@
 #include "AbilitySystem/TAAttributeSet.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Inventory/TAItemDefinition.h"
+#include "Document/TADocumentSubsystem.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/AssetManager.h"
 #include "AttributeSet.h"
@@ -155,4 +156,19 @@ bool FTADialogueAttributeEvaluator::Evaluate(const FTAStoryCondition& Condition,
 
 	UE_LOG(LogTemp, Warning, TEXT("[Dialogue] Attribute: 找不到属性 %s"), *Condition.Attribute);
 	return false;
+}
+
+// ---------------- HasDocument / ReadDocument ----------------
+
+bool FTADialogueHasDocumentEvaluator::Evaluate(const FTAStoryCondition& Condition, const FTADialogueConditionContext& Context) const
+{
+	// 编辑器预览没有文本收集记录，返回 false
+	const UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(Context.World);
+	return Documents && !Condition.Document.IsEmpty() && Documents->IsCollected(FName(*Condition.Document));
+}
+
+bool FTADialogueReadDocumentEvaluator::Evaluate(const FTAStoryCondition& Condition, const FTADialogueConditionContext& Context) const
+{
+	const UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(Context.World);
+	return Documents && !Condition.Document.IsEmpty() && Documents->IsRead(FName(*Condition.Document));
 }

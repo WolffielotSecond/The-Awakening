@@ -133,7 +133,7 @@ struct FTAStoryCondition
 {
 	GENERATED_BODY()
 
-	/** Flag / HasItem / Money / Attribute */
+	/** Flag / HasItem / Money / Attribute / HasDocument / ReadDocument */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Condition")
 	FString Type;
 
@@ -144,6 +144,10 @@ struct FTAStoryCondition
 	/** HasItem 类型：物品资产名（如 Item_Herb） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Condition")
 	FString Item;
+
+	/** HasDocument / ReadDocument 类型：文本 ID（DocumentId，如 Doc_Note_01） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Condition")
+	FString Document;
 
 	/** Attribute 类型：属性名（如 Health） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Condition")

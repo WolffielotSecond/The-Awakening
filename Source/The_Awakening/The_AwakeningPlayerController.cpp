@@ -409,6 +409,22 @@ TArray<FKey> AThe_AwakeningPlayerController::GetObservedHeldKeysForAction(const 
 	return Sources;
 }
 
+bool AThe_AwakeningPlayerController::IsActionObservedReleased(const UInputAction* Action) const
+{
+	const auto* Input = Cast<UTAPlayerInput>(PlayerInput);
+	if (!Input || !Action) return false;
+	bool bObserved = false;
+	for (const auto& Mapping : Input->GetHeldActionMappings())
+	{
+		if (Mapping.Action != Action) continue;
+		const auto Value = FindHeldKeyObservation(Mapping.Key);
+		if (!Value.IsSet()) continue;
+		if (!Value.GetValue().IsNearlyZero()) return false;
+		bObserved = true;
+	}
+	return bObserved;
+}
+
 bool AThe_AwakeningPlayerController::ConsumeInventoryTogglePress(const UInputAction* Action)
 {
 	if (!ConsumedInventoryKeys.IsEmpty()) return false;

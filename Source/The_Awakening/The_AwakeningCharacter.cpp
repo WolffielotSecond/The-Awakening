@@ -25,6 +25,13 @@
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAMovementComponent.h"
 #include "Inventory/TAInventoryComponent.h"
+#include "Document/TACharacterActionComponent.h"
+#include "Document/TADocumentSettings.h"
+#include "Document/TADocumentSubsystem.h"
+#include "Document/TADocumentDefinition.h"
+#include "UI/Pickup/TAPickupBannerWidget.h"
+#include "UI/Document/TADiaryWidget.h"
+#include "UI/Inventory/TAItemInspectWidget.h"
 #include "Inventory/TANearbyPickupComponent.h"
 #include "Inventory/TAWorldItem.h"
 #include "UObject/ConstructorHelpers.h"
@@ -108,6 +115,7 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& Objec
 	PromptComponent = CreateDefaultSubobject<UTAPromptComponent>(TEXT("PromptComponent"));
 	FreezeComponent = CreateDefaultSubobject<UTAFreezeComponent>(TEXT("FreezeComponent"));
 	HealthComponent = CreateDefaultSubobject<UTAHealthComponent>(TEXT("HealthComponent"));
+	CharacterActionComponent = CreateDefaultSubobject<UTACharacterActionComponent>(TEXT("CharacterActionComponent"));
 }
 
 void AThe_AwakeningCharacter::BeginPlay()
@@ -257,6 +265,8 @@ void AThe_AwakeningCharacter::OnScanStarted(const FInputActionValue& Value)
 		return;
 	}
 
+	// 扫描组件用它在“等待松开”期间读物理按键观测（松开可能被界面接收）
+	ScanningComponent->SetScanInputAction(ScanAction);
 	ScanningComponent->StartScan();
 }
 
@@ -720,7 +730,18 @@ void AThe_AwakeningCharacter::ToggleInventory()
 		return;
 	}
 
-	if (UTAFreezeComponent::IsActorFrozen(this)) return;
+	// 扫描中（或扫描时停正在淡出）按背包键：取消扫描，背包立即接管。
+	// 扫描保留自己的冻结请求随淡出释放，背包打开时申请完全冻结，中间没有解冻空档。
+	// 扫描键仍按着时，要松开后才能重新开始扫描（bRequireInputRelease）。
+	UTAScanningComponent* Scanning = PC->FindComponentByClass<UTAScanningComponent>();
+	const ETAScanState ScanState = Scanning ? Scanning->GetScanState() : ETAScanState::FadedOut;
+	const bool bScanFreezing = ScanState != ETAScanState::FadedOut && ScanState != ETAScanState::Invalid;
+	if (Scanning && Scanning->IsScanning())
+	{
+		Scanning->CancelScan(ETAScanEndReason::Canceled, true);
+	}
+	// 其他来源的时停（小游戏等）期间不能打开背包
+	if (UTAFreezeComponent::IsActorFrozen(this) && !bScanFreezing) return;
 
 	UClass* PanelClass = nullptr;
 	if (InventoryPanelClass)
@@ -750,7 +771,92 @@ void AThe_AwakeningCharacter::ToggleInventory()
 	InventoryPanelInstance->AddToViewport(50);
 
 	InventoryPanelInstance->RefreshInputPrompts();
+
+	// 拾取提示显示期间按背包键：直接进入对应的预览（策划文档“快速查看”）
+	if (PickupBannerInstance)
+	{
+		const FTAPickupBannerEntry Entry = PickupBannerInstance->TakeQuickViewEntry();
+		if (Entry.IsValid())
+		{
+			OpenPickupQuickView(Entry);
+		}
+	}
 }
+
+UTAPickupBannerWidget* AThe_AwakeningCharacter::GetPickupBanner()
+{
+	if (PickupBannerInstance)
+	{
+		return PickupBannerInstance;
+	}
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || !PC->IsLocalController())
+	{
+		return nullptr;
+	}
+	UClass* Class = PickupBannerClass ? PickupBannerClass.Get() : LoadClass<UTAPickupBannerWidget>(nullptr, TEXT("/Game/UI/PickUp/WBP_PickupBanner.WBP_PickupBanner_C"));
+	if (!Class)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("WBP_PickupBanner missing; run -run=TADocumentUI."));
+		return nullptr;
+	}
+	PickupBannerInstance = CreateWidget<UTAPickupBannerWidget>(PC, Class);
+	if (PickupBannerInstance)
+	{
+		PickupBannerInstance->SetInventoryAction(ToggleInventoryAction);
+		// 在背包（50）之下：打开背包时提示被盖住
+		PickupBannerInstance->AddToViewport(40);
+	}
+	return PickupBannerInstance;
+}
+
+void AThe_AwakeningCharacter::NotifyItemPickedUp(UTAItemDefinition* Item)
+{
+	if (UTAPickupBannerWidget* Banner = GetPickupBanner())
+	{
+		Banner->ShowItem(Item);
+	}
+}
+
+void AThe_AwakeningCharacter::NotifyDocumentCollected(UTADocumentDefinition* Document)
+{
+	if (UTAPickupBannerWidget* Banner = GetPickupBanner())
+	{
+		Banner->ShowDocument(Document);
+	}
+}
+
+void AThe_AwakeningCharacter::OpenPickupQuickView(const FTAPickupBannerEntry& Entry)
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+	if (Entry.Document)
+	{
+		// 文本：日记本翻到这一页，跳过日记本的入场动画直接进入文本预览；返回 → 日记本 → 背包
+		const UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(this);
+		const int32 Page = Documents ? Documents->GetPageOfDocument(Entry.Document->DocumentId) : INDEX_NONE;
+		if (Page != INDEX_NONE)
+		{
+			UTADiaryWidget::Open(PC, nullptr, {}, Page, true, true);
+		}
+		return;
+	}
+	if (Entry.Item && Entry.Item == GetDefault<UTADocumentSettings>()->DiaryItem.LoadSynchronous())
+	{
+		// 日记本：进入「查看内容」
+		UTADiaryWidget::Open(PC, nullptr, {});
+		return;
+	}
+	if (Entry.Item)
+	{
+		// 普通物品与其他剧情物品：进入「检视」
+		UTAItemInspectWidget::Open(PC, nullptr, Entry.Item);
+	}
+}
+
 
 void AThe_AwakeningCharacter::NotifyInventoryPanelClosed(UTAInventoryPanelWidget* ClosedPanel)
 {

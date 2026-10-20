@@ -21,12 +21,11 @@ void UTAPickupRowWidget::SetItem(ATAWorldItem* Item, UTANearbyPickupComponent* C
 void UTAPickupRowWidget::RefreshPresentation()
 {
     auto* Item = WorldItem.Get();
-    auto* Def = Item ? Item->GetItemDef() : nullptr;
     auto* GI = GetGameInstance();
     auto* Loc = GI ? GI->GetSubsystem<UTALocalizeSubsystem>() : nullptr;
     auto* Icons = GI ? GI->GetSubsystem<UTAInputIconSubsystem>() : nullptr;
     const auto Localize = [Loc](const FString& Id) { return Loc ? Loc->GetText(Id) : FText::GetEmpty(); };
-    if (Text_Name) Text_Name->SetText(Def ? Localize(Def->DisplayName.ToString()) : FText::GetEmpty());
+    if (Text_Name) Text_Name->SetText(Item ? Localize(Item->GetDisplayNameTextId()) : FText::GetEmpty());
     if (Text_Count)
     {
         Text_Count->SetText(Item ? FText::AsNumber(Item->GetCount()) : FText::GetEmpty());
@@ -34,8 +33,9 @@ void UTAPickupRowWidget::RefreshPresentation()
     }
     if (Image_Item)
     {
-        Image_Item->SetBrushFromTexture(Def ? Def->Icon.Get() : nullptr);
-        Image_Item->SetVisibility(Def && Def->Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+        UTexture2D* Icon = Item ? Item->GetDisplayIcon() : nullptr;
+        Image_Item->SetBrushFromTexture(Icon);
+        Image_Item->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
     }
     if (Border_Selection) Border_Selection->SetBrushColor(bIsSelected ? SelectedColor : NormalColor);
     if (Text_Interact)
