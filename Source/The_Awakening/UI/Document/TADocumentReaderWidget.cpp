@@ -1,5 +1,7 @@
 #include "UI/Document/TADocumentReaderWidget.h"
 #include "Document/TADocumentDefinition.h"
+#include "Document/TADocumentPresentation.h"
+#include "Components/BackgroundBlur.h"
 #include "Document/TADocumentSettings.h"
 #include "Document/TAPreviewStage.h"
 #include "Core/TALocalizeSubsystem.h"
@@ -36,7 +38,8 @@ namespace
 }
 
 UTADocumentReaderWidget* UTADocumentReaderWidget::Open(APlayerController* PC, TSubclassOf<UTADocumentReaderWidget> WidgetClass,
-	UTADocumentDefinition* InDocument, int32 InInputPriority, bool bInFreezeTime, TFunction<void(bool)> InOnClosed)
+	UTADocumentDefinition* InDocument, int32 InInputPriority, bool bInFreezeTime, TFunction<void(bool)> InOnClosed,
+	ATAPreviewStage* SharedStage, UImage* DiaryImage)
 {
 	UClass* Class = WidgetClass ? WidgetClass.Get() : GetDefault<UTADocumentSettings>()->ReaderWidgetClass.LoadSynchronous();
 	if (!PC || !InDocument || !Class)
@@ -54,6 +57,15 @@ UTADocumentReaderWidget* UTADocumentReaderWidget::Open(APlayerController* PC, TS
 	Reader->InputPriority = InInputPriority;
 	Reader->bFreezeTime = bInFreezeTime;
 	Reader->OnClosed = MoveTemp(InOnClosed);
+	Reader->PreviewStage = SharedStage;
+	Reader->bBorrowedStage = SharedStage != nullptr;
+	Reader->SourceDiaryImage = DiaryImage;
+	if (DiaryImage)
+	{
+		const FGeometry& Geometry = DiaryImage->GetCachedGeometry();
+		Reader->DiaryAbsoluteCenter = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5f);
+		Reader->DiaryAbsoluteSize = Geometry.LocalToAbsolute(Geometry.GetLocalSize()) - Geometry.LocalToAbsolute(FVector2D::ZeroVector);
+	}
 	Reader->AddToViewport(ReaderZOrder);
 	return Reader;
 }
@@ -114,7 +126,14 @@ void UTADocumentReaderWidget::NativeConstruct()
 	ScrollTarget = LastAppliedScroll = 0.f;
 	Phase = EPhase::Opening;
 	PhaseTime = 0.f;
-	SetRenderOpacity(OpenDuration > 0.f ? 0.f : 1.f);
+	SetRenderOpacity(bPaperTransition ? 1.f : (OpenDuration > 0.f ? 0.f : 1.f));
+	if (bPaperTransition)
+	{
+		if (Image_Model) Image_Model->SetRenderOpacity(0.f); // Wait for the first valid layout.
+		if (UWidget* Dim = GetWidgetFromName(TEXT("Image_Dim"))) Dim->SetRenderOpacity(0.f);
+		if (UWidget* Blur = GetWidgetFromName(TEXT("Blur_Background"))) Blur->SetRenderOpacity(0.f);
+		if (HorizontalBox_Controls) HorizontalBox_Controls->SetRenderOpacity(0.f);
+	}
 	SetIsFocusable(true);
 	AcquireInputAndFreeze();
 }
@@ -133,7 +152,8 @@ void UTADocumentReaderWidget::NativeDestruct()
 			Icons->OnInputPromptsChanged.RemoveDynamic(this, &UTADocumentReaderWidget::RefreshPromptVisibility);
 		}
 	}
-	if (PreviewStage)
+	RestoreDiaryPresentation();
+	if (PreviewStage && !bBorrowedStage)
 	{
 		PreviewStage->Destroy();
 		PreviewStage = nullptr;
@@ -143,21 +163,30 @@ void UTADocumentReaderWidget::NativeDestruct()
 
 void UTADocumentReaderWidget::SetupModel()
 {
-	if (!Image_Model || PreviewStage)
+	if (!Image_Model)
 	{
 		return;
 	}
-	PreviewStage = ATAPreviewStage::SpawnPreviewStage(this, nullptr, PreviewStageSlot);
+	if (!PreviewStage) PreviewStage = ATAPreviewStage::SpawnPreviewStage(this, nullptr, PreviewStageSlot);
 	if (!PreviewStage)
 	{
 		return;
 	}
-	PreviewStage->RenderTargetSize = ModelRenderSize;
+	if (!bBorrowedStage) PreviewStage->RenderTargetSize = ModelRenderSize;
 	PreviewStage->SetAutoRotate(false);
+	bPaperTransition = Document && Document->Presentation && Document->Presentation->AnimationClass;
+	DiaryModelTransform = PreviewStage->GetDiaryModelTransform(Document);
+	ReaderModelTransform = Document ? Document->GetPreviewTransform(Document->ReaderTransform) : FTransform::Identity;
+	if (bPaperTransition)
+	{
+		// The asset corrects model axes; this additional rotation faces the actual preview camera.
+		ReaderModelTransform.SetRotation(FQuat(FRotator(PreviewStage->CameraPitch, 0.f, 0.f)) * ReaderModelTransform.GetRotation());
+	}
 	if (UObject* Mesh = Document ? Document->Mesh.Get() : nullptr)
 	{
 		// 静态 / 骨骼网格体由预览台按类型显示
-		PreviewStage->SetDisplayModel(Mesh, Document->ReaderTransform);
+		if (!bBorrowedStage) PreviewStage->SetDocument(Document, Document->ReaderTransform, !bPaperTransition);
+		PreviewStage->SetModelPresentationTransform(bPaperTransition && bBorrowedStage ? DiaryModelTransform : ReaderModelTransform);
 	}
 	else
 	{
@@ -172,6 +201,7 @@ void UTADocumentReaderWidget::SetupModel()
 	Brush.SetResourceObject(Resource ? Resource : PreviewStage->GetRenderTarget());
 	Brush.ImageSize = FVector2D(ModelRenderSize);
 	Image_Model->SetBrush(Brush);
+	Image_Model->SetRenderTransformPivot(FVector2D(0.5f));
 }
 
 void UTADocumentReaderWidget::BuildControls()
@@ -340,7 +370,19 @@ void UTADocumentReaderWidget::RequestClose()
 	Phase = EPhase::Closing;
 	PhaseTime = 0.f;
 	bDraggingModel = false;
-	if (CloseDuration <= 0.f)
+	if (bPaperTransition && PreviewStage) ClosingManualRotation = PreviewStage->GetManualRotation();
+	if (bPaperTransition && Image_Model)
+	{
+		ReaderTargetGeometry = Image_Model->GetCachedGeometry();
+		if (UImage* Source = SourceDiaryImage.Get())
+		{
+			const FGeometry& Geometry = Source->GetCachedGeometry();
+			DiaryAbsoluteCenter = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5f);
+			DiaryAbsoluteSize = Geometry.LocalToAbsolute(Geometry.GetLocalSize()) - Geometry.LocalToAbsolute(FVector2D::ZeroVector);
+		}
+	}
+	bTranslationVisible = false;
+	if (CloseDuration <= 0.f && !bPaperTransition)
 	{
 		FinishClose(false);
 	}
@@ -376,6 +418,7 @@ void UTADocumentReaderWidget::FinishClose(bool bForced)
 
 void UTADocumentReaderWidget::RemoveFromParent()
 {
+	RestoreDiaryPresentation();
 	ReleaseInputAndFreeze();
 	// 先移出界面再回调：回调里可能打开下一个界面或播放放下动画
 	TFunction<void(bool)> Callback = MoveTemp(OnClosed);
@@ -395,8 +438,13 @@ void UTADocumentReaderWidget::NativeTick(const FGeometry& MyGeometry, float InDe
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	// InDeltaTime 是 UI 的真实时间，不受时停影响
-	PhaseTime += InDeltaTime;
-	if (Phase == EPhase::Opening)
+	if (bPaperTransition)
+	{
+		TickPaperTransition(InDeltaTime);
+		if (!IsInViewport()) return;
+	}
+	else PhaseTime += InDeltaTime;
+	if (!bPaperTransition && Phase == EPhase::Opening)
 	{
 		const float Alpha = OpenDuration > 0.f ? FMath::Clamp(PhaseTime / OpenDuration, 0.f, 1.f) : 1.f;
 		SetRenderOpacity(Alpha);
@@ -405,7 +453,7 @@ void UTADocumentReaderWidget::NativeTick(const FGeometry& MyGeometry, float InDe
 			Phase = EPhase::Open;
 		}
 	}
-	else if (Phase == EPhase::Closing)
+	else if (!bPaperTransition && Phase == EPhase::Closing)
 	{
 		const float Alpha = CloseDuration > 0.f ? FMath::Clamp(1.f - PhaseTime / CloseDuration, 0.f, 1.f) : 0.f;
 		SetRenderOpacity(Alpha);
@@ -429,7 +477,7 @@ void UTADocumentReaderWidget::NativeTick(const FGeometry& MyGeometry, float InDe
 	}
 
 	// 摇杆旋转：转译面板显示时右摇杆用来滚动正文，不旋转
-	const bool bCanNavigate = Phase != EPhase::Closing && AllowsPlayerInput(ETAInputCapability::Navigate);
+	const bool bCanNavigate = Phase == EPhase::Open && AllowsPlayerInput(ETAInputCapability::Navigate);
 	if (bCanNavigate && !bTranslationVisible && PreviewStage && RotateAction)
 	{
 		if (AThe_AwakeningPlayerController* PC = InputRequestController.Get())
@@ -457,7 +505,7 @@ void UTADocumentReaderWidget::TickScroll(float DeltaTime)
 	{
 		ScrollTarget = Actual;
 	}
-	if (bTranslationVisible && Phase != EPhase::Closing && ScrollAction && AllowsPlayerInput(ETAInputCapability::Navigate))
+	if (bTranslationVisible && Phase == EPhase::Open && ScrollAction && AllowsPlayerInput(ETAInputCapability::Navigate))
 	{
 		if (AThe_AwakeningPlayerController* PC = InputRequestController.Get())
 		{
@@ -468,6 +516,89 @@ void UTADocumentReaderWidget::TickScroll(float DeltaTime)
 	const float Next = FMath::FInterpTo(Actual, ScrollTarget, DeltaTime, ScrollSmoothing);
 	ScrollBox_Body->SetScrollOffset(Next);
 	LastAppliedScroll = Next;
+}
+
+void UTADocumentReaderWidget::ApplyPaperTravel(float Progress)
+{
+	if (!Image_Model) return;
+	const float T = FMath::SmoothStep(0.f, 1.f, Progress);
+	FWidgetTransform Visual;
+	if (bBorrowedStage && !DiaryAbsoluteSize.IsNearlyZero())
+	{
+		const FGeometry& Target = ReaderTargetGeometry;
+		const FVector2D Size = Target.GetLocalSize();
+		const FVector2D Center = Size * 0.5f;
+		const FVector2D SourceCenter = Target.AbsoluteToLocal(DiaryAbsoluteCenter);
+		const FVector2D SourceSize = Target.AbsoluteToLocal(DiaryAbsoluteCenter + DiaryAbsoluteSize * 0.5f)
+			- Target.AbsoluteToLocal(DiaryAbsoluteCenter - DiaryAbsoluteSize * 0.5f);
+		Visual.Translation = (SourceCenter - Center) * (1.f - T);
+		Visual.Scale = FMath::Lerp(SourceSize / Size, FVector2D(1.f), T);
+	}
+	else
+	{
+		Visual.Scale = FVector2D(FMath::Lerp(0.75f, 1.f, T));
+		Image_Model->SetRenderOpacity(T);
+	}
+	Image_Model->SetRenderTransform(Visual);
+}
+
+void UTADocumentReaderWidget::TickPaperTransition(float DeltaTime)
+{
+	if (!IsValid(PreviewStage)) { ForceClose(); return; }
+	if (!Document || !Document->Presentation || !Image_Model) return;
+	if (!bPaperLayoutReady)
+	{
+		if (Image_Model->GetCachedGeometry().GetLocalSize().GetMin() <= 1.f) return;
+		bPaperLayoutReady = true;
+		ReaderTargetGeometry = Image_Model->GetCachedGeometry();
+		Image_Model->SetRenderOpacity(1.f);
+		if (UImage* Source = SourceDiaryImage.Get()) Source->SetRenderOpacity(0.f);
+		ApplyPaperTravel(0.f);
+	}
+	if (Phase == EPhase::Open) return;
+	PhaseTime += DeltaTime;
+	const float Travel = FMath::Max(0.01f, Document->Presentation->TravelDuration);
+	const float Fold = FMath::Max(0.001f, PreviewStage->GetPaperFoldDuration());
+	const float Orient = FMath::Max(0.01f, Document->Presentation->OrientDuration);
+	const bool bOpening = Phase == EPhase::Opening;
+	// Take the still-folded sheet out and face it towards the camera before unfolding.
+	const float Departure = FMath::Max(Travel, Orient);
+	const float Total = Departure + Fold + (bOpening ? 0.f : Orient);
+	// Returning first removes the player's rotation; only then fold and move back to the book.
+	const float PathTime = bOpening ? PhaseTime : Departure + Fold - FMath::Max(0.f, PhaseTime - Orient);
+	const float TravelAlpha = FMath::Clamp(PathTime / Travel, 0.f, 1.f);
+	const float OpenAlpha = FMath::Clamp((PathTime - Departure) / Fold, 0.f, 1.f);
+	const float OrientAlpha = FMath::SmoothStep(0.f, 1.f, PathTime / Orient);
+	ApplyPaperTravel(TravelAlpha);
+	PreviewStage->SetPaperOpenness(OpenAlpha);
+	FTransform Pose;
+	Pose.Blend(bBorrowedStage ? DiaryModelTransform : ReaderModelTransform, ReaderModelTransform, OrientAlpha);
+	PreviewStage->SetModelPresentationTransform(Pose);
+	PreviewStage->SetManualRotation(bOpening ? FQuat::Identity : FQuat::Slerp(ClosingManualRotation, FQuat::Identity,
+		FMath::SmoothStep(0.f, 1.f, PhaseTime / Orient)));
+	// Fade the backdrop independently: the travelling sheet must stay visible throughout.
+	const float BackdropAlpha = FMath::SmoothStep(0.f, 1.f, PathTime / (Departure + Fold));
+	if (UWidget* Dim = GetWidgetFromName(TEXT("Image_Dim"))) Dim->SetRenderOpacity(BackdropAlpha);
+	if (auto* Blur = Cast<UBackgroundBlur>(GetWidgetFromName(TEXT("Blur_Background")))) Blur->SetRenderOpacity(BackdropAlpha);
+	if (HorizontalBox_Controls) HorizontalBox_Controls->SetRenderOpacity(BackdropAlpha);
+	if (PhaseTime >= Total)
+	{
+		if (bOpening) Phase = EPhase::Open;
+		else FinishClose(false);
+	}
+}
+
+void UTADocumentReaderWidget::RestoreDiaryPresentation()
+{
+	if (!bBorrowedStage || bDiaryPresentationRestored) return;
+	bDiaryPresentationRestored = true;
+	if (IsValid(PreviewStage))
+	{
+		PreviewStage->SetPaperOpenness(0.f);
+		PreviewStage->SetManualRotation(FQuat::Identity);
+		PreviewStage->SetModelPresentationTransform(DiaryModelTransform);
+	}
+	if (UImage* Source = SourceDiaryImage.Get()) Source->SetRenderOpacity(1.f);
 }
 
 void UTADocumentReaderWidget::ClampScrollTarget()

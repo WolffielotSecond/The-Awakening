@@ -121,6 +121,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary")
 	FIntPoint PageRenderSize = FIntPoint(768, 768);
 
+	/** 折叠纸页向书缝偏移，单位为原按钮宽高比例；可在 WBP_Diary 中微调。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Paper")
+	FVector2D FoldedPaperOffset = FVector2D(-0.54f, 0.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Paper", meta = (ClampMin = "0.1", ClampMax = "1"))
+	float FoldedPaperScale = 0.85f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Text")
 	FString PreviousPageTextId = TEXT("UI_Diary_PreviousPage");
 
@@ -176,6 +183,7 @@ private:
 	void BuildControls();
 	void ShowPage(int32 PageIndex);
 	void RefreshControls();
+	void ApplyFoldedPaperPlacement();
 	void AcquireInput();
 	void ReleaseInput();
 	FText Localize(const FString& TextId) const;
@@ -195,6 +203,8 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ATAPreviewStage> PreviewStage;
+	UPROPERTY(Transient)
+	TObjectPtr<UTADocumentReaderWidget> ActiveReader;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTAActionPromptWidget> PreviousPrompt;
@@ -220,6 +230,7 @@ private:
 	float PhaseTime = 0.f;
 	bool bPageSwapped = false;
 	bool bGamepadDevice = false;
+	bool bFoldedPaperPage = false;
 
 	FTAInputRouter::FHandle InputRequestHandle = 0;
 	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;

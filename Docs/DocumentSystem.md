@@ -16,7 +16,8 @@
    | `ScanDescriptionTextId` | 扫描悬停介绍。项目设置开着统一介绍时不用填（见下方配置） |
    | `Icon` | 拾取列表图标，可空（空时用物品默认图标） |
    | `InlineImages` | 正文插图：key → 图片 |
-   | `Mesh` | 模型，静态网格体或骨骼网格体（骨骼网格体保持参考姿势）。空时显示占位薄片 |
+   | `Mesh` | 模型，静态网格体或骨骼网格体。空时显示占位薄片 |
+   | `Presentation` | 可选的共用展示配置：预览基础朝向、纸张动画蓝图、取出／归位时长与取景留白。没有配置时保留原来的静态展示 |
    | `WorldTransform` / `PickupPreviewTransform` / `ReaderTransform` / `DiaryPageTransform` | 同一个模型在场景、拾取提示、文本预览（阅读 / 检视）、日记本页面中的偏移、旋转、缩放 |
 
 3. 场景里放 `TAWorldDocument`（或它的蓝图子类），`Definition` 指向这份资产。它会出现在拾取列表里，可以被扫描。
@@ -24,6 +25,22 @@
 ### 正文插图
 
 正文里写 `<img id="key"/>`，key 在 `InlineImages` 里查。建议单独一行。图片按原尺寸显示，宽于 `MaxImageWidth`（默认 560）时等比缩小；找不到时显示 `[image: key]` 并打 Warning。WBP 的 RichText 控件要在 Decorator Classes 里加 `TARichTextImageDecorator`。
+
+### 折叠纸张（6767676767）
+
+`DA_Document_67` 使用 `/Game/Models/Document/DA_PaperPresentation`，其中 `PreviewRotation` 为编辑器 XYZ **90 / 0 / 90**。这是纸模型自身的轴向修正，拾取提示、日记本与阅读器共同使用；三处数据资产变换仍可单独手调，不要重复添加这次轴向修正。`WorldTransform` 独立保留，用于场景摆放。
+
+`ABP_Paper` 继承 `TAPaperAnimInstance`，用 Sequence Evaluator 显式采样 `SelectedAnimation` / `SampleTime`：Openness 为 0 时使用 `AS_Folded`，1 时使用 `AS_Opened`，中间使用 `AS_Fold`。原动画长 1 秒，打开到折叠，展开时反向采样；不循环播放过渡。动画与 UI 共用进度，在背包时停中仍然更新。
+
+日记本中的纸保持折叠，靠近书缝、位于右页内侧。`WBP_Diary` 的 `FoldedPaperOffset`（默认 -0.54, 0，以按钮尺寸为单位）与 `FoldedPaperScale`（0.85）可微调位置和大小，点击区域跟随纸张移动。点击后借用原预览台：取出放大并转向阅读相机 → 展开。返回时先消除玩家手动旋转 → 折叠 → 旋转并缩回书页位置，再恢复日记本输入。过渡时不能翻页、再次查看、转动模型或连续返回。强制关闭时跳过过渡并恢复书页，借用的预览台仍归日记本管理。阅读取景固定，不随折叠包围盒改变。
+
+可调参数在 `DA_PaperPresentation`：`TravelDuration`（默认 0.35 秒）、`OrientDuration`（0.25 秒）、`FramingScale`（1.15）。折叠时长来自动画自身。普通文档不配置 Presentation 时继续使用原淡入淡出流程。
+
+`FoldedDiaryRotation` 默认 90 度，表示书中折叠纸在画面内逆时针转 90 度、开口朝左；仅影响书中姿态和归位目标，不修改 `ReaderTransform` 或打开后的相机正面朝向。
+
+编辑器命令 `-run=TAPaperSetup` 生成 ABP 和共用配置，并一次性迁移 67 文档原有的三处展示变换，保持有效朝向不重复叠加；已绑定的文档不会再次迁移。`-run=TAPaperSetup -Verify` 只验证，不保存资产。自动化测试：`TheAwakening.Document.Paper`。
+
+本次进度（2026-10-20）：已生成并绑定动画与配置，用户确认纸页位置和朝向调整可行；编辑器编译通过，文档系统 11 项自动化测试通过。自动化验证包含实际骨骼姿态、展开前面对相机、逆时针旋转方向、共享预览台归位及强制关闭恢复，不等同于所有分辨率与手柄流程的人工验收；人工检查仍按下方关联清单执行。地面物品模型碰撞本次仅分析，尚未调整。
 
 ## 拾取：两条路
 
@@ -46,7 +63,7 @@
 - 「显示转译」（`IA_DocumentTranslate`）在模型旁叠加标题 + 正文面板，再按一次收起。面板显示时 `IA_ReaderScroll`（↑↓、右摇杆）和滚轮平滑滚动正文；面板隐藏时右摇杆改为旋转模型。
 - 返回走统一的 `IA_UIBack`；「显示转译」「返回」提示可以点击；「旋转」提示只在手柄下显示。
 - 手柄时隐藏光标，切回键鼠恢复。
-- 打开 / 关闭淡入淡出（真实时间），动画没播完前返回和按钮无效。
+- 普通文档打开 / 关闭淡入淡出；配置纸张动画的文档按取出、转正、展开／折叠、归位流程过渡（真实时间）。过渡期间返回和按钮无效。
 - 从场景打开时自己申请时停（优先级 200）；从日记本打开时沿用日记本的时停。
 
 控件命名：`Image_Model`、`Panel_Translation`（内含 `Text_Title`、`ScrollBox_Body` + `RichText_Body`）、`HorizontalBox_Controls`。旋转灵敏度、滚动速度、动画时长、正文字号都在 WBP 的 Class Defaults 里调。
@@ -82,7 +99,7 @@
 
 ## 3D 预览台 `ATAPreviewStage`
 
-把一个模型渲染到 RenderTarget 给 UI 显示。每个界面一个槽位，互不干扰：
+把一个模型渲染到 RenderTarget 给 UI 显示。独立预览使用以下槽位；从日记本打开折叠纸时，阅读器借用槽位 1 的同一个预览台，关闭后归还：
 
 | 槽位 | 使用者 |
 |---|---|
@@ -93,6 +110,7 @@
 | 9 | 调试命令 `TAPreview` |
 
 - 放在远离关卡的位置，灯光和模型只用光照通道 1，不照亮关卡也不被关卡照亮；曝光固定。
+- 默认主光强度 2、颜色 `FFFEEEFF`，补光强度 0.5；透明模式下曝光补偿由 UI 显示材质计算。
 - 不受时停影响（扫描、背包、阅读期间照常旋转），全局暂停时停止。
 - 模型按包围球自动居中取景，再叠加资产里的展示变换。
 - 默认透明背景：UI 的 Image 必须用 `GetDisplayMaterial()`（材质 `M_UI_PreviewStage`，由 `-run=TAPreviewMaterial` 生成），直接显示 RenderTarget 会看到反的透明度。
@@ -145,6 +163,7 @@
 | `-run=TAPreviewMaterial` | `M_UI_PreviewStage` |
 | `-run=TADocumentUI` | 输入动作和所有 WBP。加 `-Rebuild`（阅读）、`-RebuildDiary`、`-RebuildBanner`、`-RebuildMenu`、`-RebuildQuantity`、`-RebuildInspect` 重建对应 WBP，旧的备份到 `Saved/LayoutBackups` |
 | `-run=TADocumentSamples` | 日记本物品、样例文本、日记本掉落物、样例插图 |
+| `-run=TAPaperSetup` | 纸张 ABP、共用展示配置，以及 67 文档一次性朝向迁移；`-Verify` 只验证不保存 |
 
 ## 调试命令
 

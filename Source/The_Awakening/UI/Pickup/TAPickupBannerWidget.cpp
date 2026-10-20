@@ -176,7 +176,7 @@ void UTAPickupBannerWidget::StartNext()
 		}
 		else if (UObject* Mesh = Current.Document->Mesh.Get())
 		{
-			PreviewStage->SetDisplayModel(Mesh, Current.Document->PickupPreviewTransform);
+			PreviewStage->SetDocument(Current.Document, Current.Document->PickupPreviewTransform, false);
 		}
 		else
 		{

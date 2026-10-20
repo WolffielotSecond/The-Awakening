@@ -52,7 +52,8 @@ public:
 	 * @param OnClosed 关闭动画结束（或被强制关闭）后调用一次；bForced 为 true 表示被强制关闭（死亡回滚等）
 	 */
 	static UTADocumentReaderWidget* Open(APlayerController* PC, TSubclassOf<UTADocumentReaderWidget> WidgetClass,
-		UTADocumentDefinition* Document, int32 InputPriority, bool bFreezeTime, TFunction<void(bool bForced)> OnClosed);
+		UTADocumentDefinition* Document, int32 InputPriority, bool bFreezeTime, TFunction<void(bool bForced)> OnClosed,
+		ATAPreviewStage* SharedStage = nullptr, UImage* DiaryImage = nullptr);
 
 	/** 开始关闭（播放关闭动画）。打开动画没播完时无效。 */
 	UFUNCTION(BlueprintCallable, Category = "Document Reader")
@@ -190,6 +191,7 @@ protected:
 	TObjectPtr<UHorizontalBox> HorizontalBox_Controls;
 
 private:
+	friend class FTAPaperReaderTransitionTest;
 	enum class EPhase : uint8 { Opening, Open, Closing };
 
 	void LoadDefaultAssets();
@@ -201,6 +203,9 @@ private:
 	void FinishClose(bool bForced);
 	void ClampScrollTarget();
 	void TickScroll(float DeltaTime);
+	void TickPaperTransition(float DeltaTime);
+	void RestoreDiaryPresentation();
+	void ApplyPaperTravel(float Progress);
 
 	UFUNCTION()
 	void HandleLanguageChanged();
@@ -220,6 +225,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ATAPreviewStage> PreviewStage;
+
+	TWeakObjectPtr<UImage> SourceDiaryImage;
+	bool bBorrowedStage = false;
+	bool bPaperTransition = false;
+	bool bPaperLayoutReady = false;
+	bool bDiaryPresentationRestored = false;
+	FVector2D DiaryAbsoluteCenter = FVector2D::ZeroVector;
+	FVector2D DiaryAbsoluteSize = FVector2D::ZeroVector;
+	FGeometry ReaderTargetGeometry;
+	FTransform DiaryModelTransform = FTransform::Identity;
+	FTransform ReaderModelTransform = FTransform::Identity;
+	FQuat ClosingManualRotation = FQuat::Identity;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTAActionPromptWidget> TranslatePrompt;

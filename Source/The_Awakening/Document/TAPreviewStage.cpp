@@ -1,4 +1,7 @@
 #include "Document/TAPreviewStage.h"
+#include "Document/TADocumentDefinition.h"
+#include "Document/TADocumentPresentation.h"
+#include "Document/TAPaperAnimInstance.h"
 #include "Inventory/TAItemSettings.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -85,8 +88,9 @@ ATAPreviewStage::ATAPreviewStage()
 		Light->LightingChannels.bChannel0 = false;
 		Light->LightingChannels.bChannel1 = true;
 	}
-	KeyLight->SetIntensity(8.f);
-	FillLight->SetIntensity(3.f);
+	KeyLight->SetIntensity(2.f);
+	KeyLight->SetLightColor(FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("FFFEEEFF"))));
+	FillLight->SetIntensity(0.5f);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	PlaceholderMesh = CubeAsset.Object;
@@ -157,6 +161,65 @@ void ATAPreviewStage::ClearDisplay()
 	SetCaptureEnabled(false);
 }
 
+void ATAPreviewStage::SetDocument(UTADocumentDefinition* Definition, const FTransform& Adjustment, bool bOpened)
+{
+	if (!Definition) { ClearDisplay(); return; }
+	SetDisplayModel(Definition->Mesh, Definition->GetPreviewTransform(Adjustment));
+	if (Definition->Presentation)
+	{
+		SkeletalMeshComponent->SetAnimInstanceClass(Definition->Presentation->AnimationClass);
+		ModelRadius *= Definition->Presentation->FramingScale;
+		UpdateFraming();
+	}
+	SetPaperOpenness(bOpened ? 1.f : 0.f);
+}
+
+void ATAPreviewStage::SetPaperOpenness(float Value)
+{
+	if (auto* Paper = Cast<UTAPaperAnimInstance>(SkeletalMeshComponent->GetAnimInstance()))
+	{
+		Paper->SetOpenness(Value);
+	}
+}
+
+FTransform ATAPreviewStage::GetDiaryModelTransform(const UTADocumentDefinition* Definition) const
+{
+	if (!Definition) return FTransform::Identity;
+	FTransform Result = Definition->GetPreviewTransform(Definition->DiaryPageTransform);
+	if (Definition->Presentation && Definition->Presentation->AnimationClass)
+	{
+		// The camera looks along this axis: a positive rotation moves screen-right towards screen-up.
+		const FVector ViewAxis = FRotator(CameraPitch, 0.f, 0.f).Vector();
+		const FQuat Turn(ViewAxis, FMath::DegreesToRadians(Definition->Presentation->FoldedDiaryRotation));
+		Result.SetRotation(Turn * Result.GetRotation());
+	}
+	return Result;
+}
+
+float ATAPreviewStage::GetPaperFoldDuration() const
+{
+	const auto* Paper = Cast<UTAPaperAnimInstance>(SkeletalMeshComponent->GetAnimInstance());
+	return Paper ? Paper->GetFoldDuration() : 0.f;
+}
+
+void ATAPreviewStage::SetManualRotation(const FQuat& Rotation)
+{
+	PivotRotation = Rotation.GetNormalized();
+	PivotComponent->SetRelativeRotation(PivotRotation);
+}
+
+void ATAPreviewStage::SetModelPresentationTransform(const FTransform& Transform)
+{
+	UStaticMesh* Static = MeshComponent->GetStaticMesh();
+	USkeletalMesh* Skeletal = SkeletalMeshComponent->GetSkeletalMeshAsset();
+	USceneComponent* Active = Static ? static_cast<USceneComponent*>(MeshComponent) : SkeletalMeshComponent.Get();
+	if (!Static && !Skeletal) return;
+	const FBoxSphereBounds Bounds = Static ? Static->GetBounds() : Skeletal->GetBounds();
+	FTransform Relative = Transform;
+	Relative.SetLocation(Transform.GetLocation() - Transform.TransformVector(Bounds.Origin));
+	Active->SetRelativeTransform(Relative);
+}
+
 bool ATAPreviewStage::HasModel() const
 {
 	return MeshComponent->GetStaticMesh() || SkeletalMeshComponent->GetSkeletalMeshAsset();
@@ -169,6 +232,7 @@ void ATAPreviewStage::ApplyMesh(UStaticMesh* StaticMesh, USkeletalMesh* Skeletal
 	MeshComponent->SetStaticMesh(StaticMesh);
 	MeshComponent->SetVisibility(StaticMesh != nullptr);
 	SkeletalMeshComponent->SetSkeletalMeshAsset(SkeletalMesh);
+	SkeletalMeshComponent->SetAnimInstanceClass(nullptr);
 	SkeletalMeshComponent->SetVisibility(SkeletalMesh != nullptr);
 
 	// 预览台的组件会反复换模型：先清掉上一个模型留下的材质覆盖，再给丢失的材质补兜底材质

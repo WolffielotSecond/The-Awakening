@@ -6,6 +6,7 @@
 
 class UStaticMesh;
 class UTexture2D;
+class UTADocumentPresentation;
 
 /**
  * 一份可收集文本（信件、笔记等）。
@@ -42,9 +43,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Document")
 	TMap<FName, TSoftObjectPtr<UTexture2D>> InlineImages;
 
-	/** 场景、拾取提示、日记本、文本预览共用一个模型：静态网格体或骨骼网格体（保持参考姿势）；为空时显示占位模型 */
+	/** 场景、拾取提示、日记本、文本预览共用一个模型；骨骼模型可通过 Presentation 配置动画，为空时显示占位模型 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (AllowedClasses = "/Script/Engine.StaticMesh,/Script/Engine.SkeletalMesh"))
 	TObjectPtr<UObject> Mesh = nullptr;
+
+	/** Optional shared axis correction and folding animation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
+	TObjectPtr<UTADocumentPresentation> Presentation;
+
+	FTransform GetPreviewTransform(const FTransform& Adjustment) const;
 
 	/** 场景中模型相对文本 Actor 的偏移、旋转、缩放 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")

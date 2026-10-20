@@ -13,6 +13,7 @@ class UPointLightComponent;
 class UTextureRenderTarget2D;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class UTADocumentDefinition;
 
 /**
  * 3D 预览台：把一个模型渲染到 RenderTarget，供 UI 显示（拾取提示、日记本页面、以后的检视界面）。
@@ -49,6 +50,15 @@ public:
 	/** 按资源类型选用静态 / 骨骼网格体；其他类型或为空时显示占位模型 */
 	UFUNCTION(BlueprintCallable, Category = "Preview Stage")
 	void SetDisplayModel(UObject* Model, const FTransform& DisplayTransform);
+
+	/** Configure the shared document presentation; framing remains fixed while it folds. */
+	void SetDocument(UTADocumentDefinition* Definition, const FTransform& Adjustment, bool bOpened);
+	FTransform GetDiaryModelTransform(const UTADocumentDefinition* Definition) const;
+	void SetPaperOpenness(float Value);
+	float GetPaperFoldDuration() const;
+	void SetModelPresentationTransform(const FTransform& Transform);
+	FQuat GetManualRotation() const { return PivotRotation; }
+	void SetManualRotation(const FQuat& Rotation);
 
 	/** 清空模型（不显示占位），并停止渲染 */
 	UFUNCTION(BlueprintCallable, Category = "Preview Stage")

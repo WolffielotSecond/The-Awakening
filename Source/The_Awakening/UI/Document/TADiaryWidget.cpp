@@ -1,6 +1,7 @@
 #include "UI/Document/TADiaryWidget.h"
 #include "UI/Document/TADocumentReaderWidget.h"
 #include "Document/TADocumentDefinition.h"
+#include "Document/TADocumentPresentation.h"
 #include "Document/TADocumentSubsystem.h"
 #include "Document/TAPreviewStage.h"
 #include "Core/TAInputIconSubsystem.h"
@@ -132,6 +133,12 @@ void UTADiaryWidget::NativeConstruct()
 
 void UTADiaryWidget::NativeDestruct()
 {
+	if (ActiveReader)
+	{
+		UTADocumentReaderWidget* Reader = ActiveReader;
+		ActiveReader = nullptr;
+		Reader->ForceClose();
+	}
 	ReleaseInput();
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -173,10 +180,13 @@ FText UTADiaryWidget::Localize(const FString& TextId) const
 
 void UTADiaryWidget::ShowPage(int32 PageIndex)
 {
+	if (Phase == EPhase::Reading) return;
 	UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(this);
 	const int32 Count = GetPageCount();
 	CurrentPage = Count > 0 ? FMath::Clamp(PageIndex, 0, Count - 1) : 0;
 	UTADocumentDefinition* Definition = Documents && Count > 0 ? Documents->FindDefinition(Documents->GetDocumentAtPage(CurrentPage)) : nullptr;
+	bFoldedPaperPage = Definition && Definition->Presentation && Definition->Presentation->AnimationClass;
+	ApplyFoldedPaperPlacement();
 
 	if (Text_Empty)
 	{
@@ -206,7 +216,8 @@ void UTADiaryWidget::ShowPage(int32 PageIndex)
 			if (UObject* Mesh = Definition->Mesh.Get())
 			{
 				// 静态 / 骨骼网格体由预览台按类型显示
-				PreviewStage->SetDisplayModel(Mesh, Definition->DiaryPageTransform);
+				PreviewStage->SetDocument(Definition, Definition->DiaryPageTransform, false);
+				PreviewStage->SetModelPresentationTransform(PreviewStage->GetDiaryModelTransform(Definition));
 			}
 			else
 			{
@@ -256,11 +267,14 @@ void UTADiaryWidget::OpenCurrentDocument()
 			if (UTADiaryWidget* Self = WeakThis.Get(); Self && Self->Phase == EPhase::Reading)
 			{
 				Self->Phase = EPhase::Open;
+				Self->ActiveReader = nullptr;
 			}
-		});
+		}, Definition->Presentation && Definition->Presentation->AnimationClass ? PreviewStage.Get() : nullptr,
+		Definition->Presentation && Definition->Presentation->AnimationClass ? Image_Document.Get() : nullptr);
 	if (Reader)
 	{
 		Phase = EPhase::Reading;
+		ActiveReader = Reader;
 	}
 }
 
@@ -433,6 +447,12 @@ void UTADiaryWidget::RequestClose()
 
 void UTADiaryWidget::RemoveFromParent()
 {
+	if (ActiveReader)
+	{
+		UTADocumentReaderWidget* Reader = ActiveReader;
+		ActiveReader = nullptr;
+		Reader->ForceClose();
+	}
 	ReleaseInput();
 	Super::RemoveFromParent();
 }
@@ -442,6 +462,7 @@ void UTADiaryWidget::RemoveFromParent()
 void UTADiaryWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	ApplyFoldedPaperPlacement();
 	PhaseTime += InDeltaTime;
 	switch (Phase)
 	{
@@ -505,6 +526,21 @@ void UTADiaryWidget::ApplyOpenCloseVisual(float Alpha)
 	Transform.Translation = Offset * (1.f - Eased);
 	Transform.Scale = FVector2D(FMath::Lerp(CollapsedScale, 1.f, Eased));
 	Panel_Book->SetRenderTransform(Transform);
+}
+
+void UTADiaryWidget::ApplyFoldedPaperPlacement()
+{
+	if (!Button_Document) return;
+	FWidgetTransform Placement;
+	if (bFoldedPaperPage)
+	{
+		const FVector2D Size = Button_Document->GetCachedGeometry().GetLocalSize();
+		Placement.Translation = Size * FoldedPaperOffset;
+		Placement.Scale = FVector2D(FoldedPaperScale);
+	}
+	// Move the actual clickable widget, so its geometry also supplies the exact take-out/return position.
+	Button_Document->SetRenderTransformPivot(FVector2D(0.5f));
+	Button_Document->SetRenderTransform(Placement);
 }
 
 void UTADiaryWidget::ApplyPageFlipVisual(float Progress)
