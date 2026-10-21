@@ -15,21 +15,23 @@ class UTADocumentDefinition;
 class UTAActionPromptWidget;
 class UTADocumentReaderWidget;
 class ATAPreviewStage;
+class ATADiaryPreviewStage;
+enum class ETADiaryMotion : uint8;
 
 /**
  * 日记本「查看内容」界面（WBP_Diary 的父类）。从背包剧情格里的日记本打开，关闭回到背包。
  *
  * 控件命名约定：
- *   Panel_Book（任意 UWidget）：整本书，打开 / 关闭 / 翻页动画作用在它上面
- *   Panel_Page（任意 UWidget）：右书页上夹着的文本（翻页时淡出淡入）
- *   Button_Document（UButton）：点击打开文本预览；里面放 Image_Document（UImage，文本的 3D 模型画面）
+ *   Panel_Book（任意 UWidget）：3D 书本及夹页共用画面的容器，承载 UI 飞入/飞出变换
+ *   Image_Book（UImage）：3D 日记展示台的透明画面
+ *   Panel_Page（任意 UWidget）：标题容器，书本动作期间隐藏
  *   Text_DocumentTitle（UTextBlock）：文本标题
  *   Text_PageNumber（UTextBlock）：页码“当前 / 总数”
  *   Text_Empty（UTextBlock）：一份都没收集时显示
  *   HorizontalBox_Controls（UHorizontalBox）：底部操作栏，C++ 生成“上一页 / 下一页 / 查看 / 返回”（可点击）
  *
  * 规则（策划文档）：按收集顺序一页一份；0 份是空书，0 / 1 份不能翻页；退出时保存页码，下次打开回到这一页。
- * 打开时从剧情格位置放大淡入，关闭时缩回剧情格位置（UMG 2D 占位，以后换 3D 书本只改 PlayOpenClose / PlayPageFlip）。
+ * 3D 书本由专用展示台驱动，UI 保留从剧情格放大/缩回的过渡。
  * 动画没播完之前返回键、翻页、查看都无效。时停沿用背包的；手柄时隐藏光标。
  */
 UCLASS(Blueprintable)
@@ -39,8 +41,6 @@ class THE_AWAKENING_API UTADiaryWidget : public UUserWidget, public ITAPlayerInp
 
 public:
 	static constexpr int32 InputPriority = 220;
-	/** 日记本页面上文本模型使用的预览台槽位 */
-	static constexpr int32 PreviewStageSlot = 1;
 
 	/**
 	 * 打开日记本。
@@ -49,7 +49,8 @@ public:
 	 */
 	static UTADiaryWidget* Open(APlayerController* PC, TSubclassOf<UTADiaryWidget> WidgetClass,
 		TOptional<FVector2D> SourceScreenPosition, int32 OpenPage = INDEX_NONE,
-		bool bSkipOpenAnimation = false, bool bOpenDocumentImmediately = false);
+		bool bSkipOpenAnimation = false, bool bOpenDocumentImmediately = false,
+		TOptional<FVector2D> SourceScreenSize = {}, UWidget* SourceIcon = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "Diary")
 	void RequestClose();
@@ -57,6 +58,10 @@ public:
 	/** 翻页：-1 上一页，+1 下一页。0 / 1 份或动画中无效。 */
 	UFUNCTION(BlueprintCallable, Category = "Diary")
 	void TurnPage(int32 Direction);
+
+	/** 长按翻页键跳到首/末页所需时间（秒）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Input", meta = (ClampMin = "0.2"))
+	float PageHoldDuration = 0.65f;
 
 	/** 打开当前页文本的预览 */
 	UFUNCTION(BlueprintCallable, Category = "Diary")
@@ -69,6 +74,8 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool UsesEnhancedUIActions() const override { return true; }
+	virtual void ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance) override;
 	virtual bool HandleMenuBackRequested() override;
 	virtual bool AllowsVirtualCursor() const override { return false; }
 	virtual bool ShouldShowPlayerCursor() const override { return !bGamepadDevice; }
@@ -102,37 +109,35 @@ public:
 	TSubclassOf<UTADocumentReaderWidget> ReaderWidgetClass;
 
 	// ==================== 参数 ====================
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Animation", meta = (ClampMin = "0", Units = "s"))
-	float OpenDuration = 0.5f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Animation", meta = (ClampMin = "0", Units = "s"))
-	float CloseDuration = 0.4f;
-
-	/** 翻页过渡总时长（前一半淡出旧页，后一半淡入新页） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Animation", meta = (ClampMin = "0", Units = "s"))
-	float PageFlipDuration = 0.3f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Book", meta = (ClampMin = "0.01"))
+	float BookPlaybackRate = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Book")
+	float BookCameraPitch = -65.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Book", meta = (ClampMin = "1"))
+	float BookFramingPadding = 1.35f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Book")
+	FTransform BookTransform = FTransform(FRotator(0.f, 90.f, 0.f));
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Paper", meta = (ClampMin = "1"))
+	float DocumentSize = 14.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Paper")
+	FVector RightDocumentPosition = FVector(7.7f, 0.f, 1.25f);
 
 	/** 书在剧情格位置时的缩放 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Animation", meta = (ClampMin = "0.01", ClampMax = "1"))
 	float CollapsedScale = 0.08f;
 
-	/** 页面文本模型画面分辨率 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary")
-	FIntPoint PageRenderSize = FIntPoint(768, 768);
-
-	/** 折叠纸页向书缝偏移，单位为原按钮宽高比例；可在 WBP_Diary 中微调。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Paper")
-	FVector2D FoldedPaperOffset = FVector2D(-0.54f, 0.f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Paper", meta = (ClampMin = "0.1", ClampMax = "1"))
-	float FoldedPaperScale = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Text")
 	FString PreviousPageTextId = TEXT("UI_Diary_PreviousPage");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Text")
 	FString NextPageTextId = TEXT("UI_Diary_NextPage");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Text")
+	FString FirstPageHoldTextId = TEXT("UI_Diary_FirstPageHold");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Text")
+	FString LastPageHoldTextId = TEXT("UI_Diary_LastPageHold");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Diary|Text")
 	FString ReadTextId = TEXT("UI_Diary_Read");
@@ -147,18 +152,16 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UWidget> Panel_Book;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> Image_Book;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UWidget> Panel_Page;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UButton> Button_Document;
-
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UImage> Image_Document;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_DocumentTitle;
@@ -172,25 +175,30 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UHorizontalBox> HorizontalBox_Controls;
 
-	/** 以后换 3D 书本时替换这两个：当前是 UMG 2D 过渡 */
+	/** UI travel around the independently animated 3D book. */
 	void ApplyOpenCloseVisual(float Alpha);
-	void ApplyPageFlipVisual(float Progress);
 
 private:
+	friend class FTADiaryWidgetIntegrationTest;
+	friend class FTADiaryEnhancedInputTest;
+	friend class UTADocumentUICommandlet;
 	enum class EPhase : uint8 { Opening, Open, Flipping, Reading, Closing };
 
 	void LoadDefaultAssets();
 	void BuildControls();
 	void ShowPage(int32 PageIndex);
 	void RefreshControls();
-	void ApplyFoldedPaperPlacement();
+	void TurnToPage(int32 Page);
+	void UpdatePageHold(float DeltaSeconds, bool bHeld, bool bOwnsInput);
 	void AcquireInput();
 	void ReleaseInput();
+	void ReleasePreviewStages();
+	void RefreshPageVisibility();
+	UFUNCTION()
+	void HandleBookMotionFinished(ETADiaryMotion CompletedMotion);
 	FText Localize(const FString& TextId) const;
 	int32 GetPageCount() const;
 
-	UFUNCTION()
-	void HandleDocumentClicked();
 
 	UFUNCTION()
 	void HandlePromptClicked(UTAActionPromptWidget* Prompt);
@@ -202,7 +210,7 @@ private:
 	void HandleLanguageChanged();
 
 	UPROPERTY(Transient)
-	TObjectPtr<ATAPreviewStage> PreviewStage;
+	TObjectPtr<ATADiaryPreviewStage> BookStage;
 	UPROPERTY(Transient)
 	TObjectPtr<UTADocumentReaderWidget> ActiveReader;
 
@@ -213,12 +221,29 @@ private:
 	TObjectPtr<UTAActionPromptWidget> NextPrompt;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTAActionPromptWidget> FirstPageHoldPrompt;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTAActionPromptWidget> LastPageHoldPrompt;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTAActionPromptWidget> ReadPrompt;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTAActionPromptWidget> BackPrompt;
 
 	TOptional<FVector2D> SourcePosition;
+	TOptional<FVector2D> SourceSize;
+	FBox2D ClosedBookBounds = FBox2D(ForceInit);
+	TWeakObjectPtr<UWidget> SourceIconWidget;
+	void UpdateSourceIconGeometry();
+	bool bPageActionHeld = false;
+	int32 HeldPageDirection = 0;
+	int32 QueuedEndpoint = 0;
+	float PageHeldTime = 0.f;
+	bool bPageHoldTriggered = false;
+	bool bPendingOpenFromIcon = false;
+	bool bPendingQuickRead = false;
 	/** 快速查看：跳过入场动画，打开后直接进入当前页文本的预览 */
 	bool bSkipOpenAnimation = false;
 	bool bOpenDocumentImmediately = false;
@@ -227,10 +252,7 @@ private:
 	int32 PendingPage = 0;
 
 	EPhase Phase = EPhase::Opening;
-	float PhaseTime = 0.f;
-	bool bPageSwapped = false;
 	bool bGamepadDevice = false;
-	bool bFoldedPaperPage = false;
 
 	FTAInputRouter::FHandle InputRequestHandle = 0;
 	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;

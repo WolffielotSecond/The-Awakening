@@ -16,6 +16,7 @@
  * 用法：UnrealEditor-Cmd The_Awakening.uproject -run=TADocumentUI [-Rebuild] [-RebuildMenu] [-RebuildDiary]
  *   -Rebuild 重建 WBP_DocumentReader，-RebuildMenu 只重建 WBP_ItemActionMenu，-RebuildDiary 重建菜单与日记本；
  *   重建前都先备份到 Saved/LayoutBackups
+ *   -RebuildDiaryOnly 仅重建日记，不修改其他 UI；-PreviewDiary -AllowCommandletRendering 导出实际日记界面截图
  */
 UCLASS()
 class UTADocumentUICommandlet : public UCommandlet

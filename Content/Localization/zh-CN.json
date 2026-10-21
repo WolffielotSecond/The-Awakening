@@ -278,6 +278,8 @@
 	"UI_Item_ViewContent": "查看内容",
 	"UI_Diary_PreviousPage": "上一页",
 	"UI_Diary_NextPage": "下一页",
+	"UI_Diary_FirstPageHold": "长按回到首页",
+	"UI_Diary_LastPageHold": "长按前往末页",
 	"UI_Diary_Read": "查看",
 	"UI_Diary_Empty": "还没有夹入任何纸页。",
 	"UI_Item_Inspect": "检视",

@@ -82,6 +82,15 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 		}
 		Owner->NotifyRawInputKey(Key);
 		Owner->RecordHeldInput(Key, 1.f, InKeyEvent.GetUserIndex());
+		if (Owner->ShouldForwardEnhancedUIKey(Key))
+		{
+			if (!bRepeat)
+			{
+				Owner->InputKey(FInputKeyEventArgs(nullptr, InKeyEvent.GetInputDeviceId(), Key, IE_Pressed, 1.f, false, 0u));
+				EnhancedForwardedPresses.Add(Key);
+			}
+			return true;
+		}
 		if (Owner->RoutePlayerInputKey(Key, bRepeat, InKeyEvent.GetUserIndex()))
 		{ ConsumedPresses.Add(Key); return true; }
 	}
@@ -106,6 +115,11 @@ void AThe_AwakeningPlayerController::TACursorTest()
 bool FTAInputDeviceDetector::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& Event)
 {
 	if (Owner) Owner->RecordHeldInput(Event.GetKey(), 0.f, Event.GetUserIndex());
+	if (EnhancedForwardedPresses.Remove(Event.GetKey()) > 0)
+	{
+		if (Owner) Owner->InputKey(FInputKeyEventArgs(nullptr, Event.GetInputDeviceId(), Event.GetKey(), IE_Released, 0.f, false, 0u));
+		return true;
+	}
 	DeadZoneAcceptedPresses.Remove(Event.GetKey());
 	const bool bIgnoredPress = DeadZoneIgnoredPresses.Remove(Event.GetKey()) > 0;
 	return ConsumedPresses.Remove(Event.GetKey()) > 0 || bIgnoredPress;
@@ -119,6 +133,12 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 	}
 
 	const FKey Key = InAnalogInputEvent.GetKey();
+	if (Owner->ShouldForwardEnhancedUIKey(Key))
+	{
+		if (Owner->OwnsPlayerInput() && Owner->GetLocalPlayer() && InAnalogInputEvent.GetUserIndex() == Owner->GetLocalPlayer()->GetControllerId())
+			Owner->InputKey(FInputKeyEventArgs(nullptr, InAnalogInputEvent.GetInputDeviceId(), Key, IE_Axis, InAnalogInputEvent.GetAnalogValue(), false, 0u));
+		return true;
+	}
 	if (!Owner->ObserveAnalogInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex(),
 		Owner->GetPlayerInputOwnershipState())) return false;
 	if ((!Owner->AllowsInput(ETAInputCapability::Cursor) && !Owner->AllowsInput(ETAInputCapability::Pan)) || !Key.IsGamepadKey())
@@ -162,6 +182,12 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
 		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton) Owner->NotifyCursorButton(true);
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
+		if (Owner->ShouldForwardEnhancedUIKey(MouseEvent.GetEffectingButton()))
+		{
+			Owner->InputKey(FInputKeyEventArgs(nullptr, MouseEvent.GetInputDeviceId(), MouseEvent.GetEffectingButton(), IE_Pressed, 1.f, false, 0u));
+			EnhancedForwardedPresses.Add(MouseEvent.GetEffectingButton());
+			return true;
+		}
 		if (Owner->RoutePlayerInputKey(MouseEvent.GetEffectingButton(), false, MouseEvent.GetUserIndex()))
 		{ ConsumedPresses.Add(MouseEvent.GetEffectingButton()); return true; }
 	}
@@ -176,6 +202,11 @@ bool FTAInputDeviceDetector::HandleMouseButtonUpEvent(FSlateApplication&, const 
 	}
 	if (Owner) Owner->RecordHeldInput(Event.GetEffectingButton(), 0.f, Event.GetUserIndex());
 	if (Owner && Event.GetEffectingButton() == EKeys::LeftMouseButton) Owner->NotifyCursorButton(false);
+	if (EnhancedForwardedPresses.Remove(Event.GetEffectingButton()) > 0)
+	{
+		if (Owner) Owner->InputKey(FInputKeyEventArgs(nullptr, Event.GetInputDeviceId(), Event.GetEffectingButton(), IE_Released, 0.f, false, 0u));
+		return true;
+	}
 	return ConsumedPresses.Remove(Event.GetEffectingButton()) > 0;
 }
 
@@ -729,6 +760,7 @@ bool AThe_AwakeningPlayerController::RoutePlayerInputKey(FKey Key, bool bRepeat,
 	const auto Winner = GetInputWinner();
 	auto* Receiver = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
 	if (!Receiver) return false;
+	if (Receiver->UsesEnhancedUIActions()) return false; // Executed only by evaluated IMC action events.
  if (Receiver->IsCapturingPlayerInput())
  {
   if (!AllowsInputFor(Receiver->GetPlayerInputRequestHandle(), Winner.Request.Owner.Get(), ETAInputCapability::CaptureBinding)) return false;
@@ -1105,4 +1137,30 @@ void AThe_AwakeningPlayerController::ClosePauseMenu()
 bool AThe_AwakeningPlayerController::IsPauseMenuOpen() const
 {
 	return PauseMenuInstance && PauseMenuInstance->IsInViewport();
+}
+
+void AThe_AwakeningPlayerController::RegisterEnhancedUIAction(UInputAction* Action)
+{
+	auto* Enhanced = Cast<UEnhancedInputComponent>(InputComponent);
+	if (!Action || !Enhanced || EnhancedUIActions.Contains(Action)) return;
+	EnhancedUIActions.Add(Action);
+	for (ETriggerEvent Event : {ETriggerEvent::Started, ETriggerEvent::Triggered, ETriggerEvent::Completed, ETriggerEvent::Canceled})
+		Enhanced->BindAction(Action, Event, this, &AThe_AwakeningPlayerController::DispatchEnhancedUIAction, Action, Event);
+}
+
+bool AThe_AwakeningPlayerController::ShouldForwardEnhancedUIKey(FKey Key) const
+{
+	const auto Winner = GetInputWinner();
+	const auto* Receiver = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
+	if (!Receiver || !Receiver->UsesEnhancedUIActions()) return false;
+	for (const auto& Action : EnhancedUIActions)
+		if (IsKeyMappedToAction(Key, Action) || (Key.GetPairedAxisKey().IsValid() && IsKeyMappedToAction(Key.GetPairedAxisKey(), Action))) return true;
+	return false;
+}
+
+void AThe_AwakeningPlayerController::DispatchEnhancedUIAction(const FInputActionInstance& Instance, UInputAction* Action, ETriggerEvent Event)
+{
+	const auto Winner = GetInputWinner();
+	auto* Receiver = Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
+	if (Receiver && Receiver->UsesEnhancedUIActions() && OwnsPlayerInput()) Receiver->ExecutePlayerAction(Action, Event, Instance);
 }

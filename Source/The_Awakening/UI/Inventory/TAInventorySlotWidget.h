@@ -41,6 +41,8 @@ public:
 	void SetInventoryComponent(UTAInventoryComponent* InInventory) { Inventory = InInventory; }
 	void SetInputOwner(UTAInventoryPanelWidget* InOwner);
 	void SetDraggingVisual(bool bDragging);
+	const FGeometry& GetIconGeometry() const;
+	UWidget* GetIconWidget() const;
 
 	UFUNCTION(BlueprintCallable, Category = "InventorySlot")
 	int32 GetFlatIndex() const { return FlatIndex; }

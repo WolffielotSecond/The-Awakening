@@ -278,6 +278,8 @@
 	"UI_Item_ViewContent": "View Contents",
 	"UI_Diary_PreviousPage": "Previous Page",
 	"UI_Diary_NextPage": "Next Page",
+	"UI_Diary_FirstPageHold": "Hold: First Page",
+	"UI_Diary_LastPageHold": "Hold: Last Page",
 	"UI_Diary_Read": "Read",
 	"UI_Diary_Empty": "No pages have been tucked in yet.",
 	"UI_Item_Inspect": "Inspect",

@@ -57,8 +57,8 @@ public:
 	void SetPaperOpenness(float Value);
 	float GetPaperFoldDuration() const;
 	void SetModelPresentationTransform(const FTransform& Transform);
-	FQuat GetManualRotation() const { return PivotRotation; }
-	void SetManualRotation(const FQuat& Rotation);
+	virtual FQuat GetManualRotation() const { return PivotRotation; }
+	virtual void SetManualRotation(const FQuat& Rotation);
 
 	/** 清空模型（不显示占位），并停止渲染 */
 	UFUNCTION(BlueprintCallable, Category = "Preview Stage")
@@ -79,7 +79,7 @@ public:
 	 * DeltaYaw 绕竖直轴（正值从上往下看顺时针），DeltaPitch 绕镜头水平轴（正值模型顶部转离镜头），可无限旋转。
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Preview Stage")
-	void AddManualRotation(float DeltaYaw, float DeltaPitch);
+	virtual void AddManualRotation(float DeltaYaw, float DeltaPitch);
 
 	/** 渲染结果，首次调用时按 RenderTargetSize 创建 */
 	UFUNCTION(BlueprintCallable, Category = "Preview Stage")

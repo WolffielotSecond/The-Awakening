@@ -26,6 +26,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "InputAction.h"
+#include "Animation/AnimSequence.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -35,6 +36,29 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "UObject/SavePackage.h"
+#include "Document/TADiaryPreviewStage.h"
+#include "Document/TADiaryDocumentComponent.h"
+#include "Document/TADocumentDefinition.h"
+#include "Document/TADocumentSubsystem.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Engine/World.h"
+#include "Engine/Engine.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
+#include "EngineUtils.h"
+#include "Slate/WidgetRenderer.h"
+#include "ImageUtils.h"
+#include "RenderingThread.h"
+#include "ShaderCompiler.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/BufferArchive.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Interfaces/ISlateRHIRendererModule.h"
+#include "AssetCompilingManager.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "UObject/StrongObjectPtr.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTADocumentUI, Log, All);
 
@@ -221,47 +245,34 @@ namespace
 		Dim->SetColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.55f));
 		AddToCanvas(Root, Dim, FAnchors(0.f, 0.f, 1.f, 1.f));
 
-		// 书：封皮 + 左右两页（UMG 占位，以后换 3D 书本）
-		UBorder* Book = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel_Book"));
-		Book->SetBrushColor(FLinearColor(0.22f, 0.14f, 0.08f, 1.f));
-		Book->SetPadding(FMargin(24.f));
-		AddToCanvas(Root, Book, FAnchors(0.15f, 0.1f, 0.85f, 0.85f));
-		UHorizontalBox* Pages = Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HorizontalBox_Pages"));
-		Book->SetContent(Pages);
+		// A fixed 3:2 render surface keeps the SceneCapture aspect ratio at every viewport size.
+		UScaleBox* BookFit = Tree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), TEXT("ScaleBox_Book"));
+		BookFit->SetStretch(EStretch::ScaleToFit);
+		AddToCanvas(Root, BookFit, FAnchors(0.08f, 0.03f, 0.92f, 0.88f));
+		USizeBox* BookSize = Tree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SizeBox_Book"));
+		BookSize->SetWidthOverride(1536.f);
+		BookSize->SetHeightOverride(1024.f);
+		BookFit->SetContent(BookSize);
+		UCanvasPanel* Book = Tree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Panel_Book"));
+		Book->SetRenderTransformPivot(FVector2D(0.5f));
+		BookSize->SetContent(Book);
+		UImage* BookImage = Tree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_Book"));
+		BookImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		AddToCanvas(Book, BookImage, FAnchors(0.f, 0.f, 1.f, 1.f));
 
-		const FLinearColor Paper(0.86f, 0.82f, 0.72f, 1.f);
-		UBorder* Left = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_LeftPage"));
-		Left->SetBrushColor(Paper);
-		Left->SetPadding(FMargin(32.f));
-		UHorizontalBoxSlot* LeftSlot = Pages->AddChildToHorizontalBox(Left);
-		LeftSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		LeftSlot->SetPadding(FMargin(0.f, 0.f, 6.f, 0.f));
-		UVerticalBox* LeftColumn = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VerticalBox_LeftPage"));
-		Left->SetContent(LeftColumn);
-		LeftColumn->AddChildToVerticalBox(MakeText(Tree, TEXT("Text_PageNumber"), 22, InkColor()))->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
-		LeftColumn->AddChildToVerticalBox(MakeText(Tree, TEXT("Text_Empty"), 22, InkColor()));
-
-		UBorder* Right = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_RightPage"));
-		Right->SetBrushColor(Paper);
-		Right->SetPadding(FMargin(24.f));
-		UHorizontalBoxSlot* RightSlot = Pages->AddChildToHorizontalBox(Right);
-		RightSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		RightSlot->SetPadding(FMargin(6.f, 0.f, 0.f, 0.f));
-
-		// 右页夹着的文本：可点击的模型 + 标题
+		// Metadata stays in UMG; all physical documents are captured with the book.
 		UVerticalBox* Page = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Panel_Page"));
-		Right->SetContent(Page);
-		UButton* DocumentButton = Tree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Document"));
-		DocumentButton->SetBackgroundColor(FLinearColor(1.f, 1.f, 1.f, 0.f));
-		Page->AddChildToVerticalBox(DocumentButton)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		UScaleBox* ModelBox = Tree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), TEXT("ScaleBox_Document"));
-		ModelBox->SetStretch(EStretch::ScaleToFit);
-		DocumentButton->SetContent(ModelBox);
-		ModelBox->SetContent(Tree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_Document")));
-		UTextBlock* Title = MakeText(Tree, TEXT("Text_DocumentTitle"), 22, InkColor());
+		Page->SetVisibility(ESlateVisibility::HitTestInvisible);
+		AddToCanvas(Book, Page, FAnchors(0.25f, 0.80f, 0.75f, 0.86f));
+		UTextBlock* Title = MakeText(Tree, TEXT("Text_DocumentTitle"), 22, FSlateColor(FLinearColor::White));
 		Title->SetJustification(ETextJustify::Center);
-		Page->AddChildToVerticalBox(Title)->SetPadding(FMargin(0.f, 12.f, 0.f, 0.f));
-
+		Page->AddChildToVerticalBox(Title);
+		UTextBlock* PageNumber = MakeText(Tree, TEXT("Text_PageNumber"), 24, FSlateColor(FLinearColor::White));
+		PageNumber->SetJustification(ETextJustify::Center);
+		AddToCanvas(Book, PageNumber, FAnchors(0.35f, 0.88f, 0.65f, 0.93f));
+		UTextBlock* Empty = MakeText(Tree, TEXT("Text_Empty"), 24, FSlateColor(FLinearColor::White));
+		Empty->SetJustification(ETextJustify::Center);
+		AddToCanvas(Book, Empty, FAnchors(0.25f, 0.80f, 0.75f, 0.86f));
 		UHorizontalBox* Controls = Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HorizontalBox_Controls"));
 		UCanvasPanelSlot* ControlsSlot = Root->AddChildToCanvas(Controls);
 		ControlsSlot->SetAnchors(FAnchors(0.5f, 0.93f));
@@ -517,6 +528,198 @@ UTADocumentUICommandlet::UTADocumentUICommandlet()
 int32 UTADocumentUICommandlet::Main(const FString& Params)
 {
 	bool bOk = true;
+	if (FParse::Param(*Params, TEXT("ConfigureDiaryInput")))
+	{
+		auto* Context = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_UI.IMC_UI"));
+		auto* Previous = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/UI/IA_DiaryPreviousPage.IA_DiaryPreviousPage"));
+		auto* Next = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/UI/IA_DiaryNextPage.IA_DiaryNextPage"));
+		if (!Context || !Previous || !Next) return 8;
+		const FString Source = FPackageName::LongPackageNameToFilename(Context->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
+		const FString Backup = FPaths::ProjectSavedDir() / TEXT("InputMappingBackups") / FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")) / TEXT("IMC_UI.uasset");
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Backup), true);
+		if (IFileManager::Get().Copy(*Backup, *Source, false) != COPY_OK) return 9;
+		for (UInputAction* Action : {Previous, Next})
+		{
+			Context->UnmapKey(Action, EKeys::A);
+			Context->UnmapKey(Action, EKeys::D);
+			for (FKey Key : {Action == Previous ? EKeys::Q : EKeys::E,
+				Action == Previous ? EKeys::Gamepad_LeftShoulder : EKeys::Gamepad_RightShoulder})
+			{
+				bool bFound = false;
+				for (const auto& Mapping : Context->GetMappings()) bFound |= Mapping.Action == Action && Mapping.Key == Key;
+				if (!bFound) Context->MapKey(Action, Key);
+			}
+		}
+		for (const auto& Mapping : Context->GetMappings())
+			if (Mapping.Action == Previous || Mapping.Action == Next)
+				UE_LOG(LogTADocumentUI, Display, TEXT("Diary IMC: %s -> %s"), *Mapping.Action->GetName(), *Mapping.Key.ToString());
+		return SaveAsset(Context) ? 0 : 10;
+	}
+	if (FParse::Param(*Params, TEXT("PreviewDiary")))
+	{
+		// Read-only render of the actual runtime widget; use -AllowCommandletRendering.
+		// AllocateScene otherwise creates a null scene for this asset-generation commandlet.
+		TGuardValue<bool> PreviewClient(GIsClient, true);
+		if (!FSlateApplication::IsInitialized())
+			FSlateApplication::InitializeAsStandaloneApplication(FModuleManager::LoadModuleChecked<ISlateRHIRendererModule>("SlateRHIRenderer").CreateSlateRHIRenderer());
+		TStrongObjectPtr<UGameInstance> PreviewGame(NewObject<UGameInstance>(GEngine));
+		PreviewGame->InitializeStandalone();
+		UWorld* World = PreviewGame->GetWorld();
+		World->InitializeActorsForPlay(FURL());
+		FString PreviewDocument;
+		if (FParse::Value(*Params, TEXT("DiaryDocument="), PreviewDocument))
+		{
+			auto* Document = LoadObject<UTADocumentDefinition>(nullptr, *PreviewDocument);
+			if (!Document) return 5;
+			PreviewGame->GetSubsystem<UTADocumentSubsystem>()->Collect(Document->DocumentId);
+		}
+		if (FParse::Value(*Params, TEXT("DiaryNextDocument="), PreviewDocument))
+		{
+			auto* Document = LoadObject<UTADocumentDefinition>(nullptr, *PreviewDocument);
+			if (!Document) return 5;
+			PreviewGame->GetSubsystem<UTADocumentSubsystem>()->Collect(Document->DocumentId);
+		}
+		auto* Player = World->SpawnActor<APlayerController>();
+		auto* LocalPlayer = NewObject<ULocalPlayer>(GEngine);
+		LocalPlayer->PlayerController = Player;
+		Player->Player = LocalPlayer;
+		UClass* DiaryClass = LoadClass<UTADiaryWidget>(nullptr, TEXT("/Game/UI/Document/WBP_Diary.WBP_Diary_C"));
+		UTADiaryWidget* Diary = DiaryClass ? CreateWidget<UTADiaryWidget>(Player, DiaryClass) : nullptr;
+		if (!Diary) return 2;
+		TStrongObjectPtr<UTADiaryWidget> KeepDiaryAlive(Diary);
+		const bool bQuickReturn = FParse::Param(*Params, TEXT("DiaryQuickReturn"));
+		Diary->bSkipOpenAnimation = FParse::Param(*Params, TEXT("DiaryQuick")) || bQuickReturn;
+		if (bQuickReturn)
+		{
+			// The icon has no cached geometry when quick view is constructed, just like a freshly opened inventory.
+			auto* Icon = Diary->WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("AuditReturnIcon"));
+			FSlateBrush IconBrush; IconBrush.DrawAs = ESlateBrushDrawType::Box; IconBrush.TintColor = FLinearColor::Black;
+			Icon->SetBrush(IconBrush);
+			auto* IconSlot = Cast<UCanvasPanel>(Diary->WidgetTree->RootWidget)->AddChildToCanvas(Icon);
+			IconSlot->SetPosition(FVector2D(1620.f, 250.f));
+			IconSlot->SetSize(FVector2D(80.f, 100.f));
+			IconSlot->SetZOrder(-1);
+			Diary->SourceIconWidget = Icon;
+		}
+		if (FParse::Param(*Params, TEXT("DiaryFromIcon")))
+		{
+			Diary->SourcePosition = FVector2D(1660.f, 300.f);
+			Diary->SourceSize = FVector2D(80.f, 100.f);
+		}
+		const auto Slate = Diary->TakeWidget();
+		ATADiaryPreviewStage* Stage = nullptr;
+		for (TActorIterator<ATADiaryPreviewStage> It(World); It; ++It) { Stage = *It; break; }
+		if (!Stage || !Stage->IsReady()) return 3;
+		Stage->Tick(2.f);
+		FAssetCompilingManager::Get().FinishAllCompilation();
+		if (GShaderCompilingManager) GShaderCompilingManager->FinishAllCompilation();
+		for (TActorIterator<ATAPreviewStage> It(World); It; ++It) It->SetCaptureEnabled(false);
+		World->UpdateWorldComponents(true, false);
+		UE_LOG(LogTADocumentUI, Display, TEXT("Diary render: visible=%d registered=%d renderstate=%d bounds=%s camera=%s mesh=%s"),
+			Stage->GetSkeletalMeshComponent()->IsVisible(), Stage->GetSkeletalMeshComponent()->IsRegistered(),
+			Stage->GetSkeletalMeshComponent()->IsRenderStateCreated(), *Stage->GetSkeletalMeshComponent()->Bounds.ToString(),
+			*Stage->GetCaptureComponent()->GetComponentLocation().ToString(), *Stage->GetSkeletalMeshComponent()->GetComponentTransform().ToString());
+		TStrongObjectPtr<ATADiaryPreviewStage> KeepStageAlive(Stage);
+		if (FParse::Param(*Params, TEXT("DiaryTurn")))
+		{
+			Diary->TurnPage(1);
+		}
+		if (FParse::Param(*Params, TEXT("DiaryRead")))
+		{
+			Stage->BeginReading();
+			Stage->UpdateReading(1.f, 1.f, 1.f);
+		}
+		if (FParse::Param(*Params, TEXT("DiaryHideBook")))
+		{
+			Stage->GetSkeletalMeshComponent()->SetVisibility(false);
+			Stage->GetTurningPageComponent()->SetVisibility(false);
+		}
+		UE_LOG(LogTADocumentUI, Display, TEXT("Diary document root=%s mesh=%s bounds=%s"),
+			*Stage->GetRightDocument()->GetComponentTransform().ToString(),
+			*Stage->GetRightDocument()->GetSkeletalMeshComponent()->GetRelativeTransform().ToString(),
+			*Stage->GetRightDocument()->GetSkeletalMeshComponent()->Bounds.ToString());
+		float SampleTime = 1.2f;
+		FParse::Value(*Params, TEXT("DiarySample="), SampleTime);
+		for (int32 Frame = 0; Frame < 4; ++Frame)
+		{
+			++GFrameCounter;
+			if (FParse::Param(*Params, TEXT("DiaryTurn"))) Stage->Tick(FMath::Max(0.f, SampleTime) * 0.25f);
+			else if (Diary->bSkipOpenAnimation) Stage->Tick(0.016f);
+			for (TActorIterator<ATAPreviewStage> It(World); It; ++It)
+			{
+				if (*It != Stage && It->GetSkeletalMeshComponent()->GetSkeletalMeshAsset())
+				{
+					It->GetSkeletalMeshComponent()->TickAnimation(0.016f, false);
+					It->GetSkeletalMeshComponent()->RefreshBoneTransforms();
+					It->GetSkeletalMeshComponent()->MarkRenderDynamicDataDirty();
+				}
+				if (FParse::Param(*Params, TEXT("DiaryUnlit"))) It->GetCaptureComponent()->ShowFlags.SetLighting(false);
+			}
+			World->SendAllEndOfFrameUpdates();
+			for (TActorIterator<ATAPreviewStage> It(World); It; ++It)
+				if (It->GetCaptureComponent()->TextureTarget) It->GetCaptureComponent()->CaptureScene();
+			FlushRenderingCommands();
+		}
+		UE_LOG(LogTADocumentUI, Display, TEXT("Diary final motion=%d progress=%f moving=%s pageVisible=%d bone=%s"),
+			int32(Stage->GetMotion()), Stage->GetMotionProgress(), *Stage->GetMovingDocument()->GetComponentTransform().ToString(),
+			Stage->GetTurningPageComponent()->IsVisible(), *Stage->GetSkeletalMeshComponent()->GetSocketTransform(TEXT("Document_Attach")).ToString());
+		for (TActorIterator<ATAPreviewStage> It(World); It; ++It)
+		{
+			if (*It == Stage) continue;
+			FBufferArchive DocumentPixels;
+			FImageUtils::ExportRenderTarget2DAsPNG(It->GetRenderTarget(), DocumentPixels);
+			FFileHelper::SaveArrayToFile(DocumentPixels, *(FPaths::ProjectSavedDir() / TEXT("Diary3DDocument.png")));
+		}
+		FBufferArchive BookPixels;
+		FImageUtils::ExportRenderTarget2DAsPNG(Stage->GetRenderTarget(), BookPixels);
+		FFileHelper::SaveArrayToFile(BookPixels, *(FPaths::ProjectSavedDir() / TEXT("Diary3DBook.png")));
+		FWidgetRenderer Renderer(true);
+		auto* Target = Renderer.DrawWidget(Slate, FVector2D(1920, 1080));
+		TStrongObjectPtr<UTextureRenderTarget2D> KeepTargetAlive(Target);
+		if (bQuickReturn)
+		{
+			Diary->NativeTick(Diary->GetCachedGeometry(), 0.f);
+			UE_LOG(LogTADocumentUI, Display, TEXT("Quick return before close: phase=%d ready=%d reading=%d icon=%s geometry=%s sameStage=%d"),
+				int32(Diary->Phase), Stage->IsPresentationReady(), Stage->IsReading(), *GetNameSafe(Diary->SourceIconWidget.Get()),
+				Diary->SourceIconWidget.IsValid() ? *Diary->SourceIconWidget->GetCachedGeometry().GetLocalSize().ToString() : TEXT("none"), Diary->BookStage == Stage);
+			Diary->RequestClose();
+			++GFrameCounter;
+			Stage->Tick(Stage->CloseAnimation.Get()->GetPlayLength() * 0.999f);
+			Diary->NativeTick(Diary->GetCachedGeometry(), 0.f);
+			World->SendAllEndOfFrameUpdates();
+			Stage->GetCaptureComponent()->CaptureScene();
+			FlushRenderingCommands();
+			Renderer.DrawWidget(Target, Slate, FVector2D(1920, 1080), 0.f);
+			UE_LOG(LogTADocumentUI, Display, TEXT("Quick return icon: center=%s size=%s phase=%d motion=%d transform=%s"),
+				*Diary->SourcePosition.Get(FVector2D::ZeroVector).ToString(), *Diary->SourceSize.Get(FVector2D::ZeroVector).ToString(),
+				int32(Diary->Phase), int32(Stage->GetMotion()), *Diary->Panel_Book->GetRenderTransform().Translation.ToString());
+		}
+		if (FParse::Param(*Params, TEXT("DiaryFromIcon")))
+		{
+			Diary->NativeTick(Diary->GetCachedGeometry(), 0.f);
+			Stage->Tick(FMath::Max(0.f, SampleTime));
+			Diary->NativeTick(Diary->GetCachedGeometry(), 0.f);
+			World->SendAllEndOfFrameUpdates();
+			Stage->GetCaptureComponent()->CaptureScene();
+			FlushRenderingCommands();
+			Renderer.DrawWidget(Target, Slate, FVector2D(1920, 1080), 0.f);
+		}
+		FlushRenderingCommands();
+		FBufferArchive Pixels;
+		bOk = FImageUtils::ExportRenderTarget2DAsPNG(Target, Pixels)
+			&& FFileHelper::SaveArrayToFile(Pixels, *(FPaths::ProjectSavedDir() / TEXT("Diary3DPreview.png")));
+		Diary->RemoveFromParent();
+		PreviewGame->Shutdown();
+		World->DestroyWorld(false);
+		GEngine->DestroyWorldContext(World);
+		return bOk ? 0 : 4;
+	}
+	if (FParse::Param(*Params, TEXT("RebuildDiaryOnly")))
+	{
+		EnsureWidgetBlueprint(TEXT("/Game/UI/Document/WBP_Diary"), UTADiaryWidget::StaticClass(),
+			[](UWidgetTree* Tree) { BuildDiaryLayout(Tree); }, true, bOk);
+		return bOk ? 0 : 1;
+	}
 	if (UInputAction* Scroll = EnsureAction(ScrollActionPath, EInputActionValueType::Axis1D, bOk))
 	{
 		EnsureScrollMappings(Scroll, bOk);

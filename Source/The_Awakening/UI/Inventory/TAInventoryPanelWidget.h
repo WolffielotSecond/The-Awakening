@@ -45,6 +45,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "InventoryUI")
 	void RefreshAll();
+	UWidget* GetDiaryIconWidget() const;
 
 	/** Refresh shortcut icons and bottom-row prompts using the currently active input device. */
 	UFUNCTION(BlueprintCallable, Category = "InventoryUI|Input")

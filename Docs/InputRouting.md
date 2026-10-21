@@ -37,6 +37,36 @@ Stage 5.4 final audit changes documentation only; no new runtime refactoring.
 Stages 1-5 are complete. Final compile, regression and diff checks passed; this is
 a stable checkpoint with the explicitly accepted ownership-recovery limitation.
 
+## Diary and document reader: Enhanced Input action dispatch (2026-10-22)
+
+`UTADiaryWidget` and `UTADocumentReaderWidget` opt into
+`ITAPlayerInputReceiver::UsesEnhancedUIActions`. Their keyboard/gamepad commands
+are now evaluated Input Action events, rather than `ExecutePlayerInput` calls
+from Slate key-down. Other owners retain the existing receiver routing described
+below; this is a scoped migration, not a rewrite of every menu.
+
+- `RegisterEnhancedUIAction` binds Started/Triggered/Completed/Canceled once per
+  controller/action. The explicit bound trigger event is forwarded alongside the
+  action instance; do not infer which delegate fired from the instance alone.
+- The Slate preprocessor only transports mapped physical presses/releases and
+  analog values into `PlayerInput`. It consumes those UI events to avoid duplicate
+  Slate Accept/navigation. Paired stick-axis mappings are included. It never
+  directly performs diary commands. Physical/device observation still runs.
+- `DispatchEnhancedUIAction` selects the current winning receiver and verifies
+  external ownership. The receiver still verifies its exact request/capability
+  and transition state before executing. Covered diary/reader widgets cannot act.
+- Diary hold timing begins at Action Started and ends at Completed/Canceled.
+  Ownership loss cancels pending hold intent. Reader rotation/scroll use evaluated
+  action values, including IMC modifiers; they no longer reconstruct those values
+  from physical held-key observations. Mouse clicks/drags remain pointer gestures.
+- `IMC_UI`: Q/E = previous/next, LB/RB = the same actions. Esc uses `IA_UIBack`.
+  Buttons, prompt icons and user rebinding share those action identities.
+
+`TheAwakening.Document.Diary.EnhancedInput` exercises actual PlayerInput processing:
+Q/E, release, runtime remapping from E to T, absence of Slate command execution,
+and Esc. Latest scoped diary suite: 6 passed; shared input regression: 23 passed.
+See [DocumentSystem.md](DocumentSystem.md) for transitions and quick-view cleanup.
+
 ## External player input ownership lifecycle
 
 Router winner change (`OnInputOwnerChanged`) and external ownership loss

@@ -4,6 +4,7 @@
 #include "Document/TADocumentPresentation.h"
 #include "Document/TADocumentSubsystem.h"
 #include "Document/TAPreviewStage.h"
+#include "Document/TADiaryPreviewStage.h"
 #include "Core/TAInputIconSubsystem.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "UI/TAActionPromptWidget.h"
@@ -18,6 +19,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "InputAction.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
 namespace
@@ -40,7 +42,7 @@ namespace
 }
 
 UTADiaryWidget* UTADiaryWidget::Open(APlayerController* PC, TSubclassOf<UTADiaryWidget> WidgetClass,
-	TOptional<FVector2D> SourceScreenPosition, int32 OpenPage, bool bInSkipOpenAnimation, bool bInOpenDocumentImmediately)
+	TOptional<FVector2D> SourceScreenPosition, int32 OpenPage, bool bInSkipOpenAnimation, bool bInOpenDocumentImmediately, TOptional<FVector2D> SourceScreenSize, UWidget* SourceIcon)
 {
 	UClass* Class = WidgetClass ? WidgetClass.Get() : LoadClass<UTADiaryWidget>(nullptr, TEXT("/Game/UI/Document/WBP_Diary.WBP_Diary_C"));
 	if (!PC || !Class)
@@ -54,6 +56,8 @@ UTADiaryWidget* UTADiaryWidget::Open(APlayerController* PC, TSubclassOf<UTADiary
 		return nullptr;
 	}
 	Diary->SourcePosition = SourceScreenPosition;
+	Diary->SourceSize = SourceScreenSize;
+	Diary->SourceIconWidget = SourceIcon;
 	Diary->RequestedPage = OpenPage;
 	Diary->bSkipOpenAnimation = bInSkipOpenAnimation;
 	Diary->bOpenDocumentImmediately = bInOpenDocumentImmediately;
@@ -86,23 +90,32 @@ void UTADiaryWidget::NativeConstruct()
 			bGamepadDevice = Icons->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
 		}
 	}
-	if (Button_Document)
-	{
-		Button_Document->OnClicked.AddUniqueDynamic(this, &UTADiaryWidget::HandleDocumentClicked);
-	}
 
-	// 页面上的文本模型：静止展示，不自动旋转
-	PreviewStage = ATAPreviewStage::SpawnPreviewStage(this, nullptr, PreviewStageSlot);
-	if (PreviewStage && Image_Document)
+	BookStage = Cast<ATADiaryPreviewStage>(ATAPreviewStage::SpawnPreviewStage(this, ATADiaryPreviewStage::StaticClass(), 1));
+	if (!BookStage || !Image_Book)
 	{
-		PreviewStage->RenderTargetSize = PageRenderSize;
-		PreviewStage->SetAutoRotate(false);
-		FSlateBrush Brush;
-		UObject* Resource = PreviewStage->GetDisplayMaterial();
-		Brush.SetResourceObject(Resource ? Resource : PreviewStage->GetRenderTarget());
-		Brush.ImageSize = FVector2D(PageRenderSize);
-		Image_Document->SetBrush(Brush);
+		UE_LOG(LogTemp, Error, TEXT("Diary: book stage or Image_Book missing; rebuild with -run=TADocumentUI -RebuildDiaryOnly."));
+		RemoveFromParent();
+		return;
 	}
+	BookStage->CameraPitch = BookCameraPitch;
+	BookStage->FramingPadding = BookFramingPadding;
+	BookStage->BookTransform = BookTransform;
+	BookStage->DocumentSize = DocumentSize;
+	BookStage->RightDocumentPosition = RightDocumentPosition;
+	BookStage->PlaybackRate = BookPlaybackRate;
+	if (!BookStage->InitializeDiary())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Diary: failed to initialize 3D book assets."));
+		RemoveFromParent();
+		return;
+	}
+	BookStage->OnMotionFinished.AddUniqueDynamic(this, &UTADiaryWidget::HandleBookMotionFinished);
+	FSlateBrush BookBrush;
+	BookBrush.SetResourceObject(BookStage->GetDisplayMaterial());
+	BookBrush.ImageSize = FVector2D(BookStage->RenderTargetSize);
+	Image_Book->SetBrush(BookBrush);
+	BookStage->SetCaptureEnabled(true);
 
 	// 快速查看指定的页会覆盖保存的页码（策划文档）
 	UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(this);
@@ -115,20 +128,28 @@ void UTADiaryWidget::NativeConstruct()
 	BuildControls();
 	ShowPage(CurrentPage);
 
+	ClosedBookBounds = BookStage->GetBookSurfaceScreenBounds();
 	Phase = EPhase::Opening;
-	PhaseTime = 0.f;
-	ApplyOpenCloseVisual(OpenDuration > 0.f ? 0.f : 1.f);
+	ApplyOpenCloseVisual(0.f);
 	if (bSkipOpenAnimation)
 	{
+		BookStage->SetOpenImmediate(true);
+		Image_Book->SetRenderOpacity(0.f);
 		Phase = EPhase::Open;
 		ApplyOpenCloseVisual(1.f);
 	}
+	else
+	{
+		ClosedBookBounds = BookStage->GetBookSurfaceScreenBounds();
+		bPendingOpenFromIcon = SourcePosition.IsSet() || SourceIconWidget.IsValid();
+		if (bPendingOpenFromIcon) Panel_Book->SetRenderOpacity(0.f);
+		else BookStage->OpenBook();
+	}
+	RefreshPageVisibility();
 	SetIsFocusable(true);
 	AcquireInput();
-	if (bOpenDocumentImmediately)
-	{
-		OpenCurrentDocument();
-	}
+	// Wait for the book's first rendered layout/pose before handing it to the reader.
+	bPendingQuickRead = bOpenDocumentImmediately && bSkipOpenAnimation;
 }
 
 void UTADiaryWidget::NativeDestruct()
@@ -151,15 +172,7 @@ void UTADiaryWidget::NativeDestruct()
 			Icons->OnInputPromptsChanged.RemoveDynamic(this, &UTADiaryWidget::HandleInputPresentationChanged);
 		}
 	}
-	if (Button_Document)
-	{
-		Button_Document->OnClicked.RemoveDynamic(this, &UTADiaryWidget::HandleDocumentClicked);
-	}
-	if (PreviewStage)
-	{
-		PreviewStage->Destroy();
-		PreviewStage = nullptr;
-	}
+	ReleasePreviewStages();
 	Super::NativeDestruct();
 }
 
@@ -185,8 +198,6 @@ void UTADiaryWidget::ShowPage(int32 PageIndex)
 	const int32 Count = GetPageCount();
 	CurrentPage = Count > 0 ? FMath::Clamp(PageIndex, 0, Count - 1) : 0;
 	UTADocumentDefinition* Definition = Documents && Count > 0 ? Documents->FindDefinition(Documents->GetDocumentAtPage(CurrentPage)) : nullptr;
-	bFoldedPaperPage = Definition && Definition->Presentation && Definition->Presentation->AnimationClass;
-	ApplyFoldedPaperPlacement();
 
 	if (Text_Empty)
 	{
@@ -205,29 +216,14 @@ void UTADiaryWidget::ShowPage(int32 PageIndex)
 	{
 		Text_DocumentTitle->SetText(Definition ? Localize(Definition->TitleTextId) : FText::GetEmpty());
 	}
-	if (PreviewStage)
+	if (BookStage && Phase != EPhase::Flipping && Phase != EPhase::Reading)
 	{
-		if (!Definition)
-		{
-			PreviewStage->ClearDisplay();
-		}
-		else
-		{
-			if (UObject* Mesh = Definition->Mesh.Get())
-			{
-				// 静态 / 骨骼网格体由预览台按类型显示
-				PreviewStage->SetDocument(Definition, Definition->DiaryPageTransform, false);
-				PreviewStage->SetModelPresentationTransform(PreviewStage->GetDiaryModelTransform(Definition));
-			}
-			else
-			{
-				// 没有模型时用一张正对镜头的纸（占位立方体压扁）
-				PreviewStage->SetDisplayMesh(nullptr, FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(0.01f, 0.21f, 0.3f)));
-			}
-			PreviewStage->SetCaptureEnabled(true);
-		}
+		UTADocumentDefinition* Left = Documents && CurrentPage > 0
+			? Documents->FindDefinition(Documents->GetDocumentAtPage(CurrentPage - 1)) : nullptr;
+		BookStage->SetPages(Left, Definition);
 	}
 	RefreshControls();
+	RefreshPageVisibility();
 }
 
 void UTADiaryWidget::TurnPage(int32 Direction)
@@ -237,14 +233,52 @@ void UTADiaryWidget::TurnPage(int32 Direction)
 	{
 		return;
 	}
-	PendingPage = (CurrentPage + (Direction > 0 ? 1 : -1) + Count) % Count;
+	TurnToPage(FMath::Clamp(CurrentPage + (Direction > 0 ? 1 : -1), 0, Count - 1));
+}
+
+void UTADiaryWidget::TurnToPage(int32 Page)
+{
+	const int32 Count = GetPageCount();
+	if (Phase != EPhase::Open || Count < 2 || Page < 0 || Page >= Count || Page == CurrentPage) return;
+	UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(this);
+	if (!BookStage || !Documents) return;
+	PendingPage = Page;
+	UTADocumentDefinition* TargetRight = Documents->FindDefinition(Documents->GetDocumentAtPage(Page));
+	UTADocumentDefinition* TargetLeft = Page > 0 ? Documents->FindDefinition(Documents->GetDocumentAtPage(Page - 1)) : nullptr;
+	if (!BookStage->BeginPageTurn(Page > CurrentPage, TargetLeft, TargetRight)) return;
 	Phase = EPhase::Flipping;
-	PhaseTime = 0.f;
-	bPageSwapped = false;
-	if (PageFlipDuration <= 0.f)
+	RefreshPageVisibility();
+}
+
+void UTADiaryWidget::UpdatePageHold(float DeltaSeconds, bool bHeld, bool bOwnsInput)
+{
+	if (!bOwnsInput || (Phase != EPhase::Open && Phase != EPhase::Flipping))
 	{
-		ShowPage(PendingPage);
-		Phase = EPhase::Open;
+		HeldPageDirection = QueuedEndpoint = 0;
+		bPageActionHeld = false;
+		PageHeldTime = 0.f;
+		return;
+	}
+	if (!bHeld)
+	{
+		HeldPageDirection = 0;
+		bPageActionHeld = false;
+		PageHeldTime = 0.f;
+	}
+	else if (HeldPageDirection && !bPageHoldTriggered)
+	{
+		PageHeldTime += FMath::Max(0.f, DeltaSeconds);
+		if (PageHeldTime >= PageHoldDuration)
+		{
+			bPageHoldTriggered = true;
+			QueuedEndpoint = HeldPageDirection;
+		}
+	}
+	if (QueuedEndpoint && Phase == EPhase::Open)
+	{
+		const int32 Direction = QueuedEndpoint;
+		QueuedEndpoint = 0;
+		TurnToPage(Direction < 0 ? 0 : GetPageCount() - 1);
 	}
 }
 
@@ -268,23 +302,17 @@ void UTADiaryWidget::OpenCurrentDocument()
 			{
 				Self->Phase = EPhase::Open;
 				Self->ActiveReader = nullptr;
+				Self->RefreshPageVisibility();
 			}
-		}, Definition->Presentation && Definition->Presentation->AnimationClass ? PreviewStage.Get() : nullptr,
-		Definition->Presentation && Definition->Presentation->AnimationClass ? Image_Document.Get() : nullptr);
+		}, BookStage.Get(), Image_Book.Get());
 	if (Reader)
 	{
 		Phase = EPhase::Reading;
 		ActiveReader = Reader;
+		RefreshPageVisibility();
 	}
 }
 
-void UTADiaryWidget::HandleDocumentClicked()
-{
-	if (AllowsPlayerInput(ETAInputCapability::Confirm))
-	{
-		OpenCurrentDocument();
-	}
-}
 
 // ==================== 操作栏 ====================
 
@@ -295,10 +323,10 @@ void UTADiaryWidget::BuildControls()
 		return;
 	}
 	HorizontalBox_Controls->ClearChildren();
-	auto Add = [this](UInputAction* Action, const FString& TextId) -> UTAActionPromptWidget*
+	auto Add = [this](UInputAction* Action, const FString& TextId, bool bClickable = true) -> UTAActionPromptWidget*
 	{
 		UTAActionPromptWidget* Prompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, Action, TextId, FLinearColor::White);
-		if (Prompt)
+		if (Prompt && bClickable)
 		{
 			Prompt->OnPromptClicked.AddDynamic(this, &UTADiaryWidget::HandlePromptClicked);
 		}
@@ -306,6 +334,9 @@ void UTADiaryWidget::BuildControls()
 	};
 	PreviousPrompt = Add(PreviousPageAction, PreviousPageTextId);
 	NextPrompt = Add(NextPageAction, NextPageTextId);
+	// Hold instructions share the live IMC icon; they are informational, not instant-jump buttons.
+	FirstPageHoldPrompt = Add(PreviousPageAction, FirstPageHoldTextId, false);
+	LastPageHoldPrompt = Add(NextPageAction, LastPageHoldTextId, false);
 	ReadPrompt = Add(ReadAction, ReadTextId);
 	BackPrompt = Add(BackAction, BackTextId);
 	if (!PreviousPageAction || !NextPageAction)
@@ -321,6 +352,8 @@ void UTADiaryWidget::RefreshControls()
 	const ESlateVisibility TurnVisibility = Count >= 2 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
 	if (PreviousPrompt) PreviousPrompt->SetVisibility(TurnVisibility);
 	if (NextPrompt) NextPrompt->SetVisibility(TurnVisibility);
+	if (FirstPageHoldPrompt) FirstPageHoldPrompt->SetVisibility(TurnVisibility);
+	if (LastPageHoldPrompt) LastPageHoldPrompt->SetVisibility(TurnVisibility);
 	if (ReadPrompt) ReadPrompt->SetVisibility(Count > 0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
 
@@ -372,6 +405,7 @@ void UTADiaryWidget::AcquireInput()
 		Request.Presentation.FocusTarget = this;
 		InputRequestController = PC;
 		InputRequestHandle = PC->AcquireInputRequest(Request);
+		for (UInputAction* Action : {PreviousPageAction.Get(), NextPageAction.Get(), ReadAction.Get(), BackAction.Get()}) PC->RegisterEnhancedUIAction(Action);
 	}
 }
 
@@ -401,18 +435,30 @@ TOptional<ETAInputCapability> UTADiaryWidget::ResolvePlayerInput(FKey Key) const
 	return {};
 }
 
-void UTADiaryWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
+void UTADiaryWidget::ExecutePlayerInput(FKey, ETAInputCapability)
 {
-	if (!AllowsPlayerInput(Capability)) return;
-	const auto* PC = InputRequestController.Get();
-	if (Capability == ETAInputCapability::Navigate)
+	// Keyboard/controller actions are evaluated by Enhanced Input, never Slate key-down dispatch.
+}
+
+void UTADiaryWidget::ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance)
+{
+	if (Action == BackAction && Event == ETriggerEvent::Started) { HandleMenuBackRequested(); return; }
+	if (Action == ReadAction && Event == ETriggerEvent::Started && AllowsPlayerInput(ETAInputCapability::Confirm))
+	{ OpenCurrentDocument(); return; }
+	if (Action != PreviousPageAction && Action != NextPageAction) return;
+	const int32 Direction = Action == PreviousPageAction ? -1 : 1;
+	if (Event == ETriggerEvent::Completed || Event == ETriggerEvent::Canceled)
 	{
-		TurnPage(PC && PreviousPageAction && PC->IsKeyMappedToAction(Key, PreviousPageAction) ? -1 : 1);
+		if (Direction == HeldPageDirection) bPageActionHeld = false;
+		return;
 	}
-	else if (Capability == ETAInputCapability::Confirm)
-	{
-		OpenCurrentDocument();
-	}
+	if (Event != ETriggerEvent::Started || !AllowsPlayerInput(ETAInputCapability::Navigate)
+		|| Phase != EPhase::Open || GetPageCount() < 2) return;
+	HeldPageDirection = Direction;
+	bPageActionHeld = true;
+	PageHeldTime = 0.f;
+	bPageHoldTriggered = false;
+	TurnPage(Direction);
 }
 
 bool UTADiaryWidget::HandleMenuBackRequested()
@@ -432,17 +478,15 @@ void UTADiaryWidget::RequestClose()
 	{
 		return;
 	}
+	UpdateSourceIconGeometry();
+	if (!BookStage || !BookStage->CloseBook()) return;
 	// 退出时保存页码
 	if (UTADocumentSubsystem* Documents = UTADocumentSubsystem::Get(this))
 	{
 		Documents->SetDiaryPage(CurrentPage);
 	}
 	Phase = EPhase::Closing;
-	PhaseTime = 0.f;
-	if (CloseDuration <= 0.f)
-	{
-		RemoveFromParent();
-	}
+	RefreshPageVisibility();
 }
 
 void UTADiaryWidget::RemoveFromParent()
@@ -454,106 +498,152 @@ void UTADiaryWidget::RemoveFromParent()
 		Reader->ForceClose();
 	}
 	ReleaseInput();
+	ReleasePreviewStages();
 	Super::RemoveFromParent();
 }
 
-// ==================== 动画（UMG 2D 占位） ====================
+void UTADiaryWidget::ReleasePreviewStages()
+{
+	if (BookStage)
+	{
+		BookStage->OnMotionFinished.RemoveDynamic(this, &UTADiaryWidget::HandleBookMotionFinished);
+		BookStage->SetCaptureEnabled(false);
+		BookStage->Destroy();
+		BookStage = nullptr;
+	}
+}
+
+void UTADiaryWidget::RefreshPageVisibility()
+{
+	const bool bShowPage = Phase == EPhase::Open;
+	if (Panel_Page) Panel_Page->SetVisibility(GetPageCount() > 0 && bShowPage
+		? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Text_Empty) Text_Empty->SetVisibility(GetPageCount() == 0 && Phase == EPhase::Open
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UTADiaryWidget::HandleBookMotionFinished(ETADiaryMotion CompletedMotion)
+{
+	if (CompletedMotion == ETADiaryMotion::Opening && Phase == EPhase::Opening)
+	{
+		Phase = EPhase::Open;
+		ApplyOpenCloseVisual(1.f);
+		RefreshPageVisibility();
+		if (bOpenDocumentImmediately) OpenCurrentDocument();
+	}
+	else if ((CompletedMotion == ETADiaryMotion::TurningForward || CompletedMotion == ETADiaryMotion::TurningBackward)
+		&& Phase == EPhase::Flipping)
+	{
+		Phase = EPhase::Open;
+		ShowPage(PendingPage);
+	}
+	else if (CompletedMotion == ETADiaryMotion::Closing && Phase == EPhase::Closing)
+	{
+		RemoveFromParent();
+	}
+}
 
 void UTADiaryWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	ApplyFoldedPaperPlacement();
-	PhaseTime += InDeltaTime;
-	switch (Phase)
+	if (!BookStage) return;
+	UpdateSourceIconGeometry();
+	if (bPendingOpenFromIcon && (Panel_Book->GetCachedGeometry().GetLocalSize().GetMin() <= 1.f
+		|| (SourceIconWidget.IsValid() && !SourcePosition.IsSet())))
 	{
-	case EPhase::Opening:
-	{
-		const float Alpha = OpenDuration > 0.f ? PhaseTime / OpenDuration : 1.f;
-		ApplyOpenCloseVisual(Alpha);
-		if (Alpha >= 1.f)
-		{
-			Phase = EPhase::Open;
-		}
-		break;
+		ApplyOpenCloseVisual(0.f);
+		return;
 	}
-	case EPhase::Closing:
+	if (bPendingOpenFromIcon)
 	{
-		const float Alpha = CloseDuration > 0.f ? 1.f - PhaseTime / CloseDuration : 0.f;
-		ApplyOpenCloseVisual(Alpha);
-		if (Alpha <= 0.f)
-		{
-			RemoveFromParent();
-		}
-		break;
+		bPendingOpenFromIcon = false;
+		Panel_Book->SetRenderOpacity(1.f);
+		ApplyOpenCloseVisual(0.f);
+		BookStage->OpenBook();
 	}
-	case EPhase::Flipping:
+	if (Phase == EPhase::Opening) ApplyOpenCloseVisual(BookStage->GetMotionProgress());
+	else if (Phase == EPhase::Closing) ApplyOpenCloseVisual(1.f - BookStage->GetMotionProgress());
+	if (HeldPageDirection || QueuedEndpoint)
 	{
-		const float Progress = PageFlipDuration > 0.f ? PhaseTime / PageFlipDuration : 1.f;
-		if (!bPageSwapped && Progress >= 0.5f)
-		{
-			ShowPage(PendingPage);
-			bPageSwapped = true;
-		}
-		ApplyPageFlipVisual(Progress);
-		if (Progress >= 1.f)
-		{
-			ApplyPageFlipVisual(1.f);
-			Phase = EPhase::Open;
-		}
-		break;
+		UpdatePageHold(InDeltaTime, bPageActionHeld, AllowsPlayerInput(ETAInputCapability::Navigate));
 	}
-	default:
-		break;
+	if (bSkipOpenAnimation && BookStage->IsPresentationReady()) Image_Book->SetRenderOpacity(1.f);
+	if (bPendingQuickRead && BookStage->IsPresentationReady() && Phase == EPhase::Open && Image_Book->GetCachedGeometry().GetLocalSize().GetMin() > 1.f)
+	{
+		bPendingQuickRead = false;
+		OpenCurrentDocument();
 	}
 }
-
 void UTADiaryWidget::ApplyOpenCloseVisual(float Alpha)
 {
 	const float Eased = EaseOut(Alpha);
-	SetRenderOpacity(FMath::Clamp(Alpha, 0.f, 1.f));
-	if (!Panel_Book)
-	{
-		return;
-	}
-	// 从剧情格位置放大到屏幕中央；关闭时反向缩回
+	// The book is visible from the icon-sized starting pose; fade only the surrounding UI.
+	SetRenderOpacity(1.f);
+	for (const FName Name : {FName(TEXT("Image_Dim")), FName(TEXT("Blur_Background"))})
+		if (UWidget* Background = GetWidgetFromName(Name)) Background->SetRenderOpacity(Alpha);
+	if (HorizontalBox_Controls) HorizontalBox_Controls->SetRenderOpacity(Alpha);
+	if (Text_PageNumber) Text_PageNumber->SetRenderOpacity(Alpha);
+	if (!Panel_Book) return;
 	FVector2D Offset = FVector2D::ZeroVector;
-	if (SourcePosition.IsSet())
+	float StartScale = CollapsedScale;
+	const FGeometry& Geometry = Panel_Book->GetCachedGeometry();
+	const FVector2D Size = Geometry.GetLocalSize();
+	if (SourcePosition.IsSet() && Size.GetMin() > 1.f)
 	{
-		const FVector2D Viewport = UWidgetLayoutLibrary::GetViewportSize(this) / FMath::Max(UWidgetLayoutLibrary::GetViewportScale(this), KINDA_SMALL_NUMBER);
-		Offset = SourcePosition.GetValue() - Viewport * 0.5f;
+		// Layout geometry excludes our previous render transform and the ScaleBox's local scale.
+		const FGeometry Layout = FGeometry::MakeRoot(Size, Geometry.GetAccumulatedLayoutTransform());
+		const FGeometry& Root = GetCachedGeometry();
+		Offset = Layout.AbsoluteToLocal(Root.LocalToAbsolute(SourcePosition.GetValue())) - Size * 0.5f;
+		if (SourceSize.IsSet())
+		{
+			const FVector2D LocalSize = Layout.AbsoluteToLocal(Root.LocalToAbsolute(SourcePosition.GetValue() + SourceSize.GetValue()))
+				- Layout.AbsoluteToLocal(Root.LocalToAbsolute(SourcePosition.GetValue()));
+			if (ClosedBookBounds.bIsValid)
+			{
+				const FVector2D BookSize = Size * ClosedBookBounds.GetSize();
+				StartScale = FMath::Clamp(float(FMath::Min(LocalSize.X / FMath::Max(1., BookSize.X),
+					LocalSize.Y / FMath::Max(1., BookSize.Y))), 0.01f, 1.f);
+			}
+		}
 	}
+	if (SourcePosition.IsSet() && ClosedBookBounds.bIsValid)
+		Offset -= (ClosedBookBounds.GetCenter() - FVector2D(0.5f)) * Size * StartScale;
 	FWidgetTransform Transform;
 	Transform.Translation = Offset * (1.f - Eased);
-	Transform.Scale = FVector2D(FMath::Lerp(CollapsedScale, 1.f, Eased));
+	Transform.Scale = FVector2D(FMath::Lerp(StartScale, 1.f, Eased));
 	Panel_Book->SetRenderTransform(Transform);
 }
 
-void UTADiaryWidget::ApplyFoldedPaperPlacement()
+FReply UTADiaryWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
-	if (!Button_Document) return;
-	FWidgetTransform Placement;
-	if (bFoldedPaperPage)
+	if (Event.GetEffectingButton() == EKeys::LeftMouseButton && Phase == EPhase::Open
+		&& Image_Book && BookStage && AllowsPlayerInput(ETAInputCapability::Confirm))
 	{
-		const FVector2D Size = Button_Document->GetCachedGeometry().GetLocalSize();
-		Placement.Translation = Size * FoldedPaperOffset;
-		Placement.Scale = FVector2D(FoldedPaperScale);
+		const FGeometry& ImageGeometry = Image_Book->GetCachedGeometry();
+		const FVector2D Size = ImageGeometry.GetLocalSize();
+		if (Size.GetMin() > 1.f)
+		{
+			const FVector2D UV = ImageGeometry.AbsoluteToLocal(Event.GetScreenSpacePosition()) / Size;
+			const FBox2D Bounds = BookStage->GetRightDocumentScreenBounds();
+			if (Bounds.bIsValid && Bounds.IsInside(UV))
+			{
+				OpenCurrentDocument();
+				return FReply::Handled();
+			}
+		}
 	}
-	// Move the actual clickable widget, so its geometry also supplies the exact take-out/return position.
-	Button_Document->SetRenderTransformPivot(FVector2D(0.5f));
-	Button_Document->SetRenderTransform(Placement);
+	return Super::NativeOnMouseButtonDown(Geometry, Event);
 }
 
-void UTADiaryWidget::ApplyPageFlipVisual(float Progress)
+void UTADiaryWidget::UpdateSourceIconGeometry()
 {
-	if (!Panel_Page)
-	{
-		return;
-	}
-	// 前一半旧页淡出并略向外滑，后一半新页淡入回到原位
-	const float P = FMath::Clamp(Progress, 0.f, 1.f);
-	const float Fade = P < 0.5f ? 1.f - P * 2.f : (P - 0.5f) * 2.f;
-	Panel_Page->SetRenderOpacity(Fade);
-	FWidgetTransform Transform;
-	Transform.Translation = FVector2D((1.f - Fade) * 30.f, 0.f);
-	Panel_Page->SetRenderTransform(Transform);
+	const UWidget* Icon = SourceIconWidget.Get();
+	if (!Icon) return;
+	const FGeometry& Geometry = Icon->GetCachedGeometry();
+	if (Geometry.GetLocalSize().GetMin() <= 1.f) return;
+	const FGeometry& Root = GetCachedGeometry();
+	if (Root.GetLocalSize().GetMin() <= 1.f) return;
+	SourcePosition = Root.AbsoluteToLocal(Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5f));
+	SourceSize = Root.AbsoluteToLocal(Geometry.LocalToAbsolute(Geometry.GetLocalSize()))
+		- Root.AbsoluteToLocal(Geometry.LocalToAbsolute(FVector2D::ZeroVector));
 }

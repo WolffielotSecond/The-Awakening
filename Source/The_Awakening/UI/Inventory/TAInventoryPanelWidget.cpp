@@ -38,6 +38,7 @@
 #include "UI/Inventory/TAQuantityDialogWidget.h"
 #include "UI/Inventory/TAItemInspectWidget.h"
 #include "UI/Document/TADiaryWidget.h"
+#include "Document/TADocumentSettings.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 
 FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
@@ -915,15 +916,22 @@ void UTAInventoryPanelWidget::HandleItemAction(FName ActionId, TWeakObjectPtr<UT
 	if (ActionId == UTAItemActionMenuWidget::ActionViewContent)
 	{
 		// 书从剧情格里日记本的位置放大，关闭时缩回去
-		TOptional<FVector2D> Source;
+		TOptional<FVector2D> Source, SourceSize;
 		if (const UTAInventorySlotWidget* SlotWidget = SourceSlot.Get())
 		{
-			const FGeometry& Geometry = SlotWidget->GetCachedGeometry();
-			FVector2D PixelPosition, ViewportPosition;
-			USlateBlueprintLibrary::AbsoluteToViewport(this, Geometry.GetAbsolutePositionAtCoordinates(FVector2D(0.5f, 0.5f)), PixelPosition, ViewportPosition);
-			Source = ViewportPosition;
+			const FGeometry& Geometry = SlotWidget->GetIconGeometry();
+			if (Geometry.GetLocalSize().GetMin() > 1.f)
+			{
+				FVector2D PixelPosition, Center, Min, Max;
+				USlateBlueprintLibrary::AbsoluteToViewport(this, Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5f), PixelPosition, Center);
+				USlateBlueprintLibrary::AbsoluteToViewport(this, Geometry.LocalToAbsolute(FVector2D::ZeroVector), PixelPosition, Min);
+				USlateBlueprintLibrary::AbsoluteToViewport(this, Geometry.LocalToAbsolute(Geometry.GetLocalSize()), PixelPosition, Max);
+				Source = Center;
+				SourceSize = Max - Min;
+			}
 		}
-		UTADiaryWidget::Open(GetOwningPlayer(), nullptr, Source);
+		UTADiaryWidget::Open(GetOwningPlayer(), nullptr, Source, INDEX_NONE, false, false, SourceSize,
+			SourceSlot.IsValid() ? SourceSlot->GetIconWidget() : nullptr);
 	}
 	else if (ActionId == UTAItemActionMenuWidget::ActionInspect)
 	{
@@ -997,4 +1005,12 @@ void UTAInventoryPanelWidget::ShowMessage(const FString& TextId)
 		// 【临时】WBP 里还没有 Text_Message 时的退路
 		GEngine->AddOnScreenDebugMessage(-1, MessageDuration, FColor::Orange, Message.ToString());
 	}
+}
+
+UWidget* UTAInventoryPanelWidget::GetDiaryIconWidget() const
+{
+	const UTAItemDefinition* Diary = GetDefault<UTADocumentSettings>()->DiaryItem.LoadSynchronous();
+	for (const auto& StorySlot : StorySlots)
+		if (StorySlot && Diary && StorySlot->GetItemDef() == Diary) return StorySlot->GetIconWidget();
+	return nullptr;
 }

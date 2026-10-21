@@ -80,6 +80,8 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool UsesEnhancedUIActions() const override { return true; }
+	virtual void ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance) override;
 	virtual bool HandleMenuBackRequested() override;
 	virtual bool AllowsVirtualCursor() const override { return false; }
 	/** 与暂停菜单一致：手柄时隐藏光标，切回键鼠时恢复 */
@@ -201,6 +203,9 @@ protected:
 
 private:
 	friend class FTAPaperReaderTransitionTest;
+	friend class FTADiarySharedReaderTest;
+	FVector2D ActionRotation = FVector2D::ZeroVector;
+	float ActionScroll = 0.f;
 	friend class FTAReaderTranslationLayoutTest;
 	enum class EPhase : uint8 { Opening, Open, Closing };
 

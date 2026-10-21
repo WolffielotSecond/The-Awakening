@@ -847,14 +847,16 @@ void AThe_AwakeningCharacter::OpenPickupQuickView(const FTAPickupBannerEntry& En
 		const int32 Page = Documents ? Documents->GetPageOfDocument(Entry.Document->DocumentId) : INDEX_NONE;
 		if (Page != INDEX_NONE)
 		{
-			UTADiaryWidget::Open(PC, nullptr, {}, Page, true, true);
+			UTADiaryWidget::Open(PC, nullptr, {}, Page, true, true, {},
+				InventoryPanelInstance ? InventoryPanelInstance->GetDiaryIconWidget() : nullptr);
 		}
 		return;
 	}
 	if (Entry.Item && Entry.Item == GetDefault<UTADocumentSettings>()->DiaryItem.LoadSynchronous())
 	{
 		// 日记本：进入「查看内容」
-		UTADiaryWidget::Open(PC, nullptr, {});
+		UTADiaryWidget::Open(PC, nullptr, {}, INDEX_NONE, false, false, {},
+			InventoryPanelInstance ? InventoryPanelInstance->GetDiaryIconWidget() : nullptr);
 		return;
 	}
 	if (Entry.Item)

@@ -26,6 +26,8 @@ class UTAAdvancedDataWidget;
 class UTACommonDialogWidget;
 class UTAHealthHUDWidget;
 struct FInputActionValue;
+struct FInputActionInstance;
+enum class ETriggerEvent : uint8;
 struct FInputKeyEventArgs;
 class FTAGameCursor;
 /**
@@ -52,6 +54,7 @@ public:
 private:
 	AThe_AwakeningPlayerController* Owner = nullptr;
 	TSet<FKey> ConsumedPresses;
+	TSet<FKey> EnhancedForwardedPresses;
 	// Stick-direction / trigger keys pressed inside the dead zone, and those accepted after leaving it.
 	TSet<FKey> DeadZoneIgnoredPresses;
 	TSet<FKey> DeadZoneAcceptedPresses;
@@ -118,6 +121,9 @@ public:
 	bool ConsumeInventoryTogglePress(const UInputAction* Action);
 	void TickVirtualCursor(float DeltaTime);
 	bool RoutePlayerInputKey(FKey Key, bool bRepeat, int32 UserIndex);
+	void RegisterEnhancedUIAction(UInputAction* Action);
+	bool ShouldForwardEnhancedUIKey(FKey Key) const;
+	void DispatchEnhancedUIAction(const FInputActionInstance& Instance, UInputAction* Action, ETriggerEvent Event);
 	FVector ReadHeldKey(FKey Key) const { return HeldKeyValues.FindRef(Key); }
 	/** Missing observation is unknown, not a physical release. */
 	TOptional<FVector> FindHeldKeyObservation(FKey Key) const;
@@ -191,6 +197,7 @@ protected:
 	TMap<FKey, FVector> HeldKeyValues;
 	FTAGamepadDeadZone GamepadDeadZone;
 	// Virtual stick/trigger keys whose press reached Enhanced Input.
+	UPROPERTY(Transient) TSet<TObjectPtr<UInputAction>> EnhancedUIActions;
 	TSet<FKey> DeadZonePassedKeyDowns;
 	FTAInputRouter InputRouter;
 	// Output deduplication only. Never used to restore policy or grant permission.

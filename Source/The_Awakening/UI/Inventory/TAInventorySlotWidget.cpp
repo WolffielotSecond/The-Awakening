@@ -235,3 +235,13 @@ void UTAInventorySlotWidget::RefreshVisuals()
 		}
 	}
 }
+
+const FGeometry& UTAInventorySlotWidget::GetIconGeometry() const
+{
+	return Image_item ? Image_item->GetCachedGeometry() : GetCachedGeometry();
+}
+
+UWidget* UTAInventorySlotWidget::GetIconWidget() const
+{
+	return Image_item ? static_cast<UWidget*>(Image_item.Get()) : const_cast<UTAInventorySlotWidget*>(this);
+}
