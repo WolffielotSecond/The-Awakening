@@ -25,6 +25,7 @@
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAMovementComponent.h"
 #include "Inventory/TAInventoryComponent.h"
+#include "Inventory/TAItemDefinition.h"
 #include "Document/TACharacterActionComponent.h"
 #include "Document/TADocumentSettings.h"
 #include "Document/TADocumentSubsystem.h"
@@ -100,10 +101,16 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& Objec
 	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
 
-	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FocusPoint = CreateDefaultSubobject<USceneComponent>(TEXT("FocusPoint"));
+	FocusPoint->SetupAttachment(GetCapsuleComponent());
+	// Capsule origin is at the character's center (half-height 96 cm), not at the feet.
+	FocusPoint->SetRelativeLocation(FVector(0.f, 0.f, 45.f));
+
+	FollowCamera = CreateDefaultSubobject<UTAAutoFocusCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->ComponentTags.AddUnique(TEXT("FreezeExempt"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+	FollowCamera->FocusPoint = FocusPoint;
 
 	ParkourComponent = CreateDefaultSubobject<UTAParkourComponent>(TEXT("ParkourComponent"));
 	InventoryComponent = CreateDefaultSubobject<UTAInventoryComponent>(TEXT("InventoryComponent"));

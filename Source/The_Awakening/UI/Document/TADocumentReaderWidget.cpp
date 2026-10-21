@@ -1,7 +1,12 @@
 #include "UI/Document/TADocumentReaderWidget.h"
+#include "UI/Document/TAJustifiedRichTextBlock.h"
 #include "Document/TADocumentDefinition.h"
 #include "Document/TADocumentPresentation.h"
 #include "Components/BackgroundBlur.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Document/TADocumentSettings.h"
 #include "Document/TAPreviewStage.h"
 #include "Core/TALocalizeSubsystem.h"
@@ -100,6 +105,7 @@ void UTADocumentReaderWidget::NativeConstruct()
 		Style.SetColorAndOpacity(Text_Title->GetColorAndOpacity());
 		RichText_Body->SetDefaultTextStyle(Style);
 	}
+	SetupTranslationPresentation();
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
@@ -118,6 +124,7 @@ void UTADocumentReaderWidget::NativeConstruct()
 
 	bTranslationVisible = false;
 	TranslationAlpha = 0.f;
+	TickTranslation(0.f);
 	if (Panel_Translation)
 	{
 		Panel_Translation->SetRenderOpacity(0.f);
@@ -159,6 +166,114 @@ void UTADocumentReaderWidget::NativeDestruct()
 		PreviewStage = nullptr;
 	}
 	Super::NativeDestruct();
+}
+
+void UTADocumentReaderWidget::SetupTranslationPresentation()
+{
+	// Upgrade the existing Blueprint layout in place, preserving the model, text and controls.
+	if (auto* Border = Cast<UBorder>(Panel_Translation))
+	{
+		Border->SetBrushColor(FLinearColor::Transparent);
+		Border->SetHorizontalAlignment(HAlign_Fill);
+		Border->SetVerticalAlignment(VAlign_Center);
+		Border->SetPadding(FMargin(0.f, 32.f));
+	}
+	if (Text_Title)
+	{
+		Text_Title->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		Text_Title->SetJustification(ETextJustify::Center);
+	}
+	if (RichText_Body)
+	{
+		if (!RichText_Body->IsA<UTAJustifiedRichTextBlock>() && WidgetTree && ScrollBox_Body)
+		{
+			auto* JustifiedBody = WidgetTree->ConstructWidget<UTAJustifiedRichTextBlock>(UTAJustifiedRichTextBlock::StaticClass(), TEXT("RichText_JustifiedBody"));
+			// Retain the Blueprint's typography, markup, style table and decorator classes.
+			// Do not copy transient decorator instances or UWidget ownership/slot state.
+			for (TFieldIterator<FProperty> It(URichTextBlock::StaticClass()); It; ++It)
+			{
+				if ((It->GetOwnerClass() == URichTextBlock::StaticClass() || It->GetOwnerClass() == UTextLayoutWidget::StaticClass())
+					&& !It->HasAnyPropertyFlags(CPF_Transient))
+				{
+					It->CopyCompleteValue_InContainer(JustifiedBody, RichText_Body);
+				}
+			}
+			RichText_Body->TakeWidget(); // Resolve a style table even if the original body has not been built yet.
+			JustifiedBody->SetDefaultTextStyle(RichText_Body->GetCurrentDefaultTextStyle());
+			RichText_Body->RemoveFromParent();
+			ScrollBox_Body->AddChild(JustifiedBody);
+			RichText_Body = JustifiedBody;
+		}
+		RichText_Body->SetDefaultColorAndOpacity(FSlateColor(FLinearColor::White));
+		RichText_Body->SetJustification(ETextJustify::Left);
+		RichText_Body->SetAutoWrapText(true);
+		RichText_Body->SetWrapTextAt(0.f);
+	}
+
+	auto* Canvas = Panel_Translation ? Cast<UCanvasPanel>(Panel_Translation->GetParent()) : nullptr;
+	auto* TextSlot = Panel_Translation ? Cast<UCanvasPanelSlot>(Panel_Translation->Slot) : nullptr;
+	auto* ControlsSlot = HorizontalBox_Controls ? Cast<UCanvasPanelSlot>(HorizontalBox_Controls->Slot) : nullptr;
+	if (!WidgetTree || !Canvas || !TextSlot || !ControlsSlot || HorizontalBox_Controls->GetParent() != Canvas)
+	{
+		UE_LOG(LogTADocumentReader, Warning, TEXT("Translation presentation requires translation and controls in the same CanvasPanel."));
+		return;
+	}
+	TextSlot->SetAnchors(FAnchors(1.f / 3.f, 0.12f, 2.f / 3.f, 0.88f));
+	TextSlot->SetAlignment(FVector2D::ZeroVector);
+	TextSlot->SetOffsets(FMargin(0.f));
+	TextSlot->SetAutoSize(false);
+	TranslationBlur = Cast<UBackgroundBlur>(GetWidgetFromName(TEXT("Blur_TranslationBackground")));
+	TranslationDim = Cast<UImage>(GetWidgetFromName(TEXT("Image_TranslationDim")));
+	if (!TranslationBlur)
+	{
+		TranslationBlur = WidgetTree->ConstructWidget<UBackgroundBlur>(UBackgroundBlur::StaticClass(), TEXT("Blur_TranslationBackground"));
+		Canvas->AddChildToCanvas(TranslationBlur);
+	}
+	if (!TranslationDim)
+	{
+		TranslationDim = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_TranslationDim"));
+		Canvas->AddChildToCanvas(TranslationDim);
+	}
+	int32 BackdropZ = 0;
+	for (UWidget* Child : Canvas->GetAllChildren())
+	{
+		if (Child == Panel_Translation || Child == HorizontalBox_Controls || Child == TranslationBlur || Child == TranslationDim) continue;
+		if (auto* ChildSlot = Cast<UCanvasPanelSlot>(Child->Slot)) BackdropZ = FMath::Max(BackdropZ, ChildSlot->GetZOrder() + 1);
+	}
+	for (UWidget* Backdrop : {static_cast<UWidget*>(TranslationBlur.Get()), static_cast<UWidget*>(TranslationDim.Get())})
+	{
+		auto* BackdropSlot = CastChecked<UCanvasPanelSlot>(Backdrop->Slot);
+		BackdropSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		BackdropSlot->SetOffsets(FMargin(0.f));
+		BackdropSlot->SetZOrder(Backdrop == TranslationBlur ? BackdropZ : BackdropZ + 1);
+	}
+	TextSlot->SetZOrder(BackdropZ + 2);
+	ControlsSlot->SetZOrder(BackdropZ + 3);
+}
+
+void UTADocumentReaderWidget::TickTranslation(float DeltaTime)
+{
+	const float Step = TranslationFadeDuration > 0.f ? DeltaTime / TranslationFadeDuration : 1.f;
+	TranslationAlpha = FMath::Clamp(TranslationAlpha + (bTranslationVisible ? Step : -Step), 0.f, 1.f);
+	const bool bShow = bTranslationVisible || TranslationAlpha > 0.f;
+	if (Panel_Translation)
+	{
+		Panel_Translation->SetRenderOpacity(TranslationAlpha);
+		Panel_Translation->SetVisibility(bShow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	// These siblings draw after the model but before the translation and bottom controls.
+	if (TranslationBlur)
+	{
+		TranslationBlur->SetBlurStrength(TranslationBlurStrength);
+		TranslationBlur->SetRenderOpacity(TranslationAlpha);
+		TranslationBlur->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (TranslationDim)
+	{
+		TranslationDim->SetColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, TranslationDimOpacity));
+		TranslationDim->SetRenderOpacity(TranslationAlpha);
+		TranslationDim->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UTADocumentReaderWidget::SetupModel()
@@ -211,14 +326,14 @@ void UTADocumentReaderWidget::BuildControls()
 		return;
 	}
 	HorizontalBox_Controls->ClearChildren();
-	TranslatePrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, TranslateAction, ShowTranslationTextId);
+	TranslatePrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, TranslateAction, ShowTranslationTextId, FLinearColor::White);
 	if (TranslatePrompt)
 	{
 		TranslatePrompt->OnPromptClicked.AddDynamic(this, &UTADocumentReaderWidget::HandlePromptClicked);
 	}
 	// 旋转只是提示，不可点击（没有绑定点击事件）
-	RotatePrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, RotateAction, RotateTextId);
-	BackPrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, BackAction, BackTextId);
+	RotatePrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, RotateAction, RotateTextId, FLinearColor::White);
+	BackPrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, BackAction, BackTextId, FLinearColor::White);
 	if (BackPrompt)
 	{
 		BackPrompt->OnPromptClicked.AddDynamic(this, &UTADocumentReaderWidget::HandlePromptClicked);
@@ -395,10 +510,7 @@ void UTADocumentReaderWidget::ToggleTranslation()
 		return;
 	}
 	bTranslationVisible = !bTranslationVisible;
-	if (bTranslationVisible && Panel_Translation)
-	{
-		Panel_Translation->SetVisibility(ESlateVisibility::Visible);
-	}
+	TickTranslation(0.f);
 	if (TranslatePrompt)
 	{
 		TranslatePrompt->ConfigureLocalizedPrompt(TranslateAction, bTranslationVisible ? HideTranslationTextId : ShowTranslationTextId);
@@ -464,17 +576,7 @@ void UTADocumentReaderWidget::NativeTick(const FGeometry& MyGeometry, float InDe
 		}
 	}
 
-	// 转译面板淡入淡出，完全淡出后收起，不再挡住鼠标
-	if (Panel_Translation)
-	{
-		const float Step = TranslationFadeDuration > 0.f ? InDeltaTime / TranslationFadeDuration : 1.f;
-		TranslationAlpha = FMath::Clamp(TranslationAlpha + (bTranslationVisible ? Step : -Step), 0.f, 1.f);
-		Panel_Translation->SetRenderOpacity(TranslationAlpha);
-		if (!bTranslationVisible && TranslationAlpha <= 0.f && Panel_Translation->GetVisibility() != ESlateVisibility::Collapsed)
-		{
-			Panel_Translation->SetVisibility(ESlateVisibility::Collapsed);
-		}
-	}
+	TickTranslation(InDeltaTime);
 
 	// 摇杆旋转：转译面板显示时右摇杆用来滚动正文，不旋转
 	const bool bCanNavigate = Phase == EPhase::Open && AllowsPlayerInput(ETAInputCapability::Navigate);
@@ -623,6 +725,7 @@ FReply UTADocumentReaderWidget::NativeOnMouseButtonDown(const FGeometry& InGeome
 {
 	// 只在模型画面上按左键才开始拖动；转译面板盖住的部分由面板自己处理（先收到事件）
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && Image_Model && PreviewStage
+		&& !bTranslationVisible
 		&& Phase == EPhase::Open && AllowsPlayerInput(ETAInputCapability::Navigate)
 		&& Image_Model->GetCachedGeometry().IsUnderLocation(InMouseEvent.GetScreenSpacePosition()))
 	{
@@ -635,7 +738,7 @@ FReply UTADocumentReaderWidget::NativeOnMouseButtonDown(const FGeometry& InGeome
 
 FReply UTADocumentReaderWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (bDraggingModel && PreviewStage)
+	if (bDraggingModel && PreviewStage && !bTranslationVisible)
 	{
 		const FVector2D Position = InMouseEvent.GetScreenSpacePosition();
 		const FVector2D Delta = Position - LastDragPosition;

@@ -1,5 +1,6 @@
 #include "TADocumentUICommandlet.h"
 #include "UI/Document/TADocumentReaderWidget.h"
+#include "UI/Document/TAJustifiedRichTextBlock.h"
 #include "UI/Document/TARichTextImageDecorator.h"
 #include "WidgetBlueprint.h"
 #include "Blueprint/WidgetTree.h"
@@ -125,11 +126,12 @@ namespace
 		UImage* Model = Tree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_Model"));
 		ModelBox->SetContent(Model);
 
-		// 转译面板：叠加在模型右侧
+		// 无底框的居中转译；运行时在模型之上、文字和操作栏之下插入转译虚化暗幕。
 		UBorder* Panel = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel_Translation"));
-		Panel->SetBrushColor(FLinearColor(0.06f, 0.055f, 0.05f, 0.88f));
-		Panel->SetPadding(FMargin(40.f, 32.f));
-		AddToCanvas(Root, Panel, FAnchors(0.56f, 0.08f, 0.95f, 0.84f));
+		Panel->SetBrushColor(FLinearColor::Transparent);
+		Panel->SetVerticalAlignment(VAlign_Center);
+		Panel->SetPadding(FMargin(0.f, 32.f));
+		AddToCanvas(Root, Panel, FAnchors(1.f / 3.f, 0.12f, 2.f / 3.f, 0.88f));
 		UVerticalBox* Column = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VerticalBox_Translation"));
 		Panel->SetContent(Column);
 
@@ -137,6 +139,7 @@ namespace
 		FSlateFontInfo TitleFont = Title->GetFont();
 		TitleFont.Size = 30;
 		Title->SetFont(TitleFont);
+		Title->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 		Title->SetJustification(ETextJustify::Center);
 		Title->SetAutoWrapText(true);
 		UVerticalBoxSlot* TitleSlot = Column->AddChildToVerticalBox(Title);
@@ -145,8 +148,9 @@ namespace
 
 		UScrollBox* Scroll = Tree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("ScrollBox_Body"));
 		Column->AddChildToVerticalBox(Scroll)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		URichTextBlock* Body = Tree->ConstructWidget<URichTextBlock>(URichTextBlock::StaticClass(), TEXT("RichText_Body"));
+		URichTextBlock* Body = Tree->ConstructWidget<UTAJustifiedRichTextBlock>(UTAJustifiedRichTextBlock::StaticClass(), TEXT("RichText_Body"));
 		Body->SetAutoWrapText(true);
+		Body->SetJustification(ETextJustify::Left);
 		// DecoratorClasses 不是公开成员，按反射写入
 		if (FArrayProperty* Decorators = FindFProperty<FArrayProperty>(URichTextBlock::StaticClass(), TEXT("DecoratorClasses")))
 		{

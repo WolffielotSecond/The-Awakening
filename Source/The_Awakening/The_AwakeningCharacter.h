@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Camera/TAAutoFocusCameraComponent.h"
 #include "AbilitySystemInterface.h"
 #include "Interaction/TADialogueParticipant.h"
 #include "Logging/LogMacros.h"
@@ -49,7 +50,11 @@ class AThe_AwakeningCharacter : public ACharacter, public IAbilitySystemInterfac
 
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
-	UCameraComponent* FollowCamera;
+	UTAAutoFocusCameraComponent* FollowCamera;
+
+	/** Chest focus anchor. Adjust its relative location in the character Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USceneComponent> FocusPoint;
 
 	/** 2D角色渲染 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
@@ -329,7 +334,8 @@ public:
 
 public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
-	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	UFUNCTION(BlueprintPure, Category = "Camera|Auto Focus")
+	UTAAutoFocusCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	FORCEINLINE UTAHealthComponent* GetHealthComponent() const { return HealthComponent; }
 	FORCEINLINE UTACharacterActionComponent* GetCharacterActionComponent() const { return CharacterActionComponent; }
 	FORCEINLINE TSubclassOf<UTADialogueWidget> GetDialogueWidgetClass() const { return DialogueWidgetClass; }

@@ -75,8 +75,8 @@ void UTAItemInspectWidget::NativeConstruct()
 	if (HorizontalBox_Controls)
 	{
 		HorizontalBox_Controls->ClearChildren();
-		RotatePrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, RotateAction, RotateTextId);
-		BackPrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, BackAction, BackTextId);
+		RotatePrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, RotateAction, RotateTextId, FLinearColor::White);
+		BackPrompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, BackAction, BackTextId, FLinearColor::White);
 		if (BackPrompt)
 		{
 			BackPrompt->OnPromptClicked.AddDynamic(this, &UTAItemInspectWidget::HandlePromptClicked);

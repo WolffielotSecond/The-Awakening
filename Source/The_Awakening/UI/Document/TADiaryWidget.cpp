@@ -297,7 +297,7 @@ void UTADiaryWidget::BuildControls()
 	HorizontalBox_Controls->ClearChildren();
 	auto Add = [this](UInputAction* Action, const FString& TextId) -> UTAActionPromptWidget*
 	{
-		UTAActionPromptWidget* Prompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, Action, TextId);
+		UTAActionPromptWidget* Prompt = FTAPromptWidgetUtils::AddActionPrompt(this, HorizontalBox_Controls, ActionPromptWidgetClass, Action, TextId, FLinearColor::White);
 		if (Prompt)
 		{
 			Prompt->OnPromptClicked.AddDynamic(this, &UTADiaryWidget::HandlePromptClicked);

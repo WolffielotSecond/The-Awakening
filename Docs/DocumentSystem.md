@@ -60,13 +60,13 @@
 父类 `UTADocumentReaderWidget`，所有文本预览共用：场景拿起、日记本查看、拾取提示快速查看。
 
 - 默认显示 3D 模型。键鼠在模型上按住拖动旋转，手柄用 `IA_DocumentRotate`。旋转轴固定，上下可无限翻转。
-- 「显示转译」（`IA_DocumentTranslate`）在模型旁叠加标题 + 正文面板，再按一次收起。面板显示时 `IA_ReaderScroll`（↑↓、右摇杆）和滚轮平滑滚动正文；面板隐藏时右摇杆改为旋转模型。
+- 「显示转译」（`IA_DocumentTranslate`）在屏幕中央显示宽度为屏幕 1/3 的白色文本区，无灰黑底框。标题居中；正文两端对齐，通过扩展合法换行位置之间的间距排版，不拉伸文字；段落末行保持自然左对齐。含插图的行保留原布局。模型及背景随转译淡入而虚化、变暗，底部按键提示与转译文字保持清晰。再按一次淡出并恢复模型检视。显示时 `IA_ReaderScroll`（↑↓、右摇杆）和滚轮平滑滚动正文；隐藏时右摇杆改为旋转模型。
 - 返回走统一的 `IA_UIBack`；「显示转译」「返回」提示可以点击；「旋转」提示只在手柄下显示。
 - 手柄时隐藏光标，切回键鼠恢复。
 - 普通文档打开 / 关闭淡入淡出；配置纸张动画的文档按取出、转正、展开／折叠、归位流程过渡（真实时间）。过渡期间返回和按钮无效。
 - 从场景打开时自己申请时停（优先级 200）；从日记本打开时沿用日记本的时停。
 
-控件命名：`Image_Model`、`Panel_Translation`（内含 `Text_Title`、`ScrollBox_Body` + `RichText_Body`）、`HorizontalBox_Controls`。旋转灵敏度、滚动速度、动画时长、正文字号都在 WBP 的 Class Defaults 里调。
+控件命名：`Image_Model`、`Panel_Translation`（内含 `Text_Title`、`ScrollBox_Body` + `RichText_Body`）、`HorizontalBox_Controls`。转译与操作栏需为同一 CanvasPanel 的直接子项。C++ 在构建时兼容现有 WBP，将面板居中、移除底色，并创建 `Blur_TranslationBackground` / `Image_TranslationDim` 两个背景层；操作栏位于它们上方。旋转灵敏度、滚动速度、动画时长、正文字号都在 WBP 的 Class Defaults 里调；`Translation Blur Strength`（默认 12）、`Translation Dim Opacity`（默认 0.6）控制转译背景效果。
 
 ## 日记本 `WBP_Diary`
 

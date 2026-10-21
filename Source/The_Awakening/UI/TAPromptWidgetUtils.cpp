@@ -11,7 +11,8 @@
 #include "Components/HorizontalBoxSlot.h"
 
 UTAActionPromptWidget* FTAPromptWidgetUtils::AddActionPrompt(UUserWidget* Owner, UHorizontalBox* Container,
-	TSubclassOf<UTAActionPromptWidget> WidgetClass, UInputAction* Action, const FString& TextId)
+	TSubclassOf<UTAActionPromptWidget> WidgetClass, UInputAction* Action, const FString& TextId,
+	TOptional<FLinearColor> TextColor)
 {
 	if (!Owner || !Container || !Action) return nullptr;
 	UClass* PromptClass = WidgetClass.Get();
@@ -21,6 +22,13 @@ UTAActionPromptWidget* FTAPromptWidgetUtils::AddActionPrompt(UUserWidget* Owner,
 	if (!Prompt) return nullptr;
 	Prompt->ConfigureLocalizedPrompt(Action, TextId);
 	Container->AddChildToHorizontalBox(Prompt)->SetPadding(FMargin(6.0f, 0.0f));
+	if (TextColor.IsSet())
+	{
+		if (UTextBlock* Text = Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("Text_ActionName"))))
+		{
+			Text->SetColorAndOpacity(FSlateColor(TextColor.GetValue()));
+		}
+	}
 	return Prompt;
 }
 

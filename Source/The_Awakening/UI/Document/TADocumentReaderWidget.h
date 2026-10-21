@@ -10,6 +10,7 @@ class UTextBlock;
 class URichTextBlock;
 class UScrollBox;
 class UImage;
+class UBackgroundBlur;
 class UHorizontalBox;
 class UInputAction;
 class UTADocumentDefinition;
@@ -20,7 +21,7 @@ class ATAPreviewStage;
  * 文本预览界面（WBP_DocumentReader 的 C++ 父类）。所有文本预览共用：场景拿起、日记本、拾取提示快速查看。
  *
  * 默认显示文档的 3D 模型，可拖动（鼠标）或用 RotateAction（手柄）旋转；
- * “显示转译”在模型旁叠加标题 + 正文面板，再按一次收起。
+ * “显示转译”使背景变糊变暗，并在屏幕中央显示无底框的标题 + 正文，再按一次收起。
  *
  * 控件命名约定：
  *   Image_Model（UImage）：3D 模型画面，建议放在 ScaleBox 里保持比例；在它上面按住鼠标拖动旋转
@@ -29,7 +30,7 @@ class ATAPreviewStage;
  *     ScrollBox_Body（UScrollBox）+ RichText_Body（URichTextBlock，在 ScrollBox 内）：正文，<img id="key"/> 插图
  *   HorizontalBox_Controls（UHorizontalBox）：底部操作栏，C++ 按顺序生成“显示转译 / 旋转 / 返回”的按键提示，
  *     “显示转译”“返回”可以点击（与背包操作栏相同的 WBP_ActionPrompt）；“旋转”只在手柄下显示（键鼠用鼠标拖动）
- * 背景变暗变糊、各区域位置大小都在 WBP 里调。
+ * 转译背景位于模型之上、文字和底部操作栏之下；强度在 Translation 参数中调整。
  *
  * 行为：
  * - 打开 / 关闭时整体淡入淡出（真实时间），动画没播完之前返回键和按钮都无效。
@@ -145,6 +146,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Document Reader|Animation", meta = (ClampMin = "0", Units = "s"))
 	float TranslationFadeDuration = 0.15f;
 
+	/** 转译时覆盖模型和界面背景的虚化强度，不影响转译文字和底部按键提示。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Document Reader|Translation", meta = (ClampMin = "0", UIMax = "30"))
+	float TranslationBlurStrength = 12.f;
+
+	/** 转译暗幕的不透明度。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Document Reader|Translation", meta = (ClampMin = "0", ClampMax = "1"))
+	float TranslationDimOpacity = 0.6f;
+
 	/** 正文字号。正文没有配置文字样式表时，沿用标题的字体并使用这个字号。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Document Reader|Text", meta = (ClampMin = "8"))
 	int32 BodyFontSize = 22;
@@ -192,11 +201,14 @@ protected:
 
 private:
 	friend class FTAPaperReaderTransitionTest;
+	friend class FTAReaderTranslationLayoutTest;
 	enum class EPhase : uint8 { Opening, Open, Closing };
 
 	void LoadDefaultAssets();
 	void SetupModel();
 	void BuildControls();
+	void SetupTranslationPresentation();
+	void TickTranslation(float DeltaTime);
 	void RefreshText();
 	void AcquireInputAndFreeze();
 	void ReleaseInputAndFreeze();
@@ -246,6 +258,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTAActionPromptWidget> RotatePrompt;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBackgroundBlur> TranslationBlur;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> TranslationDim;
 
 	int32 InputPriority = StandaloneInputPriority;
 	bool bFreezeTime = false;
