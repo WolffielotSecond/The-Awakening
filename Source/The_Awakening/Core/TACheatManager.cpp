@@ -1,4 +1,5 @@
 #include "Core/TACheatManager.h"
+#include "Debug/TADebugQTETester.h"
 #include "Core/TAGameplayTags.h"
 #include "Health/TADamageLibrary.h"
 #include "Health/TAHealthComponent.h"
@@ -332,4 +333,13 @@ void UTACheatManager::TASaveInfo()
 		: FString(TEXT("Save: (none)"));
 	UE_LOG(LogTACheat, Log, TEXT("TASaveInfo: %s"), *Message);
 	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Yellow, Message);
+}
+
+void UTACheatManager::TASpawnQTE()
+{
+ const auto* PC = GetOuterAPlayerController(); const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+ if (!Pawn) return;
+ const FVector Position = Pawn->GetActorLocation() + Pawn->GetActorForwardVector() * 150.f;
+ FActorSpawnParameters Params; Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+ GetWorld()->SpawnActor<ATADebugQTETester>(Position, FRotator::ZeroRotator, Params);
 }

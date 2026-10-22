@@ -237,6 +237,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void NotifyUpdated();
+	void GrantAcquisitionTags(const UTAItemDefinition* Item);
 
 	/** 手动整理：合并同类堆叠并排序。拾取 / 移除 / 丢弃不再自动调用 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory")

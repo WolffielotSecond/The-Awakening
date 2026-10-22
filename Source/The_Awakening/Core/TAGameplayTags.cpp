@@ -26,4 +26,11 @@ namespace TAGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim_Pickup, "Anim.Pickup", "Pick up a document from the world.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim_PutDown, "Anim.PutDown", "Put a document back into the world.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Anim_InsertPage, "Anim.InsertPage", "Insert a collected document into the diary.");
+	UE_DEFINE_GAMEPLAY_TAG(Story_Prologue_Diary, "Story.Prologue.Diary");
+	UE_DEFINE_GAMEPLAY_TAG(Story_Prologue_ChaseComplete, "Story.Prologue.ChaseComplete");
+	UE_DEFINE_GAMEPLAY_TAG(Story_Chapter1_PipeAcquired, "Story.Chapter1.PipeAcquired");
+	UE_DEFINE_GAMEPLAY_TAG(Story_Chapter1_Attacked, "Story.Chapter1.Attacked");
+	UE_DEFINE_GAMEPLAY_TAG(Story_Chapter1_Crane, "Story.Chapter1.Crane");
+	UE_DEFINE_GAMEPLAY_TAG(Anim_GrabPipe, "Anim.GrabPipe");
+	UE_DEFINE_GAMEPLAY_TAG(Anim_DetachPipe, "Anim.DetachPipe");
 }

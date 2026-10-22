@@ -49,6 +49,8 @@
 #include "InputCoreTypes.h"
 #include "Health/TAHealthComponent.h"
 #include "Interaction/TAInteractionQuery.h"
+#include "Interaction/TASpecialActionComponent.h"
+#include "Interaction/TAInteractionBehaviorComponent.h"
 
 AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UTAMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -122,6 +124,7 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& Objec
 	PromptComponent = CreateDefaultSubobject<UTAPromptComponent>(TEXT("PromptComponent"));
 	FreezeComponent = CreateDefaultSubobject<UTAFreezeComponent>(TEXT("FreezeComponent"));
 	HealthComponent = CreateDefaultSubobject<UTAHealthComponent>(TEXT("HealthComponent"));
+	SpecialActionComponent = CreateDefaultSubobject<UTASpecialActionComponent>(TEXT("SpecialActionComponent"));
 	CharacterActionComponent = CreateDefaultSubobject<UTACharacterActionComponent>(TEXT("CharacterActionComponent"));
 }
 
@@ -624,6 +627,11 @@ void AThe_AwakeningCharacter::TryInteract()
 	{
 		if (ITAInteractable::Execute_CanInteract(Target, this))
 		{
+   if (auto* Behavior = Target->FindComponentByClass<UTAInteractionBehaviorComponent>())
+   {
+    if (Behavior->bExecuteConfiguredBehavior || !Behavior->MeetsConditions(this))
+    { Behavior->TryExecute(this); return; }
+   }
 			ITAInteractable::Execute_OnInteract(Target, this);
 		}
 	}
@@ -637,7 +645,7 @@ void AThe_AwakeningCharacter::UpdateInteractTarget()
 		return;
 	}
 	// 与世界交互提示共用：提示显示的就是这里选中的目标
-	CurrentInteractTarget = FTAInteractionQuery::FindBestInteractable(this, InteractionDistance);
+	CurrentInteractTarget = PromptComponent ? PromptComponent->ResolveInteractionTarget(true) : FTAInteractionQuery::FindBestInteractable(this, InteractionDistance);
 }
 
 void AThe_AwakeningCharacter::SelectPreviousPickup()

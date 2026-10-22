@@ -1,6 +1,9 @@
 #include "UI/TAPromptComponent.h"
 #include "UI/TAInteractionPromptAnchor.h"
 #include "Interaction/TAInteractionQuery.h"
+#include "Interaction/TASpecialActionComponent.h"
+#include "Interaction/TAInteractionBehaviorComponent.h"
+#include "The_AwakeningCharacter.h"
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAParkourMarker.h"
 #include "Inventory/TANearbyPickupComponent.h"
@@ -50,10 +53,30 @@ void UTAPromptComponent::UpdatePrompts()
 	ApplyWinners(Best);
 }
 
+AActor* UTAPromptComponent::ResolveInteractionTarget(bool bRefresh)
+{
+ const auto* Pawn = OwnerPawn.IsValid() ? OwnerPawn.Get() : Cast<APawn>(GetOwner());
+ if (!Pawn) return nullptr;
+ if (!bRefresh && QueryFrame == GFrameCounter && QueryOrigin == Pawn->GetActorLocation() && QueryRadius == PromptRadius && !CachedInteractTarget.IsStale()) return CachedInteractTarget.Get();
+ AActor* Result = FTAInteractionQuery::FindBestInteractable(Pawn, PromptRadius);
+ if (bRefresh) { CachedInteractTarget = Result; QueryFrame = GFrameCounter; QueryOrigin = Pawn->GetActorLocation(); QueryRadius = PromptRadius; }
+ return Result;
+}
 void UTAPromptComponent::CollectInteractCandidate(TMap<ETAPromptType, FTAPromptCandidate>& Best) const
 {
 	const APawn* Pawn = OwnerPawn.Get();
 	const auto* PC = Pawn ? Cast<AThe_AwakeningPlayerController>(Pawn->GetController()) : nullptr;
+ if (const auto* Action = Pawn ? Pawn->FindComponentByClass<UTASpecialActionComponent>() : nullptr;
+     Action && Action->IsSpecialActionActive() && (Action->HasInputPermission() || Action->IsSuspended()))
+ {
+  FTAPromptCandidate Candidate;
+  Candidate.Source = Action->GetTarget();
+  Candidate.Anchor = UTAInteractionPromptAnchor::FindAnchor(Action->GetTarget(), ETAPromptType::Interact);
+  Candidate.Action = Action->GetPromptAction();
+  Candidate.TextOverride = Action->GetPromptTextId();
+  if (Candidate.Anchor.IsValid()) Best.Add(Candidate.Type, Candidate);
+  return;
+ }
 	if (!PC || !PC->AllowsInput(ETAInputCapability::Interact))
 	{
 		return;
@@ -63,7 +86,7 @@ void UTAPromptComponent::CollectInteractCandidate(TMap<ETAPromptType, FTAPromptC
 	{
 		return;
 	}
-	AActor* Target = FTAInteractionQuery::FindBestInteractable(Pawn, PromptRadius);
+	AActor* Target = const_cast<UTAPromptComponent*>(this)->ResolveInteractionTarget(false);
 	UTAInteractionPromptAnchor* Anchor = UTAInteractionPromptAnchor::FindAnchor(Target, ETAPromptType::Interact);
 	if (!Anchor)
 	{
@@ -74,6 +97,7 @@ void UTAPromptComponent::CollectInteractCandidate(TMap<ETAPromptType, FTAPromptC
 	Candidate.Source = Target;
 	Candidate.Action = InteractAction;
 	Candidate.Anchor = Anchor;
+ if (const auto* Behavior = Target->FindComponentByClass<UTAInteractionBehaviorComponent>(); Behavior && !Behavior->MeetsConditions(const_cast<APawn*>(Pawn))) Candidate.TextOverride = Behavior->DeniedPromptTextId;
 	Best.Add(Candidate.Type, Candidate);
 }
 
@@ -129,7 +153,7 @@ void UTAPromptComponent::ApplyWinners(const TMap<ETAPromptType, FTAPromptCandida
 	{
 		const FTAPromptCandidate* Old = ActivePrompts.Find(Pair.Key);
 		// 只在新出现时刷新内容；同一目标持续显示不重复查图标和本地化
-		if (!Old || Old->Anchor != Pair.Value.Anchor)
+		if (!Old || Old->Anchor != Pair.Value.Anchor || Old->Action != Pair.Value.Action || Old->TextOverride != Pair.Value.TextOverride)
 		{
 			ShowCandidate(Pair.Value);
 		}
@@ -145,7 +169,10 @@ void UTAPromptComponent::ShowCandidate(const FTAPromptCandidate& Candidate)
 	{
 		return;
 	}
-	const FString TextId = Anchor->ResolveTextId();
+ if (auto* Action = OwnerPawn.IsValid() ? OwnerPawn->FindComponentByClass<UTASpecialActionComponent>() : nullptr;
+     Action && Action->UsesQTEPresentation() && Candidate.Source.Get() == Action->GetTarget())
+ { Anchor->ShowQTE(Action); return; }
+	const FString TextId = Candidate.TextOverride.IsEmpty() ? Anchor->ResolveTextId() : Candidate.TextOverride;
 	FText Text = FText::FromString(TextId);
 	UTexture2D* Icon = nullptr;
 	if (const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)

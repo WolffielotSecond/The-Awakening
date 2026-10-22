@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### 新增
+
+- 通用交互配置组件：复用现有接口、目标检测与 Prompt，支持剧情 Tag / 物品 / 文本等条件、拒绝反馈、世界事件 ID 与可选特殊动作；扩展原剧情子系统的持久 Tags、一次性事件、互斥分支与存档恢复。
+- QTESequence 场景组件与可放置 TA_Debug_QTE_Tester；Blueprint 可用 Generate QTE / Make QTE Step 传入任意阶段数组，每段独立选择交互或方向 IA、单次或连按、增长 / 衰减 / 点击冷却，并绑定有效输入、阶段完成和整次结束事件。
+- QTE 复用 Enhanced Input、原提示锚点与 Keys 图标，提供绿色圆环、呼吸缩放和 0.2 秒翻转；暂停挂起恢复、死亡取消、活动期间禁存档，成功结束后缓冲及按住源消费避免按键穿透移动。
 - 折叠纸张展示：`ABP_Paper` 与 `DA_PaperPresentation` 接入 `DA_Document_67`（6767676767），使用 `AS_Folded` / `AS_Fold` / `AS_Opened` 控制折叠、展开与打开姿态；动画首尾比对确认折叠过渡长 1 秒，展开反向采样。
 - 文档共用展示配置与 `TAPaperSetup` 资源生成／验证工具；基础朝向 XYZ 90 / 0 / 90 统一配置，各界面展示变换仍可单独微调。
 
@@ -11,6 +15,8 @@
 - 3D 预览台主光强度改为 2、颜色 FFFEEEFF，补光强度改为 0.5。
 
 ### 验证与文档
+
+- 新增 Docs/InteractableObjects.md、Docs/WorldInteractionSystem.md 与 Docs/QTEDebugTester.md，更新交互提示和存档说明。最新交互 / 输入 / Prompt 专项 31/31 通过，包含实际 Blueprint 节点连线编译；全量历史中的 3 项已知失败及待 PIE 范围在架构文档记录。
 - 新增纸张实际骨骼姿态及阅读过渡自动化测试，覆盖画面旋转方向、展开前面向相机、取出归位和强制关闭恢复；文档系统共 11 项测试通过。
 - 更新 `Docs/DocumentSystem.md` 与 `Docs/DocumentSystemPIEChecklist.md` 的展示配置、操作流程和验收范围。本次未调整地面物品碰撞。
 

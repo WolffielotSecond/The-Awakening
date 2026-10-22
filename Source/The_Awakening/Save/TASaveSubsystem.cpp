@@ -9,6 +9,7 @@
 #include "Health/TARespawnSubsystem.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Story/TADialogueSubsystem.h"
+#include "Interaction/TASpecialActionComponent.h"
 #include "The_AwakeningCharacter.h"
 #include "EngineUtils.h"
 #include "Engine/GameInstance.h"
@@ -57,6 +58,7 @@ UTASaveGame* UTASaveSubsystem::BuildSaveGame(UWorld* World) const
 	{
 		return nullptr;
 	}
+	if (const auto* Action = Character->FindComponentByClass<UTASpecialActionComponent>(); Action && Action->IsSpecialActionActive()) return nullptr;
 	UTASaveGame* Save = Cast<UTASaveGame>(UGameplayStatics::CreateSaveGameObject(UTASaveGame::StaticClass()));
 	Save->SaveFormatVersion = UTAVersionLibrary::GetSaveFormatVersion();
 	Save->GameVersion = UTAVersionLibrary::GetFullVersion();
@@ -97,7 +99,7 @@ bool UTASaveSubsystem::SaveGame()
 	UTASaveGame* Save = BuildSaveGame(GetWorld());
 	if (!Save)
 	{
-		UE_LOG(LogTASave, Warning, TEXT("SaveGame: no player character; nothing saved."));
+		UE_LOG(LogTASave, Warning, TEXT("SaveGame: no eligible player or a special action/QTE is active; nothing saved."));
 		return false;
 	}
 	const bool bSaved = UGameplayStatics::SaveGameToSlot(Save, SlotName, UserIndex);
@@ -204,9 +206,11 @@ bool UTASaveSubsystem::ApplySaveGame(UWorld* World, UTASaveGame* Save)
 	}
 	TGuardValue<bool> Guard(bRestoring, true);
 	Character->CloseInventoryIfOpen();
+	if (auto* Action = Character->FindComponentByClass<UTASpecialActionComponent>()) Action->Cancel();
 
 	if (UTADialogueSubsystem* Dialogue = GetGameInstance()->GetSubsystem<UTADialogueSubsystem>())
 	{
+		Dialogue->StopDialogue();
 		Dialogue->RestoreSaveData(Save->Story);
 	}
 	UTADocumentSubsystem* Documents = GetGameInstance()->GetSubsystem<UTADocumentSubsystem>();

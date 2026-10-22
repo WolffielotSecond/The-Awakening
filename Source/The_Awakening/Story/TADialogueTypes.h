@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "TADialogueTypes.generated.h"
 
 class UTexture2D;
@@ -310,6 +311,13 @@ struct FTAStorySaveData
 	/** storyId → 最后到达的节点 ID */
 	UPROPERTY(BlueprintReadWrite, Category = "Save")
 	TMap<FString, FString> StoryProgress;
+
+	UPROPERTY(BlueprintReadWrite, Category="Save")
+	FGameplayTagContainer WorldStateTags;
+	UPROPERTY(BlueprintReadWrite, Category="Save")
+	TSet<FName> CompletedWorldEvents;
+	UPROPERTY(BlueprintReadWrite, Category="Save")
+	TMap<FName, FName> WorldBranches;
 
 	/** 已完成的剧情 */
 	UPROPERTY(BlueprintReadWrite, Category = "Save")

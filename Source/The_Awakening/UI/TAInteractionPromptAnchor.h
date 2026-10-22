@@ -6,6 +6,7 @@
 #include "TAInteractionPromptAnchor.generated.h"
 
 class UTexture2D;
+class UTASpecialActionComponent;
 
 /**
  * 世界交互提示锚点：挂在任何可交互元素上（跑酷标记、复活点、剧情触发器、纯蓝图的 ITAInteractable Actor），
@@ -35,6 +36,7 @@ public:
 
 	/** 显示并填入图标与文字。控件类为空时先套用默认提示控件。 */
 	void ShowPrompt(UTexture2D* KeyIcon, const FText& PromptText);
+	void ShowQTE(UTASpecialActionComponent* Action);
 	void HidePrompt();
 	bool IsPromptShown() const { return bPromptShown; }
 
@@ -44,4 +46,7 @@ public:
 private:
 	bool EnsurePromptWidget();
 	bool bPromptShown = false;
+	bool bQTEWidget = false;
+	UPROPERTY(Transient) TSubclassOf<UUserWidget> PreviousWidgetClass;
+	void RestoreNormalWidget();
 };

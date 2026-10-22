@@ -6,7 +6,7 @@ class UWidget;
 enum class ETAInputCapability : uint8
 {
 	Move, Look, Interact, Parkour, Scan, InventoryToggle, Cursor,
-	Confirm, Undo, Pan, Navigate, Close, Advance, ToggleHistory, ToggleDrag, OpenDebugUI, ToggleFavorite, CaptureBinding
+	Confirm, Undo, Pan, Navigate, Close, Advance, ToggleHistory, ToggleDrag, OpenDebugUI, ToggleFavorite, CaptureBinding, SpecialAction, Pause
 };
 enum class ETAInputModeRequirement : uint8 { GameOnly, GameAndUI, UIOnly };
 enum class ETAInputFocusRequirement : uint8 { Viewport, Target };
@@ -27,6 +27,8 @@ struct FTAInputRequest
 	int32 Priority = 0;
 	TSet<ETAInputCapability> Allowed;
 	FTAInputPresentation Presentation;
+	/** Pause overlays suspend the current special action instead of cancelling it. */
+	bool bSuspendSpecialAction = false;
 };
 
 /** Policy only. Game-thread use; no Slate calls, action execution or UI side effects. */

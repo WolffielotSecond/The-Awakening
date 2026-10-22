@@ -802,3 +802,10 @@ git diff --check passed. The three untracked files are the intended stage-5 view
 client header/source and scoped-navigation regression; include them in the checkpoint.
 Stage 5.4 changed documentation only. Stages 5.1 and 5.3 already have user PIE acceptance;
 no new runtime behavior needs additional PIE validation for this documentation audit.
+
+
+## 特殊动作 / QTE 扩展（2026-10-23）
+
+后续改键位 / 输入统一前，请先阅读 [输入系统调查与交接记录](InputSystemObservations.md)，其中区分了真正的 Enhanced Input 事件、Slate 查映射直接分发和持续输入缓存，并列出已确认边界及待验证事项。
+
+特殊动作由玩家 TASpecialActionComponent 申请优先级 75 的精确请求，允许 SpecialAction / Look / Pause，不开放普通移动、交互、跑酷、扫描和背包切换。暂停与设置覆盖通过 bSuspendSpecialAction 挂起，恢复原句柄与阶段；其他不兼容抢占仍取消。成功后可保留同一请求做默认 0.2 秒结束缓冲，既有持续输入观察按实际 IA 映射消费仍按住的 QTE 输入源至真实释放，避免 D 键完成后转为移动；没有增加 Slate QTE 处理或按键轮询。配置组件只负责发起与事件转发，见 [QTEDebugTester.md](QTEDebugTester.md) 和 [WorldInteractionSystem.md](WorldInteractionSystem.md)。

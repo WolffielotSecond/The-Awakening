@@ -23,6 +23,6 @@ public class The_AwakeningEditor : ModuleRules
 			"The_Awakening"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "MeshUtilities", "EnhancedInput", "ToolMenus", "ApplicationCore", "Json", "DesktopPlatform", "GameplayAbilities", "UMGEditor", "KismetCompiler", "RenderCore", "SlateRHIRenderer", "AnimGraph", "AnimGraphRuntime", "BlueprintGraph" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "MeshUtilities", "EnhancedInput", "GameplayTags", "ToolMenus", "ApplicationCore", "Json", "DesktopPlatform", "GameplayAbilities", "UMGEditor", "KismetCompiler", "RenderCore", "SlateRHIRenderer", "AnimGraph", "AnimGraphRuntime", "BlueprintGraph" });
 	}
 }

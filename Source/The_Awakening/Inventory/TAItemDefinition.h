@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "TAItemTypes.h"
+#include "GameplayTagContainer.h"
 #include "TAItemDefinition.generated.h"
 
 class UStaticMesh;
@@ -14,6 +15,9 @@ class THE_AWAKENING_API UTAItemDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	/** Historical acquisition state, granted only after a successful inventory addition. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Item|Story")
+	FGameplayTagContainer GrantedStoryTags;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	FText DisplayName;
 

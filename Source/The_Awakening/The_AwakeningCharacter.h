@@ -21,6 +21,7 @@ class UTAPromptComponent;
 class UTAFreezeComponent;
 class UTAHealthComponent;
 class UTACharacterActionComponent;
+class UTASpecialActionComponent;
 class UTAInventoryPanelWidget;
 class UTAPickupBannerWidget;
 class UTAItemDefinition;
@@ -138,6 +139,8 @@ protected:
 	/** 拿起 / 放下文本、塞入日记本等动作，PaperZD 动画蓝图订阅它的事件 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTACharacterActionComponent> CharacterActionComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UTASpecialActionComponent> SpecialActionComponent;
 
 	/** 相机跟随距离 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
@@ -266,6 +269,7 @@ public:
 	void NotifyDocumentCollected(UTADocumentDefinition* Document);
 	/** 复活传送后调用：镜头偏移归零，SpringArm 跳过一次 Camera Lag。 */
 	void ResetCameraForRespawn();
+	AActor* GetCurrentInteractTarget() const { return CurrentInteractTarget.Get(); }
 	UTAParkourComponent* GetParkourComponent() const { return ParkourComponent; }
 	float GetMenuCursorSpeed() const;
 

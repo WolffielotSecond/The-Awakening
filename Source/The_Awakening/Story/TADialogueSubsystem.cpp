@@ -40,6 +40,7 @@ void UTADialogueSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UTADialogueSubsystem::Deinitialize()
 {
+	CancelAllWorldEvents();
 	if (ActiveController)
 	{
 		StopDialogue();
@@ -776,6 +777,9 @@ void UTADialogueSubsystem::StopDialogue()
 FTAStorySaveData UTADialogueSubsystem::GetSaveData() const
 {
 	FTAStorySaveData Save;
+	Save.WorldStateTags = WorldStateTags;
+	Save.CompletedWorldEvents = CompletedWorldEvents;
+	Save.WorldBranches = WorldBranches;
 	Save.Flags = Flags;
 	Save.StoryProgress = StoryProgress;
 	Save.CompletedStories = CompletedStories;
@@ -784,9 +788,14 @@ FTAStorySaveData UTADialogueSubsystem::GetSaveData() const
 
 void UTADialogueSubsystem::RestoreSaveData(const FTAStorySaveData& SaveData)
 {
+	CancelAllWorldEvents();
+	WorldStateTags = SaveData.WorldStateTags;
+	CompletedWorldEvents = SaveData.CompletedWorldEvents;
+	WorldBranches = SaveData.WorldBranches;
 	Flags = SaveData.Flags;
 	StoryProgress = SaveData.StoryProgress;
 	CompletedStories = SaveData.CompletedStories;
+	OnWorldStateChanged.Broadcast();
 }
 
 void UTADialogueSubsystem::UpdateStoryProgress(const FString& StoryId, const FString& NodeId)

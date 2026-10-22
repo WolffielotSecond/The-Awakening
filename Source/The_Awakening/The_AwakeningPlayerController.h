@@ -92,6 +92,8 @@ public:
 	/** Observe held inputs before UI consumes them, separately from gameplay permission. */
 	void RecordHeldInput(FKey Key, float Value, int32 UserIndex);
 	FInputActionValue ReadHeldAction(const UInputAction* Action);
+ /** Consume observed IA sources until their real release. */
+ void SuppressHeldActionUntilRelease(const UInputAction* Action);
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	UFUNCTION(BlueprintCallable, Category = "UI|Pause Menu")
 	void OpenPauseMenu();
@@ -207,6 +209,7 @@ protected:
 	TWeakObjectPtr<UWidget> PresentedCursorOwner;
 	TWeakPtr<class SViewport> PresentedViewport;
 	TSet<FKey> ConsumedInventoryKeys;
+ TSet<FKey> ConsumedActionKeys;
 	bool bApplicationInputActive = true;
 	UPROPERTY(Transient)
 	TMap<TObjectPtr<UInputModifier>, TObjectPtr<UInputModifier>> HeldInputModifiers;

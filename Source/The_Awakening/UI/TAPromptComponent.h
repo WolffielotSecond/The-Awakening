@@ -37,6 +37,7 @@ public:
 	/** 当前某类型显示中的目标（测试与调试用）。 */
 	AActor* GetShownSource(ETAPromptType Type) const;
 
+	AActor* ResolveInteractionTarget(bool bRefresh);
 	/** 与交互检测共用距离（角色 BeginPlay 时设为 InteractionDistance）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prompt")
 	float PromptRadius = 250.f;
@@ -62,4 +63,8 @@ protected:
 	TMap<ETAPromptType, FTAPromptCandidate> ActivePrompts;
 
 	TWeakObjectPtr<APawn> OwnerPawn;
+	TWeakObjectPtr<AActor> CachedInteractTarget;
+	uint64 QueryFrame = MAX_uint64;
+	FVector QueryOrigin = FVector::ZeroVector;
+	float QueryRadius = 0.f;
 };

@@ -6,6 +6,7 @@
 #include "TAInteractableActor.generated.h"
 
 class UTAInteractionPromptAnchor;
+class UTAInteractionBehaviorComponent;
 
 UCLASS()
 class THE_AWAKENING_API ATAInteractableActor : public AActor, public ITAInteractable
@@ -31,6 +32,9 @@ public:
 	FString GetPromptTextId() const;
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UTAInteractionBehaviorComponent> InteractionBehavior;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
 

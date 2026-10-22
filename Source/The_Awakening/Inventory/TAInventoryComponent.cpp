@@ -1,5 +1,7 @@
 #include "Inventory/TAInventoryComponent.h"
 #include "Inventory/TAItemDefinition.h"
+#include "Story/TADialogueSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Inventory/TAClothingDefinition.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Health/TARollbackSubsystem.h"
@@ -27,6 +29,13 @@ void UTAInventoryComponent::BeginPlay()
 	NotifyUpdated();
 }
 
+void UTAInventoryComponent::GrantAcquisitionTags(const UTAItemDefinition* Item)
+{
+ if (!Item || Item->GrantedStoryTags.IsEmpty()) return;
+ if (const auto* GI = GetOwner()->GetGameInstance())
+  if (auto* Story = GI->GetSubsystem<UTADialogueSubsystem>())
+   for (FGameplayTag Tag : Item->GrantedStoryTags) Story->SetWorldStateTag(Tag, true);
+}
 void UTAInventoryComponent::NotifyUpdated()
 {
 	OnInventoryUpdated.Broadcast();
@@ -247,6 +256,7 @@ int32 UTAInventoryComponent::TryAddItem(UTAItemDefinition* ItemDef, int32 Count)
 	if (Added > 0)
 	{
 		RebuildFlattenedSlots();
+		GrantAcquisitionTags(ItemDef);
 		NotifyUpdated();
 	}
 	return Added;
@@ -294,6 +304,7 @@ int32 UTAInventoryComponent::TryAddStoryItem(UTAItemDefinition* ItemDef)
 	Slot = FTAInventorySlot();
 	Slot.ItemDef = ItemDef;
 	Slot.Count = 1;
+	GrantAcquisitionTags(ItemDef);
 	NotifyUpdated();
 	return 1;
 }
@@ -947,5 +958,8 @@ void UTAInventoryComponent::RestoreSaveData(const FTAInventorySaveData& Data)
 		StorySlots[Index] = LoadSlot(Data.StorySlots[Index]);
 	}
 	RebuildFlattenedSlots();
+	// Older saves lack acquisition tags; owning the item proves it was acquired.
+	for (const auto& Slot : FlattenedSlots) if (!Slot.IsEmpty()) GrantAcquisitionTags(Slot.ItemDef);
+	for (const auto& Slot : StorySlots) if (!Slot.IsEmpty()) GrantAcquisitionTags(Slot.ItemDef);
 	NotifyUpdated();
 }

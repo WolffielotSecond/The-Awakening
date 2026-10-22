@@ -2,6 +2,7 @@
 #include "UI/TAPromptSettings.h"
 #include "UI/TAPromptWidgetUtils.h"
 #include "UI/TAWorldPromptWidget.h"
+#include "UI/TAQTEWidget.h"
 #include "Interaction/TAInteractableActor.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/Actor.h"
@@ -52,6 +53,7 @@ bool UTAInteractionPromptAnchor::EnsurePromptWidget()
 
 void UTAInteractionPromptAnchor::ShowPrompt(UTexture2D* KeyIcon, const FText& PromptText)
 {
+	RestoreNormalWidget();
 	if (!EnsurePromptWidget())
 	{
 		return;
@@ -70,10 +72,26 @@ void UTAInteractionPromptAnchor::ShowPrompt(UTexture2D* KeyIcon, const FText& Pr
 	bPromptShown = true;
 }
 
+void UTAInteractionPromptAnchor::ShowQTE(UTASpecialActionComponent* Action)
+{
+ if (!bQTEWidget)
+ {
+  PreviousWidgetClass = GetWidgetClass(); bQTEWidget = true;
+  SetWidgetClass(UTAQTEWidget::StaticClass()); InitWidget();
+ }
+ if (auto* QTE = Cast<UTAQTEWidget>(GetUserWidgetObject())) QTE->Observe(Action);
+ SetVisibility(true); bPromptShown = true;
+}
+void UTAInteractionPromptAnchor::RestoreNormalWidget()
+{
+ if (!bQTEWidget) return;
+ bQTEWidget = false; SetWidgetClass(PreviousWidgetClass); PreviousWidgetClass = nullptr;
+}
 void UTAInteractionPromptAnchor::HidePrompt()
 {
 	SetVisibility(false);
 	bPromptShown = false;
+	RestoreNormalWidget();
 }
 
 UTAInteractionPromptAnchor* UTAInteractionPromptAnchor::FindAnchor(const AActor* Actor, ETAPromptType Type)

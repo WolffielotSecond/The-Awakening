@@ -8,6 +8,7 @@
 #include "Story/TADialogueConditions.h"
 #include "Health/TADamageTypes.h"
 #include "Health/TARollbackSubsystem.h"
+#include "Story/TAWorldEventDefinition.h"
 #include "TADialogueSubsystem.generated.h"
 
 class UTADialogueController;
@@ -18,6 +19,8 @@ class UTADialogueChoiceButton;
 class UTAStoryAsset;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDialogueEnded);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FTAWorldEventChanged, FName, EventId, ETAWorldEventResult, Result, AActor*, Interactor);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTAWorldStateChanged);
 
 /**
  * 职责：剧情 JSON 加载缓存、旗标存储、条件注册表、事件广播、
@@ -32,6 +35,21 @@ class THE_AWAKENING_API UTADialogueSubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+
+ UPROPERTY(BlueprintAssignable, Category="Story|World") FTAWorldEventChanged OnWorldEventChanged;
+ UPROPERTY(BlueprintAssignable, Category="Story|World") FTAWorldStateChanged OnWorldStateChanged;
+ UFUNCTION(BlueprintPure, Category="Story|World") FGameplayTagContainer GetWorldStateTags() const { return WorldStateTags; }
+ UFUNCTION(BlueprintCallable, Category="Story|World") void SetWorldStateTag(FGameplayTag Tag, bool bEnabled);
+ UFUNCTION(BlueprintPure, Category="Story|World") bool CanStartWorldEvent(UTAWorldEventDefinition* Definition, AActor* Interactor) const;
+ UFUNCTION(BlueprintCallable, Category="Story|World") bool StartWorldEvent(UTAWorldEventDefinition* Definition, AActor* Interactor, UObject* Executor);
+ /** Only the executor that started this event may finish it. */
+ UFUNCTION(BlueprintCallable, Category="Story|World") bool FinishWorldEvent(FName EventId, ETAWorldEventResult Result, UObject* Executor);
+ UFUNCTION(BlueprintPure, Category="Story|World") bool IsWorldEventActive(FName EventId) const { return ActiveWorldEvents.Contains(EventId); }
+ void CancelWorldEventsFor(UObject* Executor);
+ void CancelAllWorldEvents();
+ void RecordWorldStateUndo();
+ UFUNCTION(BlueprintPure, Category="Story|World") bool HasCompletedWorldEvent(FName EventId) const { return CompletedWorldEvents.Contains(EventId); }
+ UFUNCTION(BlueprintPure, Category="Story|World") FName GetWorldBranch(FName Group) const { return WorldBranches.FindRef(Group); }
 
 	// ==================== 旗标 ====================
 
@@ -131,6 +149,17 @@ protected:
 
 protected:
 	UPROPERTY()
+ FGameplayTagContainer WorldStateTags;
+ TSet<FName> CompletedWorldEvents;
+ TMap<FName, FName> WorldBranches;
+ struct FActiveWorldEvent
+ {
+  TWeakObjectPtr<UTAWorldEventDefinition> Definition;
+  TWeakObjectPtr<AActor> Interactor;
+  TWeakObjectPtr<UObject> Executor;
+ };
+ TMap<FName, FActiveWorldEvent> ActiveWorldEvents;
+ bool bCancellingWorldEvents = false;
 	TMap<FString, int32> Flags;
 
 	UPROPERTY()

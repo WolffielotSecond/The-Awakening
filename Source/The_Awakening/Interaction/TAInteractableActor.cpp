@@ -1,10 +1,12 @@
 #include "Interaction/TAInteractableActor.h"
+#include "Interaction/TAInteractionBehaviorComponent.h"
 #include "UI/TAInteractionPromptAnchor.h"
 #include "Components/StaticMeshComponent.h"
 
 ATAInteractableActor::ATAInteractableActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	InteractionBehavior = CreateDefaultSubobject<UTAInteractionBehaviorComponent>(TEXT("InteractionBehavior"));
 
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	RootComponent = MeshComponent;
@@ -24,6 +26,11 @@ void ATAInteractableActor::BeginPlay()
 
 void ATAInteractableActor::OnInteract_Implementation(AActor* Interactor)
 {
+	if (InteractionBehavior && (InteractionBehavior->bExecuteConfiguredBehavior || !InteractionBehavior->MeetsConditions(Interactor)))
+	{
+		InteractionBehavior->TryExecute(Interactor);
+		return;
+	}
 	if (Interactor)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s 与 %s 发生了交互"), *Interactor->GetName(), *GetName());
@@ -32,7 +39,7 @@ void ATAInteractableActor::OnInteract_Implementation(AActor* Interactor)
 
 bool ATAInteractableActor::CanInteract_Implementation(AActor* Interactor) const
 {
-	return true;
+	return IsValid(Interactor) && (!InteractionBehavior || InteractionBehavior->IsSelectable(Interactor));
 }
 
 FText ATAInteractableActor::GetInteractText_Implementation() const

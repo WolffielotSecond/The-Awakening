@@ -32,6 +32,8 @@ struct FTAPromptCandidate
 
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<UInputAction> Action = nullptr;
+	UPROPERTY(BlueprintReadOnly)
+	FString TextOverride;
 
 	UPROPERTY(BlueprintReadOnly)
 	TWeakObjectPtr<UTAInteractionPromptAnchor> Anchor;

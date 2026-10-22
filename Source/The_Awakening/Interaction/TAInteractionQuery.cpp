@@ -1,5 +1,6 @@
 #include "Interaction/TAInteractionQuery.h"
 #include "Interaction/TAInteractable.h"
+#include "Interaction/TAInteractionBehaviorComponent.h"
 #include "Inventory/TAWorldItem.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -29,6 +30,7 @@ AActor* FTAInteractionQuery::FindBestInteractable(const APawn* Pawn, float Radiu
 		{
 			continue;
 		}
+		if (const auto* Behavior = Actor->FindComponentByClass<UTAInteractionBehaviorComponent>(); Behavior && !Behavior->IsSelectable(const_cast<APawn*>(Pawn))) continue;
 		if (!ITAInteractable::Execute_CanInteract(Actor, const_cast<APawn*>(Pawn)))
 		{
 			continue;

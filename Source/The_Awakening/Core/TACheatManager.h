@@ -54,6 +54,8 @@ public:
 	/** TAGiveDiary：把项目设置里配置的日记本放进剧情槽。 */
 	UFUNCTION(Exec)
 	void TAGiveDiary();
+	/** Spawn the reusable QTE tester near the current player. */
+	UFUNCTION(Exec) void TASpawnQTE();
 
 	/** TADocList：在日志和屏幕上列出已收集（按页序）和已读的文本。 */
 	UFUNCTION(Exec)

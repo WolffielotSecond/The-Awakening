@@ -32,3 +32,8 @@ The shared context migration for Inventory and Dialogue is documented in `Docs/U
 ## Localization entries
 
 `UI_Pause_Resume`, `UI_Pause_QuitGame`, and the four pause input prompt labels are defined in `Content/Localization/zh-CN.json`, `zh-TW.json`, and `en.json`. The Settings row reuses `UI_Settings`.
+
+
+## QTE suspension
+
+Special actions explicitly allow the Pause capability. The pause menu and its settings overlay set `bSuspendSpecialAction`, preserving the current QTE stage, progress and clocks. The action temporarily removes its own IMC so QTE X/Y and directional mappings do not shadow menu navigation; resume restores that context and ignores inputs still held from the menu. Other incompatible input owners still cancel the action. See [QTEDebugTester.md](QTEDebugTester.md).

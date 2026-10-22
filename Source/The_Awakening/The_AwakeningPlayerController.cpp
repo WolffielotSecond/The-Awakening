@@ -408,7 +408,7 @@ void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int3
 	// this observer never grants permission to execute a gameplay action.
 	HeldKeyValues.FindOrAdd(Key) = FVector(Value, 0.f, 0.f);
 	// Raw releases survive menu focus/input-mode changes and rearm the toggle.
-	if (FMath::IsNearlyZero(Value)) ConsumedInventoryKeys.Remove(Key);
+	if (FMath::IsNearlyZero(Value)) { ConsumedInventoryKeys.Remove(Key); ConsumedActionKeys.Remove(Key); }
 	// Slate sends separate X/Y events even when the mapping uses Gamepad_Left2D.
 	const EPairedAxis Axis = Key.GetPairedAxis();
 	if (Axis != EPairedAxis::Unpaired)
@@ -467,6 +467,11 @@ bool AThe_AwakeningPlayerController::ConsumeInventoryTogglePress(const UInputAct
 	return true;
 }
 
+void AThe_AwakeningPlayerController::SuppressHeldActionUntilRelease(const UInputAction* Action)
+{
+ for (FKey Key : GetObservedHeldKeysForAction(Action)) ConsumedActionKeys.Add(Key);
+}
+
 FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAction* Action)
 {
 	if (!Action) return FInputActionValue();
@@ -489,7 +494,7 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 	};
 	for (const FEnhancedActionKeyMapping& Mapping : Enhanced->GetHeldActionMappings())
 	{
-		if (Mapping.Action != Action) continue;
+		if (Mapping.Action != Action || ConsumedActionKeys.Contains(Mapping.Key)) continue;
 		const FInputActionValue Value = Modify(Mapping.Modifiers,
 			FInputActionValue(Action->ValueType, HeldKeyValues.FindRef(Mapping.Key)));
 		if (Action->AccumulationBehavior == EInputActionAccumulationBehavior::Cumulative) Result += Value;
@@ -608,6 +613,7 @@ void AThe_AwakeningPlayerController::InvalidatePhysicalObservationForExternalOwn
 	HeldKeyValues.Reset();
 	HeldInputModifiers.Reset();
 	ConsumedInventoryKeys.Reset();
+ ConsumedActionKeys.Reset();
 	// Preserve the existing external-loss cleanup; permission denial never calls this.
 	if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
 	// Do not generate Released, change requests, or clear the processor's Down/Up pairing.
@@ -621,6 +627,8 @@ void AThe_AwakeningPlayerController::InvalidateGamepadObservationOnDisconnect()
 		if (It.Key().IsGamepadKey()) It.RemoveCurrent();
 	for (auto It = ConsumedInventoryKeys.CreateIterator(); It; ++It)
 		if (It->IsGamepadKey()) It.RemoveCurrent();
+ for (auto It = ConsumedActionKeys.CreateIterator(); It; ++It)
+  if (It->IsGamepadKey()) It.RemoveCurrent();
 	GamepadDeadZone.Reset();
 }
 
@@ -996,7 +1004,7 @@ void AThe_AwakeningPlayerController::HandlePauseAction(const FInputActionValue&)
 
 	const FTAInputRouter::FWinner CurrentInputOwner = GetInputWinner();
 	// The pause menu may interrupt scanning; other modal UI remains exclusive.
-	if (!CurrentInputOwner.IsBase() && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Scan))
+	if (!CurrentInputOwner.IsBase() && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Scan) && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Pause))
 	{
 		return;
 	}
@@ -1016,7 +1024,7 @@ void AThe_AwakeningPlayerController::OpenPauseMenu()
 	}
 
 	const FTAInputRouter::FWinner CurrentInputOwner = GetInputWinner();
-	if (!CurrentInputOwner.IsBase() && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Scan))
+	if (!CurrentInputOwner.IsBase() && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Scan) && !CurrentInputOwner.Request.Allowed.Contains(ETAInputCapability::Pause))
 	{
 		return;
 	}
@@ -1033,6 +1041,7 @@ void AThe_AwakeningPlayerController::OpenPauseMenu()
 	FTAInputRequest Request;
 	Request.Owner = PauseMenuInstance;
 	Request.Priority = 500;
+	Request.bSuspendSpecialAction = true;
 	Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor,
 		ETAInputCapability::Confirm, ETAInputCapability::Close};
 	Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
@@ -1077,6 +1086,7 @@ void AThe_AwakeningPlayerController::OpenSettingsMenu()
 	FTAInputRequest Request;
 	Request.Owner = SettingsMenuInstance;
 	Request.Priority = 600;
+	Request.bSuspendSpecialAction = true;
 	Request.Allowed = {ETAInputCapability::Navigate, ETAInputCapability::Cursor, ETAInputCapability::Confirm, ETAInputCapability::Close, ETAInputCapability::ToggleFavorite};
 	Request.Presentation.InputMode = ETAInputModeRequirement::GameAndUI;
 	Request.Presentation.bShowCursor = true;

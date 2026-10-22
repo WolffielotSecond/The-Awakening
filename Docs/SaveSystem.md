@@ -9,7 +9,7 @@
 | 数据 | 来源 | 内容 |
 |---|---|---|
 | 存档头 | — | `SaveFormatVersion`、游戏完整版本、存档时间、关卡短名、当前复活点 `CheckpointId` |
-| 剧情 | `UTADialogueSubsystem` | 旗标、每段剧情最后到达的节点、已完成的剧情 |
+| 剧情 | `UTADialogueSubsystem` | 旗标、每段剧情最后到达的节点、已完成的剧情、世界剧情 Tags、一次性世界事件完成记录和互斥分支结果 |
 | 文本 | `UTADocumentSubsystem` | 已收集（按页序）、已读、日记本页码 |
 | 背包 | `UTAInventoryComponent` | 内衣 / 外套定义、每个口袋**按格子位置**的物品（资产路径、数量、耐久）、剧情槽 |
 | 钱 | `ATAPlayerState` | 金额 |
@@ -22,7 +22,7 @@
 - 走进 `bActivateOnOverlap` 的复活点范围、它**新成为**当前复活点时（来回走动不重复存）。
 - 调试命令 `TASave`。
 
-读档恢复过程中、正在等待跨关卡读档时、没有玩家角色时不存。
+读档恢复过程中、正在等待跨关卡读档时、没有玩家角色时不存。活动特殊动作 / QTE 期间（包括暂停挂起）拒绝手动及自动存档，不覆盖原有槽位；阶段进度不保存。
 
 ## 读档
 
@@ -57,3 +57,7 @@
 | `TALoad` | 读档 |
 | `TASaveDelete` | 删除存档 |
 | `TASaveInfo` | 在日志和屏幕上显示存档头（版本、时间、关卡、复活点、文本数） |
+
+## 世界事件与特殊动作（2026-10-23）
+
+读档时取消当前特殊动作、停止当前对话并取消运行中的世界事件，再恢复持久结果。QTE 进度、输入句柄、IMC、Sequence 运行位置和 Actor 引用不存档。新增 Story 字段对旧档使用空默认值；背包恢复已持有物品时补回其 GrantedStoryTags，兼容旧档已取得日记本的情况。具体恢复场景通过 Director.ApplyPersistentState 配置，见 [WorldInteractionSystem.md](WorldInteractionSystem.md)。
