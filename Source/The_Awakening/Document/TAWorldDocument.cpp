@@ -87,6 +87,11 @@ void ATAWorldDocument::OnConstruction(const FTransform& Transform)
 		MeshComponent->SetRelativeTransform(FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(0.3f, 0.21f, 0.01f)));
 		MeshComponent->SetVisibility(true);
 	}
+	if (Definition)
+	{
+		Definition->ApplyPaperMaterials(MeshComponent);
+		Definition->ApplyPaperMaterials(SkeletalMeshComponent);
+	}
 }
 
 void ATAWorldDocument::BeginPlay()
@@ -109,6 +114,8 @@ void ATAWorldDocument::BeginPlay()
 	{
 		UTAItemSettings::ApplyMissingMaterialFallback(SkeletalMeshComponent);
 	}
+	Definition->ApplyPaperMaterials(MeshComponent);
+	Definition->ApplyPaperMaterials(SkeletalMeshComponent);
 	if (ScannableComponent)
 	{
 		FTAScanTargetInfo Info = ScannableComponent->GetScanInfo();

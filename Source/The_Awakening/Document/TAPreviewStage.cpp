@@ -165,6 +165,8 @@ void ATAPreviewStage::SetDocument(UTADocumentDefinition* Definition, const FTran
 {
 	if (!Definition) { ClearDisplay(); return; }
 	SetDisplayModel(Definition->Mesh, Definition->GetPreviewTransform(Adjustment));
+	Definition->ApplyPaperMaterials(MeshComponent);
+	Definition->ApplyPaperMaterials(SkeletalMeshComponent);
 	if (Definition->Presentation)
 	{
 		SkeletalMeshComponent->SetAnimInstanceClass(Definition->Presentation->AnimationClass);

@@ -76,6 +76,7 @@ void UTADiaryDocumentComponent::Configure(UTADocumentDefinition* InDefinition, f
 		SkeletalMesh->SetVisibility(true);
 		if (Definition->Presentation) SkeletalMesh->SetAnimInstanceClass(Definition->Presentation->AnimationClass);
 		UTAItemSettings::ApplyMissingMaterialFallback(SkeletalMesh);
+		Definition->ApplyPaperMaterials(SkeletalMesh);
 		SetOpenness(0.f);
 	}
 	else
@@ -84,6 +85,7 @@ void UTADiaryDocumentComponent::Configure(UTADocumentDefinition* InDefinition, f
 		StaticMesh->SetRelativeTransform(Model);
 		StaticMesh->SetVisibility(true);
 		UTAItemSettings::ApplyMissingMaterialFallback(StaticMesh);
+		Definition->ApplyPaperMaterials(StaticMesh);
 	}
 }
 

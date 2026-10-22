@@ -7,6 +7,8 @@
 class UStaticMesh;
 class UTexture2D;
 class UTADocumentPresentation;
+class UMaterialInterface;
+class UMeshComponent;
 
 /**
  * 一份可收集文本（信件、笔记等）。
@@ -19,6 +21,8 @@ class THE_AWAKENING_API UTADocumentDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	UTADocumentDefinition();
+
 	/** 唯一 ID，存档和剧情条件（HasDocument / ReadDocument）用 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Document")
 	FName DocumentId;
@@ -46,6 +50,17 @@ public:
 	/** 场景、拾取提示、日记本、文本预览共用一个模型；骨骼模型可通过 Presentation 配置动画，为空时显示占位模型 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (AllowedClasses = "/Script/Engine.StaticMesh,/Script/Engine.SkeletalMesh"))
 	TObjectPtr<UObject> Mesh = nullptr;
+
+	/** Applied to the paper's front slot. Empty uses the model's own material. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
+	TObjectPtr<UMaterialInterface> PaperFrontMaterial;
+
+	/** Applied to the paper's back slot. Empty uses the model's own material. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
+	TObjectPtr<UMaterialInterface> PaperBackMaterial;
+
+	/** Override named paper slots only; never modify the shared mesh asset. */
+	void ApplyPaperMaterials(UMeshComponent* Component) const;
 
 	/** Optional shared axis correction and folding animation. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")

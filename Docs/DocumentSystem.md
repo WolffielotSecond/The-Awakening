@@ -18,6 +18,7 @@
    | `InlineImages` | 正文插图：key → 图片 |
    | `Mesh` | 模型，静态网格体或骨骼网格体。空时显示占位薄片 |
    | `Presentation` | 可选的共用展示配置：预览基础朝向、纸张动画蓝图、取出／归位时长与取景留白。没有配置时保留原来的静态展示 |
+   | `Paper Front Material` / `Paper Back Material` | 每份文本独立的正反材质，默认 `/Game/Models/Document/M_Document_Front` / `M_Document_Back`；分别覆盖模型的 `M_Paper_Front` / `M_Paper_Back` 命名槽（亦支持 `M_Document_Front` / `M_Document_Back` 槽）。场景、拾取、日记夹页和阅读共用；清空后使用模型原材质，不改共享模型资产，其他材质槽保留 |
    | `WorldTransform` / `PickupPreviewTransform` / `ReaderTransform` / `DiaryPageTransform` | 同一个模型在场景、拾取提示、文本预览（阅读 / 检视）、日记本页面中的偏移、旋转、缩放 |
 
 3. 场景里放 `TAWorldDocument`（或它的蓝图子类），`Definition` 指向这份资产。它会出现在拾取列表里，可以被扫描。
@@ -97,7 +98,7 @@
 - 阅读器复用书本 RenderTarget，显示位置与原书本画面一致。当前右页文档在同一个场景中移出、转向相机、展开；鼠标/手柄只旋转该文档，不旋转书本。关闭时先恢复手动旋转，再折叠并放回原位置。强制关闭恢复同一个组件，阅读器不销毁书本台。
 - 实体冻结期间用展示帧时间推进；全局暂停仍停止。0/1 份不能翻页；快速查看直接采样展开姿态，在后续帧持续发布书体骨骼数据，等跨帧刷新和布局完成后启动阅读，防止首个快捷预览沿用初始化帧的骨骼渲染缓存。正常和强制移除日记会释放整个展示台，槽位 2 已不再用于日记。
 
-默认文本（`DA_Document_Sample01`、`DA_Document_Sample02`）已统一为 67 文档的 `SK_A4_Paper_With_Fold`、网格材质/贴图、`DA_PaperPresentation` 及四种展示变换。它们在书中保持折叠，取出后展开，支持旋转并折叠归位；场景和拾取预览也复用同一套纸张。各自的 ID、标题、正文、扫描介绍、图标和正文插图保留。临时复用的纸面贴图内容仍是 6767676767，转译显示各文本自己的内容。未使用 Document_Extract / Document_Insert。
+默认文本（`DA_Document_Sample01`、`DA_Document_Sample02`）已统一为 67 文档的 `SK_A4_Paper_With_Fold`、`DA_PaperPresentation` 及四种展示变换。它们在书中保持折叠，取出后展开，支持旋转并折叠归位；场景和拾取预览也复用同一套纸张。各自的 ID、标题、正文、扫描介绍、图标和正文插图保留。纸面初始使用 6767676767 的默认正反材质；之后用每份 Document DataAsset 的 `Paper Front Material` / `Paper Back Material` 独立更换，不必复制模型，也不必修改共享网格材质。转译显示各文本自己的内容。未使用 Document_Extract / Document_Insert。
 
 `-run=TAPaperSetup -UnifyDefaults` 可重复同步默认示例和使用空模型/棍母兜底模型的文本；变更前备份至 `Saved/DocumentPresentationBackups/<时间>/Game/...`，独立定制模型不变。加 `-Verify` 只检查、不保存。新增文本可复制现有默认示例并修改 ID 与本地化字段，保留共享 Presentation；需要独立外观时再替换模型和贴图。
 
