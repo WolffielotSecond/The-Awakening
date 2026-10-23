@@ -48,9 +48,20 @@
 #include "Puzzle/TAPathPuzzleWidget.h"
 #include "InputCoreTypes.h"
 #include "Health/TAHealthComponent.h"
+#include "Health/TARespawnSubsystem.h"
 #include "Interaction/TAInteractionQuery.h"
 #include "Interaction/TASpecialActionComponent.h"
 #include "Interaction/TAInteractionBehaviorComponent.h"
+
+void AThe_AwakeningCharacter::PlayDeathPresentation_Implementation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag, ETADamageType)
+{
+	if (Respawn) Respawn->RunDefaultDeathPresentation(this, RunId);
+}
+
+void AThe_AwakeningCharacter::PlayBlackoutPresentation_Implementation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag, ETADamageType)
+{
+	if (Respawn) Respawn->RunDefaultBlackoutPresentation(this, RunId);
+}
 
 AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UTAMovementComponent>(ACharacter::CharacterMovementComponentName))

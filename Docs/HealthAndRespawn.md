@@ -5,24 +5,67 @@
 ## 流程
 
 ```
-存活 → 死亡中（DeathDelay）→ 黑屏（FadeOutTime）→ 复位（黑屏中同一帧）→ 淡入（FadeInTime）→ 存活
+存活 → OnDeathStarted → 死亡演出接口 → 黑屏过渡 / 复活前演出接口 → 复位（黑屏中同一帧）→ 淡入（FadeInTime）→ 存活
 ```
 
 | 阶段 | 发生的事 |
 |---|---|
 | 死亡（进入死亡中的那一帧） | 挂 `State.Dead`；申请优先级 900 的空输入请求（暂停也打不开）；回滚并关闭对话 / 小游戏；关闭通用弹窗、设置、暂停、背包、扫描；停住移动、中止跑酷；广播 `OnDeathStarted` |
-| 死亡中 | 播放死亡动画（动画蓝图读 `IsDead()`），空中死亡照常落地 |
-| 黑屏 | 镜头淡出到 `FadeColor`。以后商人拖回的演出插在这一段 |
+| 死亡中 | 调用角色 Play Death Presentation；默认 Print String「死亡演出」，持续 DeathDelay 秒，并用 TimeSubsystem 等待同样时长；可覆写为等待动画完成。空中死亡照常落地 |
+| 黑屏过渡 / 复活前演出 | 调用角色 Play Blackout Presentation；默认 Print String「黑屏过度」，持续 FadeOutTime 秒，同时镜头淡出到 FadeColor；覆写时可在复位前插入演出，完成后才继续 |
 | 复位 | 传送到复活点（同步 Controller 朝向，镜头偏移归零、跳过一次 Camera Lag）；Health = MaxHealth × `RespawnHealthRatio`；清临时伤害修改器和带 `Effect.ClearOnRespawn` 的持续 GE；广播 `OnWorldReset` |
 | 淡入结束 | 移除 `State.Dead`；恢复扫描（死亡前的开关值）；广播 `OnRespawned`；加 `RespawnInvulnerableTime` 秒复活无敌（强制伤害不受影响）；最后释放输入请求 |
 
-Pawn 不销毁、不走 `RestartPlayer`，背包和组件状态都保留。所有阶段按游戏时间计时。死亡期间一直按着的方向键，复活后会继续生效（与关闭菜单后的行为一致）。
+Pawn 不销毁、不走 `RestartPlayer`，背包和组件状态都保留。原有计时和新增演出保底计时均使用 TimeSubsystem 游戏时间。死亡期间一直按着的方向键，复活后会继续生效（与关闭菜单后的行为一致）。屏幕占位文字使用开发版 Print String 的显示时长，调试文字自身不负责推进阶段，受屏幕调试消息开关和构建类型影响。
 
 ## 配置
 
 项目设置 → Game → **The Awakening Respawn**（`UTARespawnSettings`，存 `DefaultGame.ini`）：`DeathDelay` 1.5、`FadeOutTime` 0.5、`FadeInTime` 0.5、`RespawnInvulnerableTime` 2、`RespawnHealthRatio` 1、`FadeColor` 黑。
 
-黑屏用 PlayerCameraManager 的镜头淡入淡出，不需要 WBP。若以后要换成带文字或动画的转场界面，在 `UTARespawnSubsystem::StartCameraFade` 处替换。
+新增 `PresentationMaxWait` 默认 60 秒，分别限制两个演出阶段的等待时间；有效保底时长取该值（至少 1 秒）与该阶段默认时长 + 1 秒的较大值，不会截短配置的默认演出。自定义演出超时会打警告并继续下一阶段，防止漏接完成回报后永久锁输入。
+
+默认黑屏用 PlayerCameraManager 的镜头淡入淡出，不需要 WBP。要加入带文字或动画的转场界面，可覆写下述 Play Blackout Presentation，并在界面 / 演出完成后回报。
+
+## 两个可覆写的死亡演出接口
+
+接口位于 `AThe_AwakeningCharacter`，使用现有角色蓝图（例如 `BP_ThirdPersonCharacter`）即可覆写，无需添加组件或更换复活子系统。它们是带 C++ 默认实现的 BlueprintNativeEvent，不需要自己绑定 OnDeathStarted 来启动这两个阶段。原 OnDeathStarted 所有监听完成、旧动作打断和输入锁定后，系统才调用第一个接口。
+
+| 角色蓝图 Override | 默认 C++ 行为 | 自定义完成后调用 |
+|---|---|---|
+| Play Death Presentation | Print String「死亡演出」+ 等待 DeathDelay | Respawn → Complete Death Presentation |
+| Play Blackout Presentation | Print String「黑屏过度」+ FadeOutTime 镜头淡出，保持黑屏 | Respawn → Complete Blackout Presentation |
+
+两个事件均收到 `Respawn`（当前复活子系统）、`RunId`（本次死亡编号）、`DamageSource`（最近伤害来源 GameplayTag）、`DamageType`（伤害计算类型）。两个完成节点的输入都是 `Character = Self` 和本次事件的 `RunId`，Target 使用事件给出的 `Respawn`。阶段不匹配、角色不匹配、重复完成、上一次死亡的迟到回报均忽略。
+
+### 接死亡动画
+
+1. 打开玩家角色蓝图，在 Override 中添加 Play Death Presentation。
+2. 从事件取得并为本次播放保存 Respawn、RunId、DamageSource、DamageType。
+3. 根据 DamageSource 选动画，播放 Montage、PaperZD 动画或 Sequence。
+4. 在本次动画的完成通知中，调用 Respawn 的 Complete Death Presentation，传 Self 和本次 RunId。不要在播放节点后立刻接完成，除非该节点本身会等待播放完成。
+5. 正常结束与中断出口都应有明确收尾；让所有出口只回报一次。异步回调保留该次播放的 RunId，不要在旧动画回调中读取已经被下一次死亡覆盖的公共变量。
+
+覆写后系统不会并行继续默认 DeathDelay。未支持的死因分支可调用 Add Call to Parent Function，让它使用默认等待；也可显式调用 Respawn → Run Default Death Presentation（Self、RunId）。默认分支会自行回报完成，不要再另接完成节点。不要一边调用 Parent 启动默认计时，一边要求系统等待更长的自定义动画。
+
+现有 CharacterActionComponent 也有动画请求和完成通知，但它监听 OnDeathStarted 来打断旧动作。若需要复用，应从本接口启动新动作，按本次动作 Tag 匹配 OnActionFinished，再回报；不能假设随便收到一个动作结束就代表本次死亡演出结束。
+
+### 接黑屏过渡和复活前演出
+
+覆写 Play Blackout Presentation 后，它负责从死亡画面过渡到最终黑屏：可以先调用 PlayerCameraManager 的 Start Camera Fade，等待完全黑屏，再接音效、字幕或商人救援等 Sequence。若演出需要可见场景，自行安排演出期间的镜头、淡入和再次淡出；最后恢复镜头并在全黑时回报 Complete Blackout Presentation。
+
+完成回报前，玩家仍在死亡位置、未执行传送回血和 OnWorldReset；系统持续持有死亡输入锁。回报后系统强制保持 FadeColor 遮挡，执行原有复位，再按 FadeInTime 亮屏。不要自行清 State.Dead、交还输入或调用复位；这几件事仍由复活系统统一完成。
+
+未覆写时不需要任何蓝图连线。若覆写后某个分支要回退原行为，调用 Parent 或 Run Default Blackout Presentation（Self、RunId），它会自动淡出并回报。这个回退接口不会为你额外等待自定义 Sequence；需要在黑屏中继续演出时，应由自定义逻辑掌握完成回报。
+
+自定义计时用已有 TimeSubsystem 的 Set Gameplay Timer by Event；不新增 Tick 时间轮询。普通蓝图 Delay 不等同于 TimeSubsystem 的统一时停规则。默认镜头淡出沿用原 CameraManager 行为，本轮没有另写镜头时钟。角色销毁时取消等待并清理输入和镜头，关卡卸载时清理演出计时器。
+
+### 不同死亡情况如何分流
+
+事件传入的是进入复活时记录的伤害来源与类型快照，两阶段使用同一份数据。例如对 DamageSource 做 Matches Tag：Enemy → 被敌人击杀动画，Environment → 环境死亡动画，其他来源 → 默认死亡演出。需要更细分时，先登记 GameplayTag，再由致命伤害调用方通过现有伤害接口传入更具体的来源，例如环境下的坠落、某种敌人的处决；角色蓝图按这些 Tag 选择不同动画或 Sequence。示例细分 Tag 并非本轮已创建的资源。
+
+DamageType 的 Normal / True / Forced 描述伤害结算方式，不等于处决、坠落等演出类别。当前事件没有具体攻击者引用或处决配对信息；需要双人同步动画时仍需后续补死亡上下文。直接设置 Health 为 0 不经过伤害记录，DamageSource 可能为空或是旧伤害，所以不同死因应尽量通过已有 ApplyDamage 路径提交，未识别来源必须留默认分支。
+
+`OnWorldReset` 保留原逻辑，未改成读档。QTE 死亡取消仍保留 OnQTEEnded(false) / OnFinished(false)，不触发超时事件；死亡演出无需由 QTE 回调启动。
 
 ## 复活点 `ATACheckpoint`
 
@@ -98,6 +141,8 @@ C++ 只提供数据和事件，界面全部在 WBP 里拼装。
 ## 验证
 
 自动化测试：`TheAwakening.Respawn.Flow`、`TheAwakening.Respawn.Checkpoints`、`TheAwakening.Respawn.KillVolume`，以及 `TheAwakening.Health.*` 中的死亡测试。
+
+2026-10-23：新增 `TheAwakening.Respawn.PresentationHooks` 与 `TheAwakening.Respawn.BlueprintPresentation`。覆盖两个阶段异步等待、伤害上下文快照、重复 / 旧回调拒绝、默认分支回退、漏接完成保底、角色销毁清理，以及临时角色子蓝图的两个 Override → Complete 节点实际连线编译。UE 5.6 编译 / UHT 通过；Health / Respawn / Interaction / Input / Prompt / Time / Freeze 共 55/55 通过（41 项无警告、14 项带警告，包含测试世界、UI、GameplayCue 与 Wwise 日志），报告 `Saved/Automation/DeathPresentationFinal/index.json`。正式关卡中占位文字显示和真实动画 / Sequence 接线仍需 PIE 验收。
 
 PIE 待验证（需要先在测试关卡放一个 `bIsLevelStart` 复活点和至少一个普通复活点）：
 

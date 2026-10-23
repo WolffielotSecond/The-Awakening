@@ -75,7 +75,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
  bool bOk = Material(TEXT("/Game/UI/QTE/M_QTERing"),false) && Material(TEXT("/Game/UI/QTE/M_QTEKeyFlip"),true);
  const FString Root=TEXT("/Game/DeubgItem/QTE/");
  TArray<UInputAction*> Primary;
- for (const TCHAR* Name : {TEXT("IA_QTE_E"),TEXT("IA_QTE_MouseLeft"),TEXT("IA_QTE_MouseRight"),TEXT("IA_QTE_F")})
+ for (const TCHAR* Name : {TEXT("IA_QTE_E"),TEXT("IA_QTE_MouseLeft"),TEXT("IA_QTE_MouseRight"),TEXT("IA_QTE_F"),TEXT("IA_QTE_Q")})
  { auto* A=Asset<UInputAction>(Root+Name); if (!A) return 1; A->ValueType=EInputActionValueType::Boolean; if(!Save(A)) return 1; Primary.Add(A); }
  TArray<UInputAction*> Directions;
  for (const TCHAR* Name : {TEXT("IA_MoveForward"),TEXT("IA_MoveBackward"),TEXT("IA_MoveLeft"),TEXT("IA_MoveRight")})
@@ -85,7 +85,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
  }
  auto* IMC=Asset<UInputMappingContext>(Root+TEXT("IMC_QTE")); if(!IMC) return 1;
  IMC->UnmapAll();
- const FKey PrimaryKeys[]={EKeys::E,EKeys::LeftMouseButton,EKeys::RightMouseButton,EKeys::F};
+ const FKey PrimaryKeys[]={EKeys::E,EKeys::LeftMouseButton,EKeys::RightMouseButton,EKeys::F,EKeys::Q};
  for(int32 I=0;I<Primary.Num();++I)
  { IMC->MapKey(Primary[I],PrimaryKeys[I]); IMC->MapKey(Primary[I],I%2==0?EKeys::Gamepad_FaceButton_Left:EKeys::Gamepad_FaceButton_Top); }
  const FKey Letters[]={EKeys::W,EKeys::S,EKeys::A,EKeys::D};
@@ -96,7 +96,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
  bOk &= Save(IMC);
  auto Configure=[&](UTASpecialActionDefinition* D,bool bRandom)
  {
-  D->KeyFlipDuration=.2f; D->ExitInputBufferSeconds=.2f; D->bAlign=false; D->MappingContext=IMC; D->Stages.Reset(); D->bUseQTEPresentation=true; D->CompletionEvent=NAME_None;
+  D->KeyPulseAmplitude=.1f; D->bUseUnpausedRealTime=true; D->KeyFlipDuration=.2f; D->ExitInputBufferSeconds=.2f; D->bAlign=false; D->MappingContext=IMC; D->Stages.Reset(); D->bUseQTEPresentation=true; D->CompletionEvent=NAME_None;
   FTAQTEStage S; S.Kind=ETAQTEKind::Mash; S.Action=Primary[0]; for(auto* A:Primary) S.ActionOptions.Add(A);
   S.ProgressPerPress=0.15f; S.DecayPerSecond=0.05f; S.Timeout=0; D->Stages.Add(S);
   S=FTAQTEStage(); S.Kind=ETAQTEKind::Press; S.Action=Directions[3]; S.Timeout=0;
@@ -110,7 +110,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
  // Bring the previously generated chapter-one example onto the same production QTE configuration.
  if(auto* Existing=LoadObject<UTASpecialActionDefinition>(nullptr,TEXT("/Game/InteractionSamples/DA_PipeAction.DA_PipeAction")))
  {
-  Existing->KeyFlipDuration=.2f; Existing->ExitInputBufferSeconds=.2f; Existing->MappingContext=IMC; Existing->bUseQTEPresentation=true;
+  Existing->KeyPulseAmplitude=.1f; Existing->bUseUnpausedRealTime=true; Existing->KeyFlipDuration=.2f; Existing->ExitInputBufferSeconds=.2f; Existing->MappingContext=IMC; Existing->bUseQTEPresentation=true;
   if(Existing->Stages.Num()==4)
   {
    Existing->Stages[1]=Pipe->Stages[0]; Existing->Stages[2]=Pipe->Stages[1];

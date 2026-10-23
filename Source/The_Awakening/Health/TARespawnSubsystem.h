@@ -9,6 +9,7 @@
 
 class AThe_AwakeningPlayerController;
 class ATACheckpoint;
+class AThe_AwakeningCharacter;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTAWorldResetSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTACheckpointChangedSignature, ATACheckpoint*, Checkpoint);
@@ -69,6 +70,17 @@ public:
 	/** 由生命组件在死亡清理完成后调用。已在复活中则返回 false 并不接管句柄。 */
 	bool BeginRespawn(AThe_AwakeningPlayerController* PC, FTAInputRouter::FHandle DeathInputHandle);
 
+	/** Default implementations for the character presentation events; also callable from a Blueprint override's fallback branch. */
+	UFUNCTION(BlueprintCallable, Category = "Respawn|Presentation")
+	void RunDefaultDeathPresentation(AThe_AwakeningCharacter* Character, int32 RunId);
+	UFUNCTION(BlueprintCallable, Category = "Respawn|Presentation")
+	void RunDefaultBlackoutPresentation(AThe_AwakeningCharacter* Character, int32 RunId);
+	/** Complete only the matching run and phase. Stale, duplicate and other-pawn callbacks are ignored. */
+	UFUNCTION(BlueprintCallable, Category = "Respawn|Presentation")
+	void CompleteDeathPresentation(AThe_AwakeningCharacter* Character, int32 RunId);
+	UFUNCTION(BlueprintCallable, Category = "Respawn|Presentation")
+	void CompleteBlackoutPresentation(AThe_AwakeningCharacter* Character, int32 RunId);
+
 	/** 敌人 AI 用来停止攻击。 */
 	UFUNCTION(BlueprintPure, Category = "Respawn")
 	bool IsRespawning() const { return Phase != ETARespawnPhase::None; }
@@ -96,6 +108,11 @@ protected:
 private:
 	void StartCameraFade(AThe_AwakeningPlayerController* PC, float From, float To, float Duration, bool bHold) const;
 	void ClearPhaseTimer();
+	void ClearPresentationWatchdog();
+	void ArmPresentationWatchdog();
+	void HandlePresentationTimeout();
+	bool MatchesPresentation(AThe_AwakeningCharacter* Character, int32 RunId, ETARespawnPhase ExpectedPhase) const;
+	UFUNCTION() void PresentationCharacterDestroyed(AActor* Actor);
 	void HandleRespawnProtectionExpired();
 
 	TArray<TWeakObjectPtr<ATACheckpoint>> Checkpoints;
@@ -105,6 +122,12 @@ private:
 	TWeakObjectPtr<AThe_AwakeningPlayerController> RespawningController;
 	FTAInputRouter::FHandle DeathInputHandle = 0;
 	FTAGameplayTimerHandle PhaseTimer;
+	FTAGameplayTimerHandle PresentationWatchdog;
+	TWeakObjectPtr<AThe_AwakeningCharacter> PresentationCharacter;
+	int32 PresentationRunId = 0;
+	FGameplayTag DeathDamageSource;
+	ETADamageType DeathDamageType = ETADamageType::Normal;
+	bool bDefaultPresentationStarted = false;
 
 	FTAHealthProtectionHandle RespawnProtection;
 	TWeakObjectPtr<class UTAHealthComponent> ProtectedHealth;

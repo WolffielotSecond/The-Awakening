@@ -19,11 +19,13 @@ struct THE_AWAKENING_API FTAQTEStage
  /** Normalized gain for each discrete press; zero preserves the original 1/Required behavior. */
  UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ClampMax="1")) float ProgressPerPress = 0.f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ClampMax="1")) float DecayPerSecond = 0.f;
- /** Minimum gameplay seconds between accepted mash presses; zero disables the rate limit. */
+ /** Minimum action-clock seconds between accepted mash presses; zero disables the rate limit. */
  UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", Units="s")) float ClickCooldownSeconds = 0.1f;
  /** Press/Mash normally Started. Hold normally Triggered; respect IA trigger semantics. */
  UPROPERTY(EditAnywhere, BlueprintReadOnly) ETriggerEvent InputEvent = ETriggerEvent::Started;
  UPROPERTY(EditAnywhere, BlueprintReadOnly) FString PromptTextId;
+ /** QTE visual offset from the target prompt anchor's screen projection, in UI units (X right, Y down). */
+ UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector2D PromptOffset = FVector2D::ZeroVector;
  UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.01")) float Required = 1.f;
  UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0")) float Timeout = 15.f;
  UPROPERTY(EditAnywhere, BlueprintReadOnly) FVector2D Direction = FVector2D(1,0);
@@ -47,7 +49,9 @@ public:
  UPROPERTY(EditAnywhere, BlueprintReadOnly) FName CompletionEvent;
  /** Circular UMG prompt, breathing icon and perspective flip. Uses the existing prompt anchor. */
  UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bUseQTEPresentation = false;
- UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0")) float KeyPulseAmplitude = 0.2f;
+ /** QTE clocks use TimeSubsystem's unpaused real delta; legacy special actions retain their timing. */
+ UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bUseUnpausedRealTime = false;
+ UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0")) float KeyPulseAmplitude = 0.1f;
  UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0")) float KeyPulseFrequency = 4.f;
  UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.05")) float KeyFlipDuration = 0.2f;
  /** Gameplay permission remains blocked briefly after the prompt closes. */

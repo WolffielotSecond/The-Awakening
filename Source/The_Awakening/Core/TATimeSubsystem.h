@@ -58,6 +58,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Time")
 	float GetGameplayTimeScale() const;
 
+	/** Unscaled world frame time for QTE: ignores Freeze and dilation, stops for Pause. */
+	UFUNCTION(BlueprintPure, Category = "Time")
+	float GetUnpausedRealDeltaSeconds() const;
+
 	/** 按游戏时间计时。Duration <= 0 时下一次游戏时间推进即触发。循环计时器 Duration 必须 > 0。 */
 	FTAGameplayTimerHandle SetGameplayTimer(FTimerDelegate Delegate, float Duration, bool bLoop = false);
 	UFUNCTION(BlueprintCallable, Category = "Time", meta = (DisplayName = "Set Gameplay Timer by Event"))

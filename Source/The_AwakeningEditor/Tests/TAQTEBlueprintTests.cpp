@@ -51,6 +51,9 @@ bool FTAQTEBlueprintFunctionTest::RunTest(const FString&)
   Node->AllocateDefaultPins(); return Node;
  };
  auto* Make = Call(GET_FUNCTION_NAME_CHECKED(UTAQTESequenceComponent, MakeQTEStep));
+ auto* OffsetPin = Make->FindPin(TEXT("PromptOffset"));
+ TestNotNull(TEXT("Make QTE Step exposes per-step prompt offset"),OffsetPin);
+ if (OffsetPin) GetDefault<UEdGraphSchema_K2>()->TrySetDefaultValue(*OffsetPin,TEXT("(X=80.0,Y=-20.0)"));
  auto* Generate = Call(GET_FUNCTION_NAME_CHECKED(UTAQTESequenceComponent, GenerateQTE));
  auto* Array = AddNode.operator()<UK2Node_MakeArray>(); Array->AllocateDefaultPins();
  auto* Self = AddNode.operator()<UK2Node_Self>(); Self->AllocateDefaultPins();
@@ -71,6 +74,7 @@ bool FTAQTEBlueprintFunctionTest::RunTest(const FString&)
  };
  Bind(TEXT("HandleQTEStep"), Make, TEXT("OnAcceptedInput"));
  Bind(TEXT("HandleQTEStep"), Make, TEXT("OnCompleted"));
+ Bind(TEXT("HandleQTEStep"), Make, TEXT("OnTimedOut"));
  Bind(TEXT("HandleQTEFinished"), Generate, TEXT("OnFinished"));
  FCompilerResultsLog Results;
  FKismetEditorUtilities::CompileBlueprint(BP, EBlueprintCompileOptions::None, &Results);

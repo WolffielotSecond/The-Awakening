@@ -107,6 +107,15 @@ float UTATimeSubsystem::GetGameplayTimeScale() const
 	return WorldScale * (1.f - FMath::Clamp(GetFreezeStrength(), 0.f, 1.f));
 }
 
+float UTATimeSubsystem::GetUnpausedRealDeltaSeconds() const
+{
+	const UWorld* World = GetWorld();
+	// Central QTE time policy: Freeze and world/actor dilation never scale this delta.
+	// Pause requests also stop it when a fixture/game mode cannot apply engine pause.
+	if (!World || World->IsPaused() || HasPauseRequest()) return 0.f;
+	return FMath::Max(0.f, World->DeltaRealTimeSeconds);
+}
+
 FTAGameplayTimerHandle UTATimeSubsystem::SetGameplayTimer(FTimerDelegate Delegate, float Duration, bool bLoop)
 {
 	FTAGameplayTimerHandle Handle;

@@ -7,6 +7,7 @@
 #include "Camera/TAAutoFocusCameraComponent.h"
 #include "AbilitySystemInterface.h"
 #include "Interaction/TADialogueParticipant.h"
+#include "Health/TADamageTypes.h"
 #include "Logging/LogMacros.h"
 #include "The_AwakeningCharacter.generated.h"
 
@@ -20,6 +21,7 @@ class UTANearbyPickupComponent;
 class UTAPromptComponent;
 class UTAFreezeComponent;
 class UTAHealthComponent;
+class UTARespawnSubsystem;
 class UTACharacterActionComponent;
 class UTASpecialActionComponent;
 class UTAInventoryPanelWidget;
@@ -253,6 +255,16 @@ protected:
 	void UpdateSpriteFacing();
 	
 public:
+	/** Override on the character Blueprint. Report completion with Complete Death Presentation using the supplied run ID. */
+	UFUNCTION(BlueprintNativeEvent, Category = "Health|Death Presentation")
+	void PlayDeathPresentation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag DamageSource, ETADamageType DamageType);
+	virtual void PlayDeathPresentation_Implementation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag DamageSource, ETADamageType DamageType);
+
+	/** Override for fade-out / pre-respawn cinematics; completion hands off to reset and fade-in. */
+	UFUNCTION(BlueprintNativeEvent, Category = "Health|Death Presentation")
+	void PlayBlackoutPresentation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag DamageSource, ETADamageType DamageType);
+	virtual void PlayBlackoutPresentation_Implementation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag DamageSource, ETADamageType DamageType);
+
 	AThe_AwakeningCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	void NotifyInventoryPanelClosed(UTAInventoryPanelWidget* ClosedPanel);
 	bool IsLandingMomentumSafe(const FVector& Direction) const { return IsSafeToMoveToward(Direction); }

@@ -40,6 +40,7 @@ public:
  /** Accepted Enhanced Input only; wrong keys, cooldown and suspended input never emit these. */
  FTASpecialActionStepEvent OnInputAccepted;
  FTASpecialActionStepEvent OnStageCompleted;
+ FTASpecialActionStepEvent OnStageTimedOut;
  virtual void BeginPlay() override;
  virtual void EndPlay(const EEndPlayReason::Type Reason) override;
  virtual void TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function) override;
@@ -47,9 +48,10 @@ private:
  void HandleInput(const FInputActionInstance& Instance);
  void EnterStage();
  void AdvanceStage();
- void Finish(bool bSuccess);
+ void Finish(bool bSuccess, bool bTimedOut = false);
  void ReleaseExitBuffer();
  float ExitBufferRemaining = 0.f;
+ bool bBufferUsesRealTime = false;
  TWeakObjectPtr<AThe_AwakeningPlayerController> BufferController;
  FTAInputRouter::FHandle BufferHandle = 0;
  void HandleOwnershipChange();

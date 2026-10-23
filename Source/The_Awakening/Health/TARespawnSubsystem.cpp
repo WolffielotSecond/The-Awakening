@@ -12,6 +12,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerStart.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTARespawn, Log, All);
 
@@ -128,6 +129,20 @@ bool UTARespawnSubsystem::BeginRespawn(AThe_AwakeningPlayerController* PC, FTAIn
 	RespawningController = PC;
 	DeathInputHandle = InDeathInputHandle;
 	Phase = ETARespawnPhase::Dying;
+	++PresentationRunId;
+	DeathDamageSource = FGameplayTag();
+	DeathDamageType = ETADamageType::Normal;
+	PresentationCharacter = Cast<AThe_AwakeningCharacter>(PC->GetPawn());
+	bDefaultPresentationStarted = false;
+	if (auto* Character = PresentationCharacter.Get())
+	{
+		Character->OnDestroyed.AddUniqueDynamic(this, &UTARespawnSubsystem::PresentationCharacterDestroyed);
+		if (auto* Health = Character->GetHealthComponent())
+		{
+			DeathDamageSource = Health->GetLastDamageSource();
+			DeathDamageType = Health->GetLastDamageType();
+		}
+	}
 	// 上一次复活的无敌还没结束又死了：先撤掉，复活完成时重新加
 	if (UTAHealthComponent* Health = ProtectedHealth.Get())
 	{
@@ -136,9 +151,36 @@ bool UTARespawnSubsystem::BeginRespawn(AThe_AwakeningPlayerController* PC, FTAIn
 	Time->ClearGameplayTimer(ProtectionTimer);
 	ProtectedHealth.Reset();
 
-	const UTARespawnSettings* Settings = GetDefault<UTARespawnSettings>();
-	PhaseTimer = Time->SetGameplayTimer(FTimerDelegate::CreateUObject(this, &UTARespawnSubsystem::EnterFadeOut), Settings->DeathDelay);
+	ArmPresentationWatchdog();
+	if (auto* Character = PresentationCharacter.Get())
+		Character->PlayDeathPresentation(this, PresentationRunId, DeathDamageSource, DeathDamageType);
+	else CompleteRespawn();
 	return true;
+}
+
+bool UTARespawnSubsystem::MatchesPresentation(AThe_AwakeningCharacter* Character, int32 RunId, ETARespawnPhase ExpectedPhase) const
+{
+	return IsValid(Character) && PresentationCharacter.Get() == Character && RunId == PresentationRunId && Phase == ExpectedPhase
+		&& RespawningController.IsValid() && RespawningController->GetPawn() == Character;
+}
+
+void UTARespawnSubsystem::RunDefaultDeathPresentation(AThe_AwakeningCharacter* Character, int32 RunId)
+{
+	if (!MatchesPresentation(Character, RunId, ETARespawnPhase::Dying) || bDefaultPresentationStarted) return;
+	bDefaultPresentationStarted = true;
+	const float Duration = FMath::Max(0.f, GetDefault<UTARespawnSettings>()->DeathDelay);
+	UKismetSystemLibrary::PrintString(Character, TEXT("死亡演出"), true, true, FLinearColor::Yellow, Duration);
+	if (auto* Time = UTATimeSubsystem::Get(this))
+		PhaseTimer = Time->SetGameplayTimer(FTimerDelegate::CreateWeakLambda(this, [this, RunId]()
+		{ CompleteDeathPresentation(PresentationCharacter.Get(), RunId); }), Duration);
+}
+
+void UTARespawnSubsystem::CompleteDeathPresentation(AThe_AwakeningCharacter* Character, int32 RunId)
+{
+	if (!MatchesPresentation(Character, RunId, ETARespawnPhase::Dying)) return;
+	ClearPhaseTimer();
+	ClearPresentationWatchdog();
+	EnterFadeOut();
 }
 
 void UTARespawnSubsystem::EnterFadeOut()
@@ -152,10 +194,34 @@ void UTARespawnSubsystem::EnterFadeOut()
 		return;
 	}
 	Phase = ETARespawnPhase::FadingOut;
+	bDefaultPresentationStarted = false;
+	ArmPresentationWatchdog();
+	if (auto* Character = PresentationCharacter.Get())
+		Character->PlayBlackoutPresentation(this, PresentationRunId, DeathDamageSource, DeathDamageType);
+	else CompleteRespawn();
+}
+
+void UTARespawnSubsystem::RunDefaultBlackoutPresentation(AThe_AwakeningCharacter* Character, int32 RunId)
+{
+	if (!MatchesPresentation(Character, RunId, ETARespawnPhase::FadingOut) || bDefaultPresentationStarted) return;
+	bDefaultPresentationStarted = true;
+	auto* PC = RespawningController.Get();
+	auto* Time = UTATimeSubsystem::Get(this);
 	const UTARespawnSettings* Settings = GetDefault<UTARespawnSettings>();
-	// 以后商人拖回的演出插在这一段
+	UKismetSystemLibrary::PrintString(Character, TEXT("黑屏过度"), true, true, FLinearColor::Yellow, FMath::Max(0.f, Settings->FadeOutTime));
 	StartCameraFade(PC, 0.f, 1.f, Settings->FadeOutTime, true);
-	PhaseTimer = Time->SetGameplayTimer(FTimerDelegate::CreateUObject(this, &UTARespawnSubsystem::ResetAndFadeIn), Settings->FadeOutTime);
+	if (Time) PhaseTimer = Time->SetGameplayTimer(FTimerDelegate::CreateWeakLambda(this, [this, RunId]()
+	{ CompleteBlackoutPresentation(PresentationCharacter.Get(), RunId); }), Settings->FadeOutTime);
+}
+
+void UTARespawnSubsystem::CompleteBlackoutPresentation(AThe_AwakeningCharacter* Character, int32 RunId)
+{
+	if (!MatchesPresentation(Character, RunId, ETARespawnPhase::FadingOut)) return;
+	ClearPhaseTimer();
+	ClearPresentationWatchdog();
+	// Custom presentations hand back a fully obscured frame before teleport/reset.
+	StartCameraFade(RespawningController.Get(), 1.f, 1.f, 0.f, true);
+	ResetAndFadeIn();
 }
 
 void UTARespawnSubsystem::ResetAndFadeIn()
@@ -207,6 +273,10 @@ void UTARespawnSubsystem::ResetAndFadeIn()
 void UTARespawnSubsystem::CompleteRespawn()
 {
 	ClearPhaseTimer();
+	ClearPresentationWatchdog();
+	if (auto* Character = PresentationCharacter.Get())
+		Character->OnDestroyed.RemoveDynamic(this, &UTARespawnSubsystem::PresentationCharacterDestroyed);
+	PresentationCharacter.Reset();
 	AThe_AwakeningPlayerController* PC = RespawningController.Get();
 	const FTAInputRouter::FHandle Handle = DeathInputHandle;
 	RespawningController.Reset();
@@ -297,9 +367,54 @@ void UTARespawnSubsystem::ClearPhaseTimer()
 	PhaseTimer = FTAGameplayTimerHandle();
 }
 
+void UTARespawnSubsystem::ClearPresentationWatchdog()
+{
+	if (auto* Time = UTATimeSubsystem::Get(this)) Time->ClearGameplayTimer(PresentationWatchdog);
+	PresentationWatchdog = FTAGameplayTimerHandle();
+}
+
+void UTARespawnSubsystem::ArmPresentationWatchdog()
+{
+	ClearPresentationWatchdog();
+	const auto* Settings = GetDefault<UTARespawnSettings>();
+	// Never cut short the existing default durations, even when configured longer than the safety wait.
+	const float DefaultDuration = Phase == ETARespawnPhase::Dying ? Settings->DeathDelay : Settings->FadeOutTime;
+	const float Duration = FMath::Max(FMath::Max(1.f, Settings->PresentationMaxWait), DefaultDuration + 1.f);
+	if (auto* Time = UTATimeSubsystem::Get(this))
+		PresentationWatchdog = Time->SetGameplayTimer(FTimerDelegate::CreateUObject(this, &UTARespawnSubsystem::HandlePresentationTimeout), Duration);
+}
+
+void UTARespawnSubsystem::HandlePresentationTimeout()
+{
+	UE_LOG(LogTARespawn, Warning, TEXT("Death presentation did not complete; continuing respawn (run %d)."), PresentationRunId);
+	auto* Character = PresentationCharacter.Get();
+	if (!Character || !RespawningController.IsValid() || RespawningController->GetPawn() != Character) { PresentationCharacterDestroyed(Character); return; }
+	if (Phase == ETARespawnPhase::Dying) CompleteDeathPresentation(Character, PresentationRunId);
+	else if (Phase == ETARespawnPhase::FadingOut) CompleteBlackoutPresentation(Character, PresentationRunId);
+}
+
+void UTARespawnSubsystem::PresentationCharacterDestroyed(AActor* Actor)
+{
+	// Abort presentation without applying old-pawn respawn state to a replacement pawn.
+	ClearPhaseTimer();
+	ClearPresentationWatchdog();
+	if (Actor) Actor->OnDestroyed.RemoveDynamic(this, &UTARespawnSubsystem::PresentationCharacterDestroyed);
+	auto* PC = RespawningController.Get();
+	if (PC && PC->PlayerCameraManager) PC->PlayerCameraManager->StopCameraFade();
+	ReleaseDeathInput(PC, DeathInputHandle);
+	DeathInputHandle = 0;
+	RespawningController.Reset();
+	PresentationCharacter.Reset();
+	Phase = ETARespawnPhase::None;
+}
+
 void UTARespawnSubsystem::Deinitialize()
 {
 	ClearPhaseTimer();
+	ClearPresentationWatchdog();
+	if (auto* Character = PresentationCharacter.Get())
+		Character->OnDestroyed.RemoveDynamic(this, &UTARespawnSubsystem::PresentationCharacterDestroyed);
+	PresentationCharacter.Reset();
 	ReleaseDeathInput(RespawningController.Get(), DeathInputHandle);
 	RespawningController.Reset();
 	DeathInputHandle = 0;

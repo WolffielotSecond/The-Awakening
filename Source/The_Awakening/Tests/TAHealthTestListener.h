@@ -4,7 +4,25 @@
 #include "UObject/Object.h"
 #include "Scan/TAScanTypes.h"
 #include "Health/TADamageTypes.h"
+#include "The_AwakeningCharacter.h"
 #include "TAHealthTestListener.generated.h"
+
+/** Holds both presentation phases open to verify asynchronous completion and run isolation. */
+UCLASS(Transient, NotBlueprintable, HideDropdown)
+class ATADeathPresentationTestCharacter : public AThe_AwakeningCharacter
+{
+	GENERATED_BODY()
+public:
+	int32 DeathRequests = 0;
+	int32 BlackoutRequests = 0;
+	int32 LastRunId = 0;
+	FGameplayTag LastSource;
+	ETADamageType LastType = ETADamageType::Normal;
+	bool bWasInputLocked = false;
+	virtual void PlayDeathPresentation_Implementation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag Source, ETADamageType Type) override;
+	virtual void PlayBlackoutPresentation_Implementation(UTARespawnSubsystem* Respawn, int32 RunId, FGameplayTag Source, ETADamageType Type) override
+	{ ++BlackoutRequests; LastRunId = RunId; }
+};
 
 /** 仅供自动化测试：记录生命组件动态委托的广播。 */
 UCLASS(Transient, NotBlueprintable, HideDropdown)

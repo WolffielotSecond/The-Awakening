@@ -11,9 +11,13 @@ class UTAInteractionTestLocalPlayer : public ULocalPlayer
 public:
  int32 PromptRefreshes = 0;
  int32 QTEEndCount = 0;
+ int32 QTEBroadcastEndCount = 0;
+ bool bLastQTEBroadcastSucceeded = false;
  bool bLastQTESucceeded = false;
  TArray<int32> AcceptedSteps;
  TArray<int32> CompletedSteps;
+ TArray<int32> TimedOutSteps;
+ bool bWasActiveDuringTimeout = false;
  TArray<float> AcceptedProgress;
  TWeakObjectPtr<UTAQTESequenceComponent> CallbackSequence;
  bool bCancelOnAccepted = false;
@@ -29,6 +33,12 @@ public:
   if (bCancelOnCompleted && CallbackSequence.IsValid()) CallbackSequence->CancelQTE();
  }
  UFUNCTION() void QTEEnded(bool bSucceeded) { ++QTEEndCount; bLastQTESucceeded = bSucceeded; }
+ UFUNCTION() void QTEBroadcastEnded(bool bSucceeded) { ++QTEBroadcastEndCount; bLastQTEBroadcastSucceeded = bSucceeded; }
+ UFUNCTION() void QTETimedOut(int32 StepIndex, UInputAction* Action, float Progress)
+ {
+  TimedOutSteps.Add(StepIndex);
+  bWasActiveDuringTimeout = CallbackSequence.IsValid() && CallbackSequence->IsQTEActive();
+ }
  UFUNCTION() void PromptChanged() { ++PromptRefreshes; }
  TWeakObjectPtr<UWorld> TestWorld;
  virtual UWorld* GetWorld() const override { return TestWorld.Get(); }

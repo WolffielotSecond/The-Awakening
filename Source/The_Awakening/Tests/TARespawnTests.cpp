@@ -21,6 +21,13 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 
+void ATADeathPresentationTestCharacter::PlayDeathPresentation_Implementation(UTARespawnSubsystem*, int32 RunId, FGameplayTag Source, ETADamageType Type)
+{
+	++DeathRequests; LastRunId = RunId; LastSource = Source; LastType = Type;
+	const auto* PC = Cast<AThe_AwakeningPlayerController>(GetController());
+	bWasInputLocked = PC && !PC->AllowsInput(ETAInputCapability::Move) && GetHealthComponent()->IsDead();
+}
+
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 
@@ -37,7 +44,7 @@ namespace TARespawnTests
 		UTARespawnSubsystem* Respawn = nullptr;
 		UTATimeSubsystem* Time = nullptr;
 
-		FFixture()
+		FFixture(UClass* OverridePawnClass = nullptr)
 		{
 			World = UWorld::CreateWorld(EWorldType::Game, false);
 			GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
@@ -46,6 +53,7 @@ namespace TARespawnTests
 				TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
 			UClass* PawnClass = LoadClass<AThe_AwakeningCharacter>(nullptr,
 				TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter_C"));
+			if (OverridePawnClass) PawnClass = OverridePawnClass;
 			Respawn = World->GetSubsystem<UTARespawnSubsystem>();
 			Time = World->GetSubsystem<UTATimeSubsystem>();
 			if (!PCClass || !PawnClass) return;
@@ -97,6 +105,65 @@ namespace TARespawnTests
 			Advance(S->FadeInTime + 0.01f);
 		}
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTADeathPresentationTest, "TheAwakening.Respawn.PresentationHooks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTADeathPresentationTest::RunTest(const FString&)
+{
+	TARespawnTests::FFixture F(ATADeathPresentationTestCharacter::StaticClass());
+	if (!F.Validate(*this)) return false;
+	auto* Character = CastChecked<ATADeathPresentationTestCharacter>(F.Pawn);
+	F.SpawnCheckpoint(TEXT("Presentation"), FVector(800.f, 0.f, 0.f), true);
+	auto* Listener = NewObject<UTAHealthTestListener>();
+	F.Respawn->OnWorldReset.AddDynamic(Listener, &UTAHealthTestListener::HandleWorldReset);
+	F.Kill();
+	const int32 Run = Character->LastRunId;
+	TestTrue(TEXT("Death hook receives locked dead character and damage context"),Character->DeathRequests==1 && Character->bWasInputLocked
+		&& Character->LastSource==TAGameplayTags::Damage_Source_Console && Character->LastType==ETADamageType::Forced);
+	F.Advance(3.f);
+	TestTrue(TEXT("Override waits beyond default delay"),F.Respawn->GetRespawnPhase()==ETARespawnPhase::Dying && Character->BlackoutRequests==0);
+	F.Respawn->CompleteDeathPresentation(Character,Run-1);
+	TestEqual(TEXT("Stale completion cannot start blackout"),Character->BlackoutRequests,0);
+	F.Respawn->CompleteDeathPresentation(Character,Run);
+	F.Respawn->CompleteDeathPresentation(Character,Run);
+	TestEqual(TEXT("Matching death completion starts blackout exactly once"),Character->BlackoutRequests,1);
+	F.Advance(3.f);
+	TestTrue(TEXT("Blackout override holds before reset"),F.Respawn->GetRespawnPhase()==ETARespawnPhase::FadingOut && Listener->WorldResetCount==0 && F.Health->GetHealth()==0.f);
+	F.Respawn->CompleteBlackoutPresentation(Character,Run-1);
+	TestEqual(TEXT("Stale blackout cannot reset world"),Listener->WorldResetCount,0);
+	F.Respawn->CompleteBlackoutPresentation(Character,Run);
+	F.Respawn->CompleteBlackoutPresentation(Character,Run);
+	TestEqual(TEXT("Blackout completion resets exactly once"),Listener->WorldResetCount,1);
+	TestTrue(TEXT("Input remains locked during fade in"),!F.PC->AllowsInput(ETAInputCapability::Move));
+	F.Advance(GetDefault<UTARespawnSettings>()->FadeInTime+.01f);
+	TestTrue(TEXT("Completion restores alive state and input"),!F.Health->IsDead() && F.PC->GetInputWinner().IsBase());
+	F.Kill();
+	TestTrue(TEXT("Next death uses a different run"),Character->LastRunId!=Run);
+	F.Respawn->CompleteDeathPresentation(Character,Run);
+	TestEqual(TEXT("Previous run cannot advance next death"),Character->BlackoutRequests,1);
+	// An override may explicitly choose the existing defaults for an unmatched death cause.
+	F.Respawn->RunDefaultDeathPresentation(Character,Character->LastRunId);
+	F.Respawn->RunDefaultDeathPresentation(Character,Character->LastRunId);
+	F.Advance(GetDefault<UTARespawnSettings>()->DeathDelay+.01f);
+	TestEqual(TEXT("Default fallback enters blackout once"),Character->BlackoutRequests,2);
+	F.Respawn->RunDefaultBlackoutPresentation(Character,Character->LastRunId);
+	F.Advance(GetDefault<UTARespawnSettings>()->FadeOutTime+.01f);
+	F.Advance(GetDefault<UTARespawnSettings>()->FadeInTime+.01f);
+	TestFalse(TEXT("Explicit default fallback completes respawn"),F.Respawn->IsRespawning());
+	F.Kill();
+	AddExpectedError(TEXT("Death presentation did not complete"),EAutomationExpectedErrorFlags::Contains,2);
+	F.Advance(GetDefault<UTARespawnSettings>()->PresentationMaxWait+1.f);
+	TestTrue(TEXT("Missing death completion has a safety timeout"),F.Respawn->GetRespawnPhase()==ETARespawnPhase::FadingOut);
+	F.Advance(GetDefault<UTARespawnSettings>()->PresentationMaxWait+1.f);
+	F.Advance(GetDefault<UTARespawnSettings>()->FadeInTime+.01f);
+	TestTrue(TEXT("Missing callbacks cannot leave death input locked"),!F.Respawn->IsRespawning() && F.PC->GetInputWinner().IsBase());
+	F.Kill();
+	Character->Destroy();
+	TestTrue(TEXT("Destroyed presentation owner releases death input"),!F.Respawn->IsRespawning() && F.PC->GetInputWinner().IsBase());
+	F.Advance(GetDefault<UTARespawnSettings>()->PresentationMaxWait+1.f);
+	TestFalse(TEXT("Destroyed owner leaves no presentation timer"),F.Respawn->IsRespawning());
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTARespawnFlowTest, "TheAwakening.Respawn.Flow",

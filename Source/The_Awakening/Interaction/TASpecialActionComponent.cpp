@@ -9,6 +9,7 @@
 #include "Document/TACharacterActionComponent.h"
 #include "Health/TAHealthComponent.h"
 #include "Core/TAFreezeComponent.h"
+#include "Core/TATimeSubsystem.h"
 #include "Story/TAWorldEventDirector.h"
 #include "EngineUtils.h"
 #include "Engine/LocalPlayer.h"
@@ -39,12 +40,12 @@ bool UTASpecialActionComponent::Start(UTASpecialActionDefinition* D, AActor* InT
  auto* Input = Character ? Cast<UEnhancedInputComponent>(Character->InputComponent) : nullptr;
  auto* LocalInput = PC && PC->GetLocalPlayer() ? PC->GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
  if (bFinishing || IsExitBufferActive() || IsSpecialActionActive() || !IsValid(D) || D->Stages.IsEmpty() || !IsValid(InTarget) || !Input || !LocalInput ||
-     !PC->AllowsInput(ETAInputCapability::Interact) || UTAFreezeComponent::IsActorFrozen(Character) ||
+     !PC->AllowsInput(ETAInputCapability::Interact) || (!D->bUseUnpausedRealTime && UTAFreezeComponent::IsActorFrozen(Character)) ||
      Character->GetHealthComponent()->IsDead() || Character->GetCharacterActionComponent()->IsActionActive() ||
      FVector::Dist(Character->GetActorLocation(), InTarget->GetActorLocation()) > D->MaxDistance) return false;
  for (const auto& S : D->Stages)
  {
-  if (S.Required <= 0 || S.Timeout < 0 || S.ProgressPerPress < 0 || S.DecayPerSecond < 0 || S.ClickCooldownSeconds < 0 ||
+  if (S.Required <= 0 || S.Timeout < 0 || S.ProgressPerPress < 0 || S.DecayPerSecond < 0 || S.ClickCooldownSeconds < 0 || S.PromptOffset.ContainsNaN() ||
       (S.Kind == ETAQTEKind::Animation ? !S.AnimationTag.IsValid() : (!S.Action && S.ActionOptions.IsEmpty()))) return false;
   for (const auto& Option : S.ActionOptions) if (!Option) return false;
   if (S.Kind != ETAQTEKind::Animation && (S.InputEvent == ETriggerEvent::None || S.InputEvent == ETriggerEvent::Completed || S.InputEvent == ETriggerEvent::Canceled)) return false;
@@ -99,7 +100,9 @@ bool UTASpecialActionComponent::Start(UTASpecialActionDefinition* D, AActor* InT
 }
 void UTASpecialActionComponent::HandleInput(const FInputActionInstance& Instance)
 {
- if (!IsSpecialActionActive() || bSuspended || !HasInputPermission() || UTAFreezeComponent::IsActorFrozen(GetOwner())) return;
+ if (!IsSpecialActionActive() || bSuspended || !HasInputPermission()) return;
+ if (const auto* Time = UTATimeSubsystem::Get(this); Time && (Time->HasPauseRequest() || GetWorld()->IsPaused())) return;
+ if (!Definition->bUseUnpausedRealTime && UTAFreezeComponent::IsActorFrozen(GetOwner())) return;
  const auto& S = Definition->Stages[StageIndex];
  if (Instance.GetSourceAction() != GetPromptAction() || S.Kind == ETAQTEKind::Animation) return;
  if (Instance.GetTriggerEvent() == ETriggerEvent::Canceled || Instance.GetTriggerEvent() == ETriggerEvent::Completed)
@@ -220,6 +223,10 @@ void UTASpecialActionComponent::HandleOwnershipChange()
 void UTASpecialActionComponent::TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function)
 {
  Super::TickComponent(Delta, Tick, Function);
+ const auto* Time = UTATimeSubsystem::Get(this);
+ // All unscaled timing comes from TimeSubsystem; no private real-time clock or dilation math.
+ const bool bRealTime = Definition ? Definition->bUseUnpausedRealTime : bBufferUsesRealTime;
+ if (bRealTime) Delta = Time ? Time->GetUnpausedRealDeltaSeconds() : 0.f;
  if (ExitBufferRemaining > 0.f)
  {
   const auto* Pawn = Cast<APawn>(GetOwner());
@@ -233,9 +240,10 @@ void UTASpecialActionComponent::TickComponent(float Delta, ELevelTick Tick, FAct
  if (!IsSpecialActionActive()) return;
  const auto* Pawn = Cast<APawn>(GetOwner());
  if (!Target.IsValid() || !Controller.IsValid() || !Pawn || Pawn->GetController() != Controller.Get() ||
-     UTAFreezeComponent::IsActorFrozen(GetOwner()) || FVector::Dist(GetOwner()->GetActorLocation(), Target->GetActorLocation()) > Definition->MaxDistance)
+     (!Definition->bUseUnpausedRealTime && UTAFreezeComponent::IsActorFrozen(GetOwner())) || FVector::Dist(GetOwner()->GetActorLocation(), Target->GetActorLocation()) > Definition->MaxDistance)
  { Finish(false); return; }
  if (bSuspended || (Controller.IsValid() && Controller->GetInputWinner().Request.bSuspendSpecialAction)) return;
+ if (Time && (Time->HasPauseRequest() || GetWorld()->IsPaused())) return;
  if (!HasInputPermission()) { Finish(false); return; }
  StageTime += Delta;
  PresentationTime += Delta;
@@ -247,12 +255,15 @@ void UTASpecialActionComponent::TickComponent(float Delta, ELevelTick Tick, FAct
   if (!IsSpecialActionActive()) return;
  }
  const float Timeout = Definition->Stages[StageIndex].Timeout;
- if (Timeout > 0 && StageTime >= Timeout) Finish(false);
+ if (Timeout > 0 && StageTime >= Timeout) Finish(false, true);
 }
-void UTASpecialActionComponent::Finish(bool bSuccess)
+void UTASpecialActionComponent::Finish(bool bSuccess, bool bTimedOut)
 {
  if (!IsSpecialActionActive() || bFinishing) return;
  bFinishing = true;
+ const int32 FinishedStage = StageIndex;
+ UInputAction* FinishedAction = GetPromptAction();
+ const float FinishedProgress = Progress;
  const FName Event = Definition->CompletionEvent;
  AActor* FinishedTarget = Target.Get();
  const bool bAnimation = Definition->Stages.IsValidIndex(StageIndex) && Definition->Stages[StageIndex].Kind == ETAQTEKind::Animation;
@@ -276,13 +287,15 @@ void UTASpecialActionComponent::Finish(bool bSuccess)
   PC->OnInputOwnerChanged.RemoveAll(this); PC->OnPlayerInputOwnershipLost.RemoveAll(this);
   // Keep the same ownership handle until the buffer expires; no one-frame movement gap.
   if (bSuccess && OldDefinition->bUseQTEPresentation && OldDefinition->ExitInputBufferSeconds > 0.f)
-  { BufferController = PC; BufferHandle = InputHandle; ExitBufferRemaining = OldDefinition->ExitInputBufferSeconds; }
+  { BufferController = PC; BufferHandle = InputHandle; ExitBufferRemaining = OldDefinition->ExitInputBufferSeconds; bBufferUsesRealTime = OldDefinition->bUseUnpausedRealTime; }
   else PC->ReleaseInputRequest(InputHandle);
  }
  InputHandle = 0; Controller.Reset();
  if (bAnimation) if (auto* Animation = GetOwner()->FindComponentByClass<UTACharacterActionComponent>()) Animation->InterruptAction();
  Progress = bSuccess ? 1.f : 0.f;
  OnUpdated.Broadcast();
+ // Notify timeout only after releasing input and ending execution. Never advance a stage.
+ if (bTimedOut) OnStageTimedOut.Broadcast(FinishedStage, FinishedAction, FinishedProgress);
  OnEnded.Broadcast(FinishedTarget, bSuccess);
  bFinishing = false;
  if (bSuccess && !Event.IsNone() && IsValid(GetOwner()))
@@ -297,7 +310,7 @@ void UTASpecialActionComponent::ReleaseExitBuffer()
 {
  const auto Handle = BufferHandle;
  auto* PC = BufferController.Get();
- BufferHandle = 0; BufferController.Reset(); ExitBufferRemaining = 0.f;
+ BufferHandle = 0; BufferController.Reset(); ExitBufferRemaining = 0.f; bBufferUsesRealTime = false;
  if (PC) PC->ReleaseInputRequest(Handle);
 }
 void UTASpecialActionComponent::Cancel() { Finish(false); ReleaseExitBuffer(); }

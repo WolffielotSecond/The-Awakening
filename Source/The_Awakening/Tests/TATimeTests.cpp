@@ -32,6 +32,28 @@ namespace TATimeTests
 	};
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTATimeQTEClockTest, "TheAwakening.Time.UnpausedRealDelta",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTATimeQTEClockTest::RunTest(const FString&)
+{
+	TATimeTests::FWorldFixture F;
+	F.World->DeltaRealTimeSeconds = .25f;
+	F.World->DeltaTimeSeconds = .0025f;
+	TestEqual(TEXT("Real delta ignores world dilation"), F.Time->GetUnpausedRealDeltaSeconds(), .25f);
+	UObject* Freeze = TATimeTests::NewSource();
+	F.Time->RequestFreeze(Freeze, .5f);
+	TestEqual(TEXT("Real delta ignores partial Freeze"), F.Time->GetUnpausedRealDeltaSeconds(), .25f);
+	F.Time->RequestFreeze(Freeze, 1.f);
+	TestEqual(TEXT("Real delta ignores full Freeze"), F.Time->GetUnpausedRealDeltaSeconds(), .25f);
+	UObject* Pause = TATimeTests::NewSource();
+	F.Time->RequestPause(Pause);
+	TestEqual(TEXT("Pause stops the QTE delta"), F.Time->GetUnpausedRealDeltaSeconds(), 0.f);
+	F.Time->ReleasePause(Pause);
+	TestEqual(TEXT("Resume has no accumulated pause catch-up"), F.Time->GetUnpausedRealDeltaSeconds(), .25f);
+	F.Time->ReleaseFreeze(Freeze);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTATimePauseSourcesTest, "TheAwakening.Time.PauseSources",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FTATimePauseSourcesTest::RunTest(const FString&)

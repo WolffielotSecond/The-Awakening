@@ -17,13 +17,15 @@ bool UTAQTESequenceComponent::StartQTE(AActor* Interactor)
  return GenerateQTE(Interactor, Steps, FTAQTEFinishedCallback());
 }
 FTAQTESequenceStep UTAQTESequenceComponent::MakeQTEStep(ETAQTEKeyGroup KeyGroup, ETAQTEDirection Direction, ETAQTEPressMode PressMode,
- const FTAQTEStepCallback& OnAcceptedInput, const FTAQTEStepCallback& OnCompleted,
- float ProgressPerClick, float DecayPerSecond, float ClickCooldownSeconds)
+ const FTAQTEStepCallback& OnAcceptedInput, const FTAQTEStepCallback& OnCompleted, const FTAQTEStepCallback& OnTimedOut,
+ float ProgressPerClick, float DecayPerSecond, float ClickCooldownSeconds, bool bTimeLimited, float TimeLimitSeconds, FVector2D PromptOffset)
 {
  FTAQTESequenceStep Step;
  Step.KeyGroup = KeyGroup; Step.Direction = Direction; Step.PressMode = PressMode;
  Step.ProgressPerClick = ProgressPerClick; Step.DecayPerSecond = DecayPerSecond; Step.ClickCooldownSeconds = ClickCooldownSeconds;
  Step.OnAcceptedInput = OnAcceptedInput; Step.OnCompleted = OnCompleted;
+ Step.bTimeLimited = bTimeLimited; Step.TimeLimitSeconds = TimeLimitSeconds; Step.OnTimedOut = OnTimedOut;
+ Step.PromptOffset = PromptOffset;
  return Step;
 }
 bool UTAQTESequenceComponent::GenerateQTE(AActor* Interactor, const TArray<FTAQTESequenceStep>& InSteps, const FTAQTEFinishedCallback& OnFinished)
@@ -41,15 +43,17 @@ bool UTAQTESequenceComponent::GenerateQTE(AActor* Interactor, const TArray<FTAQT
    if (InteractionActions.IsEmpty() && Stage.Action) InteractionActions.Add(Stage.Action);
    break;
   }
- Runtime->Stages.Reset(); Runtime->bUseQTEPresentation = true;
+ Runtime->Stages.Reset(); Runtime->bUseQTEPresentation = true; Runtime->bUseUnpausedRealTime = true;
  Runtime->KeyFlipDuration = KeyFlipDuration; Runtime->ExitInputBufferSeconds = ExitInputBufferSeconds;
  for (const auto& Step : InSteps)
  {
-  FTAQTEStage Stage; Stage.Timeout = 0;
+  if (Step.bTimeLimited && (!FMath::IsFinite(Step.TimeLimitSeconds) || Step.TimeLimitSeconds <= 0.f)) return false;
+  FTAQTEStage Stage; Stage.Timeout = Step.bTimeLimited ? Step.TimeLimitSeconds : 0.f;
   Stage.Kind = Step.PressMode == ETAQTEPressMode::Mash ? ETAQTEKind::Mash : ETAQTEKind::Press;
   Stage.ProgressPerPress = Step.PressMode == ETAQTEPressMode::Mash ? Step.ProgressPerClick : 1.f;
   Stage.DecayPerSecond = Step.PressMode == ETAQTEPressMode::Mash ? Step.DecayPerSecond : 0.f;
   Stage.ClickCooldownSeconds = Step.ClickCooldownSeconds;
+  Stage.PromptOffset = Step.PromptOffset;
   if (Step.KeyGroup == ETAQTEKeyGroup::Interaction) Stage.ActionOptions = InteractionActions;
   else
   {
@@ -73,10 +77,12 @@ bool UTAQTESequenceComponent::GenerateQTE(AActor* Interactor, const TArray<FTAQT
  Action->OnEnded.AddUniqueDynamic(this, &UTAQTESequenceComponent::HandleEnded);
  Action->OnInputAccepted.AddUObject(this, &UTAQTESequenceComponent::HandleAcceptedInput);
  Action->OnStageCompleted.AddUObject(this, &UTAQTESequenceComponent::HandleStepCompleted);
+ Action->OnStageTimedOut.AddUObject(this, &UTAQTESequenceComponent::HandleStepTimedOut);
  if (Action->Start(Runtime, GetOwner())) return true;
  Action->OnUpdated.RemoveDynamic(this, &UTAQTESequenceComponent::HandleUpdated);
  Action->OnEnded.RemoveDynamic(this, &UTAQTESequenceComponent::HandleEnded);
  Action->OnInputAccepted.RemoveAll(this); Action->OnStageCompleted.RemoveAll(this);
+ Action->OnStageTimedOut.RemoveAll(this);
  RunningSteps.Reset(); FinishedCallback.Unbind(); RunningAction.Reset(); return false;
 }
 void UTAQTESequenceComponent::HandleAcceptedInput(int32 StepIndex, UInputAction* Action, float Progress)
@@ -90,6 +96,14 @@ void UTAQTESequenceComponent::HandleStepCompleted(int32 StepIndex, UInputAction*
 {
  if (!IsQTEActive() || !RunningSteps.IsValidIndex(StepIndex)) return;
  const auto Callback = RunningSteps[StepIndex].OnCompleted;
+ Callback.ExecuteIfBound(StepIndex, Action, Progress);
+}
+void UTAQTESequenceComponent::HandleStepTimedOut(int32 StepIndex, UInputAction* Action, float Progress)
+{
+ // The executor has already stopped; retain the run copy until its OnEnded follows.
+ if (!RunningAction.IsValid() || !RunningSteps.IsValidIndex(StepIndex)) return;
+ const auto Callback = RunningSteps[StepIndex].OnTimedOut;
+ OnStepTimedOut.Broadcast(StepIndex, Action, Progress);
  Callback.ExecuteIfBound(StepIndex, Action, Progress);
 }
 bool UTAQTESequenceComponent::IsQTEActive() const
@@ -111,6 +125,7 @@ void UTAQTESequenceComponent::HandleEnded(AActor* Target, bool bSucceeded)
   Action->OnUpdated.RemoveDynamic(this, &UTAQTESequenceComponent::HandleUpdated);
   Action->OnEnded.RemoveDynamic(this, &UTAQTESequenceComponent::HandleEnded);
   Action->OnInputAccepted.RemoveAll(this); Action->OnStageCompleted.RemoveAll(this);
+  Action->OnStageTimedOut.RemoveAll(this);
  }
  const auto Callback = FinishedCallback;
  RunningSteps.Reset(); FinishedCallback.Unbind(); RunningAction.Reset();

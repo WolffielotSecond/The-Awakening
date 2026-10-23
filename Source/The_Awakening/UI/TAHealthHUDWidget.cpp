@@ -3,6 +3,9 @@
 #include "Core/TALocalizeSubsystem.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -10,6 +13,29 @@
 void UTAHealthHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Keep the health readout out of the central gameplay area, with DPI-scaled margins.
+	if (Text_Health && WidgetTree)
+	{
+		auto* ScreenCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+		if (!ScreenCanvas)
+		{
+			UWidget* PreviousRoot = WidgetTree->RootWidget;
+			ScreenCanvas = WidgetTree->ConstructWidget<UCanvasPanel>();
+			WidgetTree->RootWidget = ScreenCanvas;
+			if (PreviousRoot && PreviousRoot != Text_Health)
+			{
+				auto* PreviousSlot = ScreenCanvas->AddChildToCanvas(PreviousRoot);
+				PreviousSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+				PreviousSlot->SetOffsets(FMargin(0.f));
+			}
+		}
+		Text_Health->RemoveFromParent();
+		auto* HealthSlot = ScreenCanvas->AddChildToCanvas(Text_Health);
+		HealthSlot->SetAnchors(FAnchors(1.f, 0.f));
+		HealthSlot->SetAlignment(FVector2D(1.f, 0.f));
+		HealthSlot->SetPosition(FVector2D(-24.f, 24.f));
+		HealthSlot->SetAutoSize(true);
+	}
 	if (APlayerController* PC = GetOwningPlayer())
 	{
 		// 角色复活不换 Pawn，但仍跟随 Possess 变化，避免 HUD 绑在旧 Pawn 上

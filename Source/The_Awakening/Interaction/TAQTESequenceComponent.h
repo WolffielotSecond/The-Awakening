@@ -23,12 +23,18 @@ struct THE_AWAKENING_API FTAQTESequenceStep
  UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.001", ClampMax="1", EditCondition="PressMode == ETAQTEPressMode::Mash")) float ProgressPerClick = .15f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ClampMax="1", EditCondition="PressMode == ETAQTEPressMode::Mash")) float DecayPerSecond = .05f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", Units="s", EditCondition="PressMode == ETAQTEPressMode::Mash")) float ClickCooldownSeconds = .1f;
+ UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bTimeLimited = false;
+ UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.01", Units="s", EditCondition="bTimeLimited")) float TimeLimitSeconds = 5.f;
+ /** UI-unit offset from InteractPromptComponent's projected position. X right, Y down; never relative to screen center. */
+ UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector2D PromptOffset = FVector2D::ZeroVector;
  /** Runtime delegates are supplied by Make QTE Step's Create Event pins. */
  UPROPERTY(Transient) FTAQTEStepCallback OnAcceptedInput;
  UPROPERTY(Transient) FTAQTEStepCallback OnCompleted;
+ UPROPERTY(Transient) FTAQTEStepCallback OnTimedOut;
 };
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTAQTESequenceEnded, bool, bSucceeded);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTAQTESequenceProgress, int32, StepIndex, float, Progress);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FTAQTESequenceTimedOut, int32, StepIndex, UInputAction*, Action, float, Progress);
 /** Scene-side configuration; execution, input and prompts remain on the existing special action component. */
 UCLASS(ClassGroup=(TheAwakening), meta=(BlueprintSpawnableComponent))
 class THE_AWAKENING_API UTAQTESequenceComponent : public UActorComponent
@@ -48,17 +54,20 @@ public:
  UFUNCTION(BlueprintCallable, Category="QTE", meta=(AutoCreateRefTerm="OnFinished", DisplayName="Generate QTE"))
  bool GenerateQTE(AActor* Interactor, const TArray<FTAQTESequenceStep>& InSteps, const FTAQTEFinishedCallback& OnFinished);
  /** OnAcceptedInput fires per accepted press; OnCompleted fires once when that step succeeds. */
- UFUNCTION(BlueprintPure, Category="QTE", meta=(AutoCreateRefTerm="OnAcceptedInput,OnCompleted", AdvancedDisplay="ProgressPerClick,DecayPerSecond,ClickCooldownSeconds", DisplayName="Make QTE Step"))
+ UFUNCTION(BlueprintPure, Category="QTE", meta=(AutoCreateRefTerm="OnAcceptedInput,OnCompleted,OnTimedOut", AdvancedDisplay="ProgressPerClick,DecayPerSecond,ClickCooldownSeconds", DisplayName="Make QTE Step"))
  static FTAQTESequenceStep MakeQTEStep(ETAQTEKeyGroup KeyGroup, ETAQTEDirection Direction, ETAQTEPressMode PressMode,
-  const FTAQTEStepCallback& OnAcceptedInput, const FTAQTEStepCallback& OnCompleted,
-  float ProgressPerClick = .15f, float DecayPerSecond = .05f, float ClickCooldownSeconds = .1f);
+  const FTAQTEStepCallback& OnAcceptedInput, const FTAQTEStepCallback& OnCompleted, const FTAQTEStepCallback& OnTimedOut,
+  float ProgressPerClick = .15f, float DecayPerSecond = .05f, float ClickCooldownSeconds = .1f,
+  bool bTimeLimited = false, float TimeLimitSeconds = 5.f, FVector2D PromptOffset = FVector2D::ZeroVector);
  UFUNCTION(BlueprintCallable, Category="QTE") void CancelQTE();
  /** Normalized current mash progress. No external setter. */
  UFUNCTION(BlueprintPure, Category="QTE") float GetMashProgress() const;
  UFUNCTION(BlueprintPure, Category="QTE") int32 GetCurrentStepIndex() const;
  UFUNCTION(BlueprintPure, Category="QTE") bool IsQTEActive() const;
+ /** Whole-run end notification: death/cancel/timeout report false; only OnStepTimedOut identifies timeout failure. */
  UPROPERTY(BlueprintAssignable, Category="QTE") FTAQTESequenceEnded OnQTEEnded;
  UPROPERTY(BlueprintAssignable, Category="QTE") FTAQTESequenceProgress OnMashProgressChanged;
+ UPROPERTY(BlueprintAssignable, Category="QTE") FTAQTESequenceTimedOut OnStepTimedOut;
  virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 private:
  TWeakObjectPtr<UTASpecialActionComponent> RunningAction;
@@ -66,6 +75,7 @@ private:
  UPROPERTY(Transient) FTAQTEFinishedCallback FinishedCallback;
  void HandleAcceptedInput(int32 StepIndex, UInputAction* Action, float Progress);
  void HandleStepCompleted(int32 StepIndex, UInputAction* Action, float Progress);
+ void HandleStepTimedOut(int32 StepIndex, UInputAction* Action, float Progress);
  UFUNCTION() void HandleUpdated();
  UFUNCTION() void HandleEnded(AActor* Target, bool bSucceeded);
 };

@@ -14,6 +14,9 @@
 #include "Health/TADamageLibrary.h"
 #include "Document/TACharacterActionComponent.h"
 #include "Core/TATimeSubsystem.h"
+#include "Core/TAFreezeComponent.h"
+#include "Core/TAFreezeSubsystem.h"
+#include "GameFramework/WorldSettings.h"
 #include "Interaction/TAInteractableActor.h"
 #include "Debug/TADebugQTETester.h"
 #include "Interaction/TAQTESequenceComponent.h"
@@ -306,6 +309,9 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  PC->Possess(Pawn);
  auto* Input=NewObject<UEnhancedInputComponent>(Pawn); Pawn->InputComponent=Input;
  auto* Action=Pawn->FindComponentByClass<UTASpecialActionComponent>(); Action->BeginPlay(); Action->RandomSeed=37;
+ // Supply TimeSubsystem's real frame delta; Tick delta can be slowed/frozen independently.
+ auto Tick=[&](float RealDelta,float EffectiveScale=1.f)
+ { F.World->DeltaRealTimeSeconds=RealDelta; Action->TickComponent(RealDelta*EffectiveScale,LEVELTICK_All,nullptr); };
  auto* Target=F.World->SpawnActor<ATADebugQTETester>(FVector(100,0,0),FRotator::ZeroRotator);
  auto* Definition=Target->QTESequence->ActionTemplate.LoadSynchronous();
  if(!TestNotNull(TEXT("Debug QTE data loads"),Definition)) { F.GI->RemoveLocalPlayer(Local); return false; }
@@ -317,7 +323,7 @@ bool FTAQTEPipeTest::RunTest(const FString&)
   PC->InputKey(FInputKeyEventArgs(nullptr,FInputDeviceId::CreateFromInternalId(0),Key,Event,Event==IE_Released?0.f:1.f,false,0u));
   PC->PlayerInput->ProcessInputStack({Input},0.016f,false);
  };
- auto Press=[&](FKey Key){Action->TickComponent(.1f,LEVELTICK_All,nullptr); Send(Key,IE_Pressed); Send(Key,IE_Released);};
+ auto Press=[&](FKey Key){Tick(.1f); Send(Key,IE_Pressed); Send(Key,IE_Released);};
  auto* GameplayContext=NewObject<UInputMappingContext>();
  GameplayContext->MapKey(Definition->Stages[1].Action,EKeys::D);
  Subsystem->AddMappingContext(GameplayContext,0,Options); Rebuild();
@@ -337,11 +343,31 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  Press(CorrectKey); TestTrue(TEXT("Each press adds fifteen percent"),FMath::IsNearlyEqual(Action->GetProgress(),.15f));
  Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
  TestTrue(TEXT("Immediate auto-click is rejected by cooldown"),FMath::IsNearlyEqual(Action->GetProgress(),.15f));
- Action->TickComponent(.05f,LEVELTICK_All,nullptr);
+ Tick(.05f);
  const float BeforeTooEarly=Action->GetProgress(); Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
  TestEqual(TEXT("Press inside 0.1s window is ignored"),Action->GetProgress(),BeforeTooEarly);
- Action->TickComponent(.95f,LEVELTICK_All,nullptr);
+ Tick(.95f);
  TestTrue(TEXT("One second decays five percent"),FMath::IsNearlyEqual(Action->GetProgress(),.10f));
+ TestTrue(TEXT("QTE templates opt into TimeSubsystem real-time policy"),Definition->bUseUnpausedRealTime);
+ TestTrue(TEXT("Breathing amplitude halved to 0.1"),FMath::IsNearlyEqual(Definition->KeyPulseAmplitude,.1f));
+ const float BeforeSlow=Action->GetProgress(), BeforeSlowTime=Action->GetStageElapsed();
+ Tick(.2f,.01f);
+ TestTrue(TEXT("Slow Tick cannot slow QTE decay"),FMath::IsNearlyEqual(Action->GetProgress(),BeforeSlow-.01f));
+ TestTrue(TEXT("Slow Tick cannot slow QTE clock"),FMath::IsNearlyEqual(Action->GetStageElapsed(),BeforeSlowTime+.2f));
+ auto* FreezeSource=NewObject<UInputAction>();
+ auto* PlayerFreeze=Pawn->FindComponentByClass<UTAFreezeComponent>();
+ F.World->GetSubsystem<UTAFreezeSubsystem>()->RegisterParticipant(PlayerFreeze);
+ auto* QTETime=F.World->GetSubsystem<UTATimeSubsystem>();
+ QTETime->RequestFreeze(FreezeSource,1.f);
+ TestTrue(TEXT("Fixture truly freezes the player"),UTAFreezeComponent::IsActorFrozen(Pawn));
+ const float BeforeFrozenTime=Action->GetStageElapsed(), BeforeFrozenProgress=Action->GetProgress();
+ Tick(.2f,0.f);
+ TestTrue(TEXT("Full Freeze neither cancels nor stops QTE clock"),Action->IsSpecialActionActive() && FMath::IsNearlyEqual(Action->GetStageElapsed(),BeforeFrozenTime+.2f));
+ TestTrue(TEXT("Full Freeze preserves real-time decay"),FMath::IsNearlyEqual(Action->GetProgress(),BeforeFrozenProgress-.01f));
+ Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
+ TestTrue(TEXT("Enhanced Input QTE still accepts a press during Freeze"),Action->GetProgress()>BeforeFrozenProgress);
+ QTETime->ReleaseFreeze(FreezeSource);
+ F.World->GetSubsystem<UTAFreezeSubsystem>()->UnregisterParticipant(PlayerFreeze);
  TestFalse(TEXT("QTE blocks moving"),PC->AllowsInput(ETAInputCapability::Move));
  TestFalse(TEXT("QTE blocks parkour"),PC->AllowsInput(ETAInputCapability::Parkour));
  TestFalse(TEXT("QTE blocks inventory"),PC->AllowsInput(ETAInputCapability::InventoryToggle));
@@ -355,7 +381,7 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  TestTrue(TEXT("Pause overlay suspends instead of cancels"),Action->IsSpecialActionActive() && Action->IsSuspended());
  TestFalse(TEXT("Suspended QTE context cannot consume pause menu X/Y or navigation"),Subsystem->HasMappingContext(Definition->MappingContext));
  const float BeforePause=Action->GetProgress(); const float StageTime=Action->GetStageElapsed();
- Action->TickComponent(10,LEVELTICK_All,nullptr); Press(CorrectKey);
+ Tick(10); Press(CorrectKey);
  TestEqual(TEXT("Pause preserves progress"),Action->GetProgress(),BeforePause);
  TestEqual(TEXT("Pause preserves stage clock"),Action->GetStageElapsed(),StageTime);
  TestFalse(TEXT("Saving also refused while QTE is paused"),Save->SaveGame());
@@ -405,10 +431,10 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  TestFalse(TEXT("Filling mash alone cannot unlock"),Target->bLastSucceeded);
  Send(EKeys::D,IE_Pressed); Send(EKeys::D,IE_Released);
  TestTrue(TEXT("Unseen key cannot complete during flip"),Action->IsSpecialActionActive());
- Action->TickComponent(Definition->KeyFlipDuration*.25f,LEVELTICK_All,nullptr); Capture(TEXT("Flip25"));
- Action->TickComponent(Definition->KeyFlipDuration*.25f,LEVELTICK_All,nullptr); Capture(TEXT("Flip50"));
- Action->TickComponent(Definition->KeyFlipDuration*.25f,LEVELTICK_All,nullptr); Capture(TEXT("Flip75"));
- Action->TickComponent(Definition->KeyFlipDuration*.3f,LEVELTICK_All,nullptr); Capture(TEXT("RightReady"));
+ Tick(Definition->KeyFlipDuration*.25f); Capture(TEXT("Flip25"));
+ Tick(Definition->KeyFlipDuration*.25f); Capture(TEXT("Flip50"));
+ Tick(Definition->KeyFlipDuration*.25f); Capture(TEXT("Flip75"));
+ Tick(Definition->KeyFlipDuration*.3f); Capture(TEXT("RightReady"));
  Press(EKeys::W); Press(EKeys::Left); Press(EKeys::Down);
  TestTrue(TEXT("Other directions do not unlock"),Action->IsSpecialActionActive());
  PC->RecordHeldInput(EKeys::D,1.f,Local->GetControllerId());
@@ -416,7 +442,7 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  TestTrue(TEXT("Success starts exit buffer"),Action->IsExitBufferActive());
  TestFalse(TEXT("Exit buffer still blocks movement"),PC->AllowsInput(ETAInputCapability::Move));
  TestFalse(TEXT("Still-held final D cannot drive held gameplay input"),PC->ReadHeldAction(Definition->Stages[1].Action).IsNonZero());
- Action->TickComponent(.21f,LEVELTICK_All,nullptr);
+ Tick(.21f);
  TestFalse(TEXT("Exit buffer expires"),Action->IsExitBufferActive());
  TestTrue(TEXT("Movement permission restored after buffer"),PC->AllowsInput(ETAInputCapability::Move));
  TestFalse(TEXT("Held D remains consumed after buffer expires"),PC->ReadHeldAction(Definition->Stages[1].Action).IsNonZero());
@@ -426,7 +452,7 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  PC->RecordHeldInput(EKeys::D,0.f,Local->GetControllerId());
  TestTrue(TEXT("Right arrow unlocks the same direction as D"),Target->bLastSucceeded && !Action->IsSpecialActionActive());
  TestEqual(TEXT("Success emitted once"),Target->SuccessfulRuns,1);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr);
+ Tick(.21f);
  // Gamepad pool accepts only the selected X/Y action and then the fixed right D-pad direction.
  Target->OnInteract_Implementation(Pawn); Rebuild();
  FKey PadKey, WrongPad;
@@ -437,10 +463,10 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  Press(WrongPad); TestEqual(TEXT("Unselected gamepad face button is ignored"),Action->GetProgress(),0.f);
  for(int32 I=0;I<9 && Action->GetStageIndex()==0;++I) Press(PadKey);
  TestEqual(TEXT("Selected gamepad face button fills mash"),Action->GetStageIndex(),1);
- Action->TickComponent(.4f,LEVELTICK_All,nullptr);
+ Tick(.4f);
  Press(EKeys::Gamepad_DPad_Left); TestTrue(TEXT("Wrong D-pad direction ignored"),Action->IsSpecialActionActive());
  Press(EKeys::Gamepad_DPad_Right); TestTrue(TEXT("D-pad right unlocks"),Target->bLastSucceeded);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr);
+ Tick(.21f);
  // Exposed instance tuning overrides a private run copy, keeping the shared asset untouched.
  Target->QTESequence->Steps[0].ProgressPerClick=.2f; Target->QTESequence->Steps[0].DecayPerSecond=.1f; Target->QTESequence->Steps[0].ClickCooldownSeconds=.25f;
  Target->OnInteract_Implementation(Pawn); Rebuild();
@@ -448,9 +474,9 @@ bool FTAQTEPipeTest::RunTest(const FString&)
   if(Mapping.Action==Action->GetPromptAction() && !Mapping.Key.IsGamepadKey()) { CorrectKey=Mapping.Key; break; }
  Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
  TestTrue(TEXT("Tuned click gain applies"),FMath::IsNearlyEqual(Action->GetProgress(),.2f));
- Action->TickComponent(.1f,LEVELTICK_All,nullptr); Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
+ Tick(.1f); Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
  TestTrue(TEXT("Tuned cooldown rejects early click while tuned decay continues"),FMath::IsNearlyEqual(Action->GetProgress(),.19f));
- Action->TickComponent(.15f,LEVELTICK_All,nullptr); Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
+ Tick(.15f); Send(CorrectKey,IE_Pressed); Send(CorrectKey,IE_Released);
  TestTrue(TEXT("Click at tuned interval is accepted"),FMath::IsNearlyEqual(Action->GetProgress(),.375f));
  TestTrue(TEXT("Shared asset keeps its default gain"),FMath::IsNearlyEqual(Definition->Stages[0].ProgressPerPress,.15f));
  Action->Cancel(); Target->QTESequence->Steps[0].ProgressPerClick=.15f; Target->QTESequence->Steps[0].DecayPerSecond=.05f; Target->QTESequence->Steps[0].ClickCooldownSeconds=.1f;
@@ -460,27 +486,33 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  Sequence->Steps.SetNum(3);
  Sequence->Steps[0].KeyGroup=ETAQTEKeyGroup::Direction; Sequence->Steps[0].Direction=ETAQTEDirection::Up;
  Sequence->Steps[0].PressMode=ETAQTEPressMode::SinglePress;
+ Sequence->Steps[0].PromptOffset=FVector2D(70,-35);
  Sequence->Steps[1].KeyGroup=ETAQTEKeyGroup::Direction; Sequence->Steps[1].Direction=ETAQTEDirection::Left;
  Sequence->Steps[1].PressMode=ETAQTEPressMode::Mash; Sequence->Steps[1].ProgressPerClick=.6f;
  Sequence->Steps[1].DecayPerSecond=0.f; Sequence->Steps[1].ClickCooldownSeconds=.3f;
+ Sequence->Steps[1].PromptOffset=FVector2D(-40,55);
  Sequence->Steps[2].KeyGroup=ETAQTEKeyGroup::Interaction; Sequence->Steps[2].PressMode=ETAQTEPressMode::SinglePress;
  Target->OnInteract_Implementation(Pawn); Rebuild();
  TestEqual(TEXT("Editable sequence creates all three runtime stages"),Action->GetDefinition()->Stages.Num(),3);
+ Widget->Refresh();
+ TestTrue(TEXT("First step offsets whole QTE relative to its existing anchor"),Widget->GetRenderTransform().Translation.Equals(FVector2D(70,-35)));
  TestTrue(TEXT("Flip uses 0.2 seconds"),FMath::IsNearlyEqual(Action->GetDefinition()->KeyFlipDuration,.2f));
  Press(EKeys::D); TestEqual(TEXT("Wrong configured direction ignored"),Sequence->GetCurrentStepIndex(),0);
  Press(EKeys::Up); TestEqual(TEXT("Configured up accepts its arrow alias"),Sequence->GetCurrentStepIndex(),1);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr); Press(EKeys::A);
+ TestTrue(TEXT("Next step replaces rather than accumulates prompt offset"),Widget->GetRenderTransform().Translation.Equals(FVector2D(-40,55)));
+ Tick(.21f); Press(EKeys::A);
  TestTrue(TEXT("Scene component exposes current mash progress readonly"),FMath::IsNearlyEqual(Sequence->GetMashProgress(),.6f));
  Press(EKeys::Left); TestEqual(TEXT("Each stage has its own cooldown"),Sequence->GetCurrentStepIndex(),1);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr); Press(EKeys::Left);
+ Tick(.21f); Press(EKeys::Left);
  TestEqual(TEXT("Directional mash advances to interaction press"),Sequence->GetCurrentStepIndex(),2);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr);
+ TestTrue(TEXT("Zero offset step returns QTE to anchor"),Widget->GetRenderTransform().Translation.IsNearlyZero());
+ Tick(.21f);
  for(const auto& Mapping:Definition->MappingContext->GetMappings())
   if(Mapping.Action==Action->GetPromptAction() && !Mapping.Key.IsGamepadKey()) { CorrectKey=Mapping.Key; break; }
  Press(CorrectKey);
  TestEqual(TEXT("Bindable component end event emitted exactly once"),Local->QTEEndCount,1);
  TestTrue(TEXT("End event reports success"),Local->bLastQTESucceeded);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr);
+ Tick(.21f);
  Target->OnInteract_Implementation(Pawn); Action->Cancel();
  TestEqual(TEXT("Cancellation also emits end event once"),Local->QTEEndCount,2);
  TestFalse(TEXT("Cancellation event reports failure"),Local->bLastQTESucceeded);
@@ -492,11 +524,13 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  FTAQTEFinishedCallback Finished; Finished.BindDynamic(Local,&UTAInteractionTestLocalPlayer::QTEEnded);
  Local->CallbackSequence=Sequence;
  TArray<FTAQTESequenceStep> RequestedSteps;
- RequestedSteps.Add(UTAQTESequenceComponent::MakeQTEStep(ETAQTEKeyGroup::Direction,ETAQTEDirection::Right,ETAQTEPressMode::Mash,Accepted,Completed,.5f,0.f,.2f));
- RequestedSteps.Add(UTAQTESequenceComponent::MakeQTEStep(ETAQTEKeyGroup::Direction,ETAQTEDirection::Left,ETAQTEPressMode::SinglePress,Accepted,Completed));
+ RequestedSteps.Add(UTAQTESequenceComponent::MakeQTEStep(ETAQTEKeyGroup::Direction,ETAQTEDirection::Right,ETAQTEPressMode::Mash,Accepted,Completed,FTAQTEStepCallback(),.5f,0.f,.2f,false,5.f,FVector2D(80,-20)));
+ RequestedSteps.Add(UTAQTESequenceComponent::MakeQTEStep(ETAQTEKeyGroup::Direction,ETAQTEDirection::Left,ETAQTEPressMode::SinglePress,Accepted,Completed,FTAQTEStepCallback()));
  TestTrue(TEXT("Generate QTE starts supplied steps"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild();
+ TestTrue(TEXT("Make QTE Step offset reaches runtime and widget"),Action->GetCurrentStage()->PromptOffset.Equals(FVector2D(80,-20)) && Widget->GetRenderTransform().Translation.Equals(FVector2D(80,-20)));
  TestEqual(TEXT("Generate does not overwrite editable component defaults"),Sequence->Steps.Num(),3);
- RequestedSteps[0].OnAcceptedInput.Unbind(); RequestedSteps[0].Direction=ETAQTEDirection::Down;
+ RequestedSteps[0].OnAcceptedInput.Unbind(); RequestedSteps[0].Direction=ETAQTEDirection::Down; RequestedSteps[0].PromptOffset=FVector2D(999,999);
+ TestTrue(TEXT("Running offset is isolated from caller edits"),Action->GetCurrentStage()->PromptOffset.Equals(FVector2D(80,-20)));
  TestFalse(TEXT("Rejected new request cannot replace current callbacks"),Sequence->GenerateQTE(Pawn,{},Finished));
  Press(EKeys::Up); TestEqual(TEXT("Wrong key emits no accepted event"),Local->AcceptedSteps.Num(),0);
  Press(EKeys::D);
@@ -504,14 +538,14 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  TestTrue(TEXT("Callback receives normalized progress"),FMath::IsNearlyEqual(Local->AcceptedProgress[0],.5f));
  Send(EKeys::D,IE_Pressed); Send(EKeys::D,IE_Released);
  TestEqual(TEXT("Cooldown click emits no event"),Local->AcceptedSteps.Num(),1);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr); Press(EKeys::D);
+ Tick(.21f); Press(EKeys::D);
  TestEqual(TEXT("Mash completion event fires once"),Local->CompletedSteps.Num(),1);
  TestEqual(TEXT("Completion identifies the first step"),Local->CompletedSteps[0],0);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr); Press(EKeys::Left);
+ Tick(.21f); Press(EKeys::Left);
  TestEqual(TEXT("Next key invokes its own completion event"),Local->CompletedSteps.Num(),2);
  TestEqual(TEXT("Completion identifies the second step"),Local->CompletedSteps[1],1);
  TestTrue(TEXT("Final callback succeeds once"),Local->QTEEndCount==3 && Local->bLastQTESucceeded);
- Action->TickComponent(.21f,LEVELTICK_All,nullptr);
+ Tick(.21f);
  RequestedSteps.SetNum(1); RequestedSteps[0].Direction=ETAQTEDirection::Right; RequestedSteps[0].OnAcceptedInput=Accepted;
  Local->bCancelOnAccepted=true;
  TestTrue(TEXT("Callback cancellation run starts"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild(); Press(EKeys::D);
@@ -523,19 +557,73 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  TestTrue(TEXT("Completion callback cancellation run starts"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild(); Press(EKeys::D);
  TestTrue(TEXT("Cancelling in completion prevents final success and stale advancement"),Local->QTEEndCount==5 && !Local->bLastQTESucceeded && !Sequence->IsQTEActive());
  Local->bCancelOnCompleted=false;
+ // Per-step optional deadline aborts the whole sequence, with input already cleaned up.
+ FTAQTEStepCallback TimedOut; TimedOut.BindDynamic(Local,&UTAInteractionTestLocalPlayer::QTETimedOut);
+ const int32 BeforeTimeoutEnds=Local->QTEEndCount, BeforeTimeoutCompletions=Local->CompletedSteps.Num();
+ RequestedSteps.SetNum(2);
+ RequestedSteps[0]=UTAQTESequenceComponent::MakeQTEStep(ETAQTEKeyGroup::Direction,ETAQTEDirection::Right,ETAQTEPressMode::SinglePress,Accepted,Completed,TimedOut,.15f,.05f,.1f,true,.5f);
+ RequestedSteps[1]=RequestedSteps[0]; RequestedSteps[1].Direction=ETAQTEDirection::Left;
+ TestTrue(TEXT("Timed sequence starts"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild();
+ TestTrue(TEXT("Step deadline is copied into runtime action"),FMath::IsNearlyEqual(Action->GetCurrentStage()->Timeout,.5f));
+ Tick(.51f);
+ TestTrue(TEXT("Timeout stops entire QTE before the next step"),!Sequence->IsQTEActive() && Local->TimedOutSteps.Num()==1 && Local->TimedOutSteps[0]==0);
+ TestFalse(TEXT("Timeout callback sees an already stopped action"),Local->bWasActiveDuringTimeout);
+ TestEqual(TEXT("Timeout cannot emit step completion"),Local->CompletedSteps.Num(),BeforeTimeoutCompletions);
+ TestTrue(TEXT("Timeout reports final failure exactly once"),Local->QTEEndCount==BeforeTimeoutEnds+1 && !Local->bLastQTESucceeded);
+ TestTrue(TEXT("Timeout releases its input request"),PC->AllowsInput(ETAInputCapability::Move));
+ RequestedSteps[0].bTimeLimited=false; RequestedSteps[0].TimeLimitSeconds=.01f;
+ TestTrue(TEXT("Unlimited step ignores its time field"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild(); Tick(2.f);
+ TestTrue(TEXT("Disabled deadline never times out"),Sequence->IsQTEActive() && Local->TimedOutSteps.Num()==1);
+ Action->Cancel();
+ RequestedSteps[0].bTimeLimited=true; RequestedSteps[0].TimeLimitSeconds=0.f;
+ TestFalse(TEXT("Enabled zero deadline rejects invalid configuration"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished));
+ RequestedSteps[0].bTimeLimited=false;
+ TestTrue(TEXT("Second-stage timeout fixture starts"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild();
+ Press(EKeys::D); TestEqual(TEXT("First completed stage reaches next step"),Sequence->GetCurrentStepIndex(),1);
+ Tick(.51f);
+ TestTrue(TEXT("Only the current second stage's timeout fires"),Local->TimedOutSteps.Num()==2 && Local->TimedOutSteps[1]==1 && !Sequence->IsQTEActive());
  Sequence->Steps.SetNum(2); Sequence->Steps[0]=FTAQTESequenceStep(); Sequence->Steps[1]=FTAQTESequenceStep();
  Sequence->Steps[1].KeyGroup=ETAQTEKeyGroup::Direction; Sequence->Steps[1].PressMode=ETAQTEPressMode::SinglePress;
  // A repeated interaction rerolls at run start, not at each frame or device swap.
  TSet<UInputAction*> Choices;
- for(int32 Seed=0;Seed<20;++Seed)
+ for(int32 Seed=0;Seed<100;++Seed)
  {
   Action->RandomSeed=Seed; Target->OnInteract_Implementation(Pawn); Choices.Add(Action->GetPromptAction()); Action->Cancel();
  }
  TestTrue(TEXT("Random runs can select different interaction actions"),Choices.Num()>1);
- Target->OnInteract_Implementation(Pawn);
+ UInputAction* QAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/DeubgItem/QTE/IA_QTE_Q.IA_QTE_Q"));
+ TestTrue(TEXT("Q action is in the random pool"),QAction && Definition->Stages[0].ActionOptions.Contains(QAction) && Choices.Contains(QAction));
+ for(int32 Seed=0;Seed<100;++Seed)
+ {
+  Action->RandomSeed=Seed; Target->OnInteract_Implementation(Pawn);
+  if(Action->GetPromptAction()==QAction)
+  {
+   Rebuild(); auto* QIcons=F.GI->GetSubsystem<UTAInputIconSubsystem>();
+   QIcons->SetCurrentDeviceType(EInputDeviceType::KeyboardMouse);
+   TestTrue(TEXT("Q prompt resolves its actual IMC mapping"),QIcons->GetPromptKeysForAction(QAction,Local).Contains(EKeys::Q));
+   TestNotNull(TEXT("Q uses the existing Keys icon"),QIcons->GetIconForActionForPlayer(QAction,Local));
+   Press(EKeys::E); TestEqual(TEXT("Q-only stage rejects E"),Action->GetProgress(),0.f);
+   Press(EKeys::Q); TestTrue(TEXT("Q progresses via Enhanced Input"),FMath::IsNearlyEqual(Action->GetProgress(),.15f));
+   Action->Cancel(); break;
+  }
+  Action->Cancel();
+ }
+ // Death must preserve both generic end notifications without emitting either timeout notification.
+ RequestedSteps[0].bTimeLimited=true; RequestedSteps[0].TimeLimitSeconds=.5f;
+ const int32 BeforeDeathEnds=Local->QTEEndCount, BeforeDeathTimeouts=Local->TimedOutSteps.Num();
+ const int32 BeforeDeathCompletions=Local->CompletedSteps.Num();
+ Sequence->OnQTEEnded.AddDynamic(Local,&UTAInteractionTestLocalPlayer::QTEBroadcastEnded);
+ Sequence->OnStepTimedOut.AddDynamic(Local,&UTAInteractionTestLocalPlayer::QTETimedOut);
+ TestTrue(TEXT("Timed death fixture starts"),Sequence->GenerateQTE(Pawn,RequestedSteps,Finished)); Rebuild();
  UTADamageLibrary::ApplyDamage(Pawn,Pawn,100000,ETADamageType::Forced,TAGameplayTags::Damage_Source_Console);
  TestFalse(TEXT("Death cancels QTE without success"),Action->IsSpecialActionActive() || Target->bLastSucceeded);
  TestFalse(TEXT("Death removes QTE context"),Subsystem->HasMappingContext(Definition->MappingContext));
+ Tick(1.f); Sequence->CancelQTE();
+ TestFalse(TEXT("Death leaves no running sequence"),Sequence->IsQTEActive());
+ TestTrue(TEXT("Death sends OnFinished(false) exactly once"),Local->QTEEndCount==BeforeDeathEnds+1 && !Local->bLastQTESucceeded);
+ TestTrue(TEXT("Death sends OnQTEEnded(false) exactly once"),Local->QTEBroadcastEndCount==1 && !Local->bLastQTEBroadcastSucceeded);
+ TestEqual(TEXT("Death never emits step or component timeout events, even after the deadline"),Local->TimedOutSteps.Num(),BeforeDeathTimeouts);
+ TestEqual(TEXT("Death never completes or advances a step"),Local->CompletedSteps.Num(),BeforeDeathCompletions);
  if(Renderer) BeginCleanup(Renderer);
  Widget->NativeDestruct(); F.GI->RemoveLocalPlayer(Local);
  return true;

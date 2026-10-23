@@ -23,6 +23,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "0", Units = "s"))
 	float FadeInTime = 0.5f;
 
+	/** Maximum wait per overridden presentation, in gameplay seconds. Prevents a missing completion callback from trapping the player. */
+	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "1", Units = "s"))
+	float PresentationMaxWait = 60.f;
+
 	/** 复活后的无敌时间，防止在复活点旁边被连续击杀。强制伤害不受影响。 */
 	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "0", Units = "s"))
 	float RespawnInvulnerableTime = 2.f;

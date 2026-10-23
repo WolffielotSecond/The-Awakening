@@ -83,7 +83,7 @@ void UTAQTEWidget::SetFaces(UTexture2D* Front, UTexture2D* Back)
 void UTAQTEWidget::Refresh()
 {
  const auto* Component = Action.Get();
- if (!Component || !Component->IsSpecialActionActive()) { SetVisibility(ESlateVisibility::Collapsed); return; }
+ if (!Component || !Component->IsSpecialActionActive()) { SetRenderTranslation(FVector2D::ZeroVector); SetVisibility(ESlateVisibility::Collapsed); return; }
  if (!Key || !Ring) return;
  SetVisibility(ESlateVisibility::HitTestInvisible);
  if (auto* GI = GetGameInstance()) if (auto* Icons = GI->GetSubsystem<UTAInputIconSubsystem>())
@@ -107,6 +107,8 @@ void UTAQTEWidget::Refresh()
  }
  Key->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
  const auto* StageConfig = Component->GetCurrentStage();
+ // Shift the whole QTE inside the existing screen-space prompt anchor; never move the world component.
+ SetRenderTranslation(StageConfig ? StageConfig->PromptOffset : FVector2D::ZeroVector);
  Ring->SetVisibility(StageConfig && StageConfig->Kind == ETAQTEKind::Mash ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
  if (RingMaterial) RingMaterial->SetScalarParameterValue(TEXT("Progress"), Component->GetProgress());
 }
