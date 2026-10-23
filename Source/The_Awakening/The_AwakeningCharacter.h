@@ -335,6 +335,9 @@ protected:
 	float StickDeadZone = 0.f;
 
 	bool bSprintHeld = false;
+	bool bToggleSprintEnabled = false;
+	bool bSprintToggled = false;
+	bool bSprintMovementReleased = false;
 	FVector2D StickInput = FVector2D::ZeroVector;
 	// Coordinate basis of the accepted locomotion command, updated only with Move permission.
 	float MovementCommandYaw = 0.f;
@@ -342,6 +345,9 @@ protected:
 
 
 public:
+	// Applied settings can change while the world is paused.
+	void SetToggleSprintEnabled(bool bEnabled);
+
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoMove(float Right, float Forward);
 

@@ -7,12 +7,20 @@
 #include "GameFramework/GameUserSettings.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/GameInstance.h"
+#include "The_AwakeningCharacter.h"
+#include "GameFramework/PlayerController.h"
 
 bool FTASettingsApplyService::Apply(ULocalPlayer* Player,const FTASettingDefinition& D,int32 V)
 {
  const FName Handler=D.ApplyHandlerId;
  const FName Choice=D.GetChoiceValue(V);
  const float Number=D.Type==ETASettingType::Slider?D.ToSliderNumber(V):0;
+ if (Handler==TEXT("Game.ToggleSprint"))
+ {
+  if (APlayerController* PC=Player?Player->PlayerController.Get():nullptr)
+   if (auto* Character=Cast<AThe_AwakeningCharacter>(PC->GetPawn())) Character->SetToggleSprintEnabled(V==1);
+  return true;
+ }
  if (Handler==TEXT("Game.Language"))
  {
   auto* Loc=Player && Player->GetGameInstance()?Player->GetGameInstance()->GetSubsystem<UTALocalizeSubsystem>():nullptr;

@@ -188,6 +188,7 @@ TArray<FTASettingDefinition> FTASettingsCatalog::Build(UObject* Outer)
  Choices(Language,{TEXT("zh-CN"),TEXT("zh-TW"),TEXT("en")});
  auto& TextSpeed=Slider(TEXT("Game.DialogueTextSpeed"),FName(TEXT("Settings.Page.Game")),40,10,100,5,ETASettingDisplayFormat::Integer);
  TextSpeed.UnitTextId=TEXT("Settings.Unit.CharactersPerSecond"); TextSpeed.ApplyPolicy=ETASettingApplyPolicy::NextDialogue;
+ Add(TEXT("Game.ToggleSprint"),FName(TEXT("Settings.Page.Game")),ETASettingType::Toggle,0);
  auto& Monitor=Add(TEXT("Display.Monitor"),FName(TEXT("Settings.Page.Display")),ETASettingType::Choice,0);
  Monitor.ChoiceProviderId=TEXT("DisplayMonitors"); RefreshCandidates(Monitor); Monitor.ApplyPolicy=ETASettingApplyPolicy::VideoMode;
  auto& Mode=Add(TEXT("Display.WindowMode"),FName(TEXT("Settings.Page.Display")),ETASettingType::Choice,1);

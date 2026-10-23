@@ -321,17 +321,40 @@ void AThe_AwakeningCharacter::OnScanCanceled(const FInputActionValue& Value)
 	}
 }
 
+void AThe_AwakeningCharacter::SetToggleSprintEnabled(bool bEnabled)
+{
+	if (bToggleSprintEnabled == bEnabled) return;
+	bToggleSprintEnabled = bEnabled;
+	bSprintToggled = bEnabled && bSprintHeld;
+	bSprintMovementReleased = false;
+	if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetController()))
+		PC->SuppressHeldActionUntilRelease(SprintAction);
+	if (!bEnabled) bSprintHeld = false;
+}
+
 void AThe_AwakeningCharacter::UpdateHeldGameplayInput()
 {
 	AThe_AwakeningPlayerController* PC = Cast<AThe_AwakeningPlayerController>(GetController());
 	if (!PC || !PC->IsLocalController()) return;
+	if (const auto* Local = PC->GetLocalPlayer())
+		if (const auto* Settings = Local->GetSubsystem<UTASettingsSubsystem>())
+			SetToggleSprintEnabled(Settings->GetBoolean(TEXT("Game.ToggleSprint")));
 	if (PC->AllowsInput(ETAInputCapability::Move))
 	{
 		bMoveForward = PC->ReadHeldAction(MoveForwardAction).IsNonZero();
 		bMoveBackward = PC->ReadHeldAction(MoveBackwardAction).IsNonZero();
 		bMoveLeft = PC->ReadHeldAction(MoveLeftAction).IsNonZero();
 		bMoveRight = PC->ReadHeldAction(MoveRightAction).IsNonZero();
-		bSprintHeld = PC->ReadHeldAction(SprintAction).IsNonZero();
+		if (bToggleSprintEnabled)
+		{
+			if (PC->ConsumeMovementActionPress(SprintAction))
+			{
+				bSprintToggled = !bSprintToggled;
+				bSprintMovementReleased = false;
+			}
+			bSprintHeld = bSprintToggled;
+		}
+		else bSprintHeld = PC->ReadHeldAction(SprintAction).IsNonZero();
 		const FInputActionValue MoveValue = PC->ReadHeldAction(MoveAction);
 		StickInput = FVector2D(MoveValue[0], MoveValue[1]);
 		MovementCommandYaw = GetController()->GetControlRotation().Yaw;
@@ -354,7 +377,6 @@ void AThe_AwakeningCharacter::UpdateMovementInput()
 	}
 
 	FVector2D MoveInput = FVector2D::ZeroVector;
-	bool bUseSprint = bSprintHeld;
 
 	const bool bKeyboardActive =
 		bMoveForward || bMoveBackward || bMoveLeft || bMoveRight;
@@ -381,8 +403,19 @@ void AThe_AwakeningCharacter::UpdateMovementInput()
 		}
 	}
 
-	GetCharacterMovement()->MaxWalkSpeed =
-		bUseSprint ? SprintSpeed : WalkSpeed;
+	// Check the release interval before accepting resumed movement, including its first frame.
+	// UI/Freeze permission denial and parkour never count as releasing movement.
+	if (bToggleSprintEnabled && bSprintToggled && PC->AllowsInput(ETAInputCapability::Move))
+	{
+		if (MoveInput.IsNearlyZero()) bSprintMovementReleased = true;
+		if (bSprintMovementReleased && GetVelocity().SizeSquared2D() < FMath::Square(SprintSpeed))
+		{
+			bSprintToggled = false;
+			bSprintHeld = false;
+		}
+		if (!MoveInput.IsNearlyZero()) bSprintMovementReleased = false;
+	}
+	GetCharacterMovement()->MaxWalkSpeed = bSprintHeld ? SprintSpeed : WalkSpeed;
 
 	if (!MoveInput.IsNearlyZero())
 	{
@@ -923,6 +956,8 @@ void AThe_AwakeningCharacter::ClearMovementInput()
 
 	StickInput = FVector2D::ZeroVector;
 	bSprintHeld = false;
+	bSprintToggled = false;
+	bSprintMovementReleased = false;
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 }
 

@@ -406,9 +406,14 @@ void AThe_AwakeningPlayerController::RecordHeldInput(FKey Key, float Value, int3
 	if (!bApplicationInputActive || !GetLocalPlayer() || UserIndex != GetLocalPlayer()->GetControllerId()) return;
 	// Releases always clear observed state. Press ownership is checked at ingress;
 	// this observer never grants permission to execute a gameplay action.
+	if (!FMath::IsNearlyZero(Value) && HeldKeyValues.FindRef(Key).IsNearlyZero() &&
+		AllowsInput(ETAInputCapability::Move)) ++PendingMovementPresses.FindOrAdd(Key);
 	HeldKeyValues.FindOrAdd(Key) = FVector(Value, 0.f, 0.f);
 	// Raw releases survive menu focus/input-mode changes and rearm the toggle.
-	if (FMath::IsNearlyZero(Value)) { ConsumedInventoryKeys.Remove(Key); ConsumedActionKeys.Remove(Key); }
+	if (FMath::IsNearlyZero(Value))
+	{
+		ConsumedInventoryKeys.Remove(Key); ConsumedActionKeys.Remove(Key);
+	}
 	// Slate sends separate X/Y events even when the mapping uses Gamepad_Left2D.
 	const EPairedAxis Axis = Key.GetPairedAxis();
 	if (Axis != EPairedAxis::Unpaired)
@@ -470,6 +475,25 @@ bool AThe_AwakeningPlayerController::ConsumeInventoryTogglePress(const UInputAct
 void AThe_AwakeningPlayerController::SuppressHeldActionUntilRelease(const UInputAction* Action)
 {
  for (FKey Key : GetObservedHeldKeysForAction(Action)) ConsumedActionKeys.Add(Key);
+	if (const auto* Input = Cast<UTAPlayerInput>(PlayerInput))
+		for (const auto& Mapping : Input->GetHeldActionMappings())
+			if (Mapping.Action == Action) PendingMovementPresses.Remove(Mapping.Key);
+}
+
+bool AThe_AwakeningPlayerController::ConsumeMovementActionPress(const UInputAction* Action)
+{
+	if (!Action || !AllowsInput(ETAInputCapability::Move)) return false;
+	int32 Presses = 0;
+	TSet<FKey> Seen;
+	if (const auto* Input = Cast<UTAPlayerInput>(PlayerInput))
+		for (const auto& Mapping : Input->GetHeldActionMappings())
+			if (Mapping.Action == Action && !Seen.Contains(Mapping.Key))
+			{
+				Seen.Add(Mapping.Key);
+				if (!ConsumedActionKeys.Contains(Mapping.Key)) Presses += PendingMovementPresses.FindRef(Mapping.Key);
+			}
+	SuppressHeldActionUntilRelease(Action);
+	return (Presses % 2) != 0;
 }
 
 FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAction* Action)
@@ -614,6 +638,7 @@ void AThe_AwakeningPlayerController::InvalidatePhysicalObservationForExternalOwn
 	HeldInputModifiers.Reset();
 	ConsumedInventoryKeys.Reset();
  ConsumedActionKeys.Reset();
+	PendingMovementPresses.Reset();
 	// Preserve the existing external-loss cleanup; permission denial never calls this.
 	if (auto* ControlledCharacter = Cast<AThe_AwakeningCharacter>(GetPawn())) ControlledCharacter->ClearMovementInput();
 	// Do not generate Released, change requests, or clear the processor's Down/Up pairing.
@@ -629,6 +654,8 @@ void AThe_AwakeningPlayerController::InvalidateGamepadObservationOnDisconnect()
 		if (It->IsGamepadKey()) It.RemoveCurrent();
  for (auto It = ConsumedActionKeys.CreateIterator(); It; ++It)
   if (It->IsGamepadKey()) It.RemoveCurrent();
+	for (auto It = PendingMovementPresses.CreateIterator(); It; ++It)
+		if (It.Key().IsGamepadKey()) It.RemoveCurrent();
 	GamepadDeadZone.Reset();
 }
 
@@ -862,6 +889,7 @@ void AThe_AwakeningPlayerController::SynchronizeInputPresentation()
 		Winner = GetInputWinner();
 	}
 	SynchronizeUIInputMappingContext(Winner);
+	if (!Winner.Request.Allowed.Contains(ETAInputCapability::Move)) PendingMovementPresses.Reset();
 	const auto& Presentation = Winner.Request.Presentation;
 	const auto* Receiver=Cast<ITAPlayerInputReceiver>(Winner.Request.Owner.Get());
 	const bool ShowCursor=Presentation.bShowCursor && (!Receiver || Receiver->ShouldShowPlayerCursor());

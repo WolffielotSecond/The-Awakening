@@ -1,4 +1,6 @@
 {
+	"Settings.Game.ToggleSprint.Name": "點按切換疾跑",
+	"Settings.Game.ToggleSprint.Description": "開啟後點按疾跑鍵切換疾跑；關閉後按住疾跑鍵疾跑，鬆開取消。點按模式下鬆開移動輸入，水平速度低於疾跑速度後取消疾跑。變更在套用設定後生效。",
 	"Pickup_Previous": "上一件物品",
 	"Pickup_Next": "下一件物品",
 	"Pickup_Failed": "無法拾取，請檢查背包剩餘空間。",

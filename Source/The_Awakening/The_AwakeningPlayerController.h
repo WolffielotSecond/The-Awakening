@@ -94,6 +94,8 @@ public:
 	FInputActionValue ReadHeldAction(const UInputAction* Action);
  /** Consume observed IA sources until their real release. */
  void SuppressHeldActionUntilRelease(const UInputAction* Action);
+	/** Accept a physical press once, only if it began with Move permission. */
+	bool ConsumeMovementActionPress(const UInputAction* Action);
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	UFUNCTION(BlueprintCallable, Category = "UI|Pause Menu")
 	void OpenPauseMenu();
@@ -210,6 +212,8 @@ protected:
 	TWeakPtr<class SViewport> PresentedViewport;
 	TSet<FKey> ConsumedInventoryKeys;
  TSet<FKey> ConsumedActionKeys;
+	// Press observations survive a tap released between character ticks.
+	TMap<FKey, int32> PendingMovementPresses;
 	bool bApplicationInputActive = true;
 	UPROPERTY(Transient)
 	TMap<TObjectPtr<UInputModifier>, TObjectPtr<UInputModifier>> HeldInputModifiers;

@@ -19,7 +19,7 @@
 #include "UObject/SavePackage.h"
 namespace
 {
- bool Save(UObject* Asset)
+ bool SaveQTEAsset(UObject* Asset)
  {
   const FString File = FPackageName::LongPackageNameToFilename(Asset->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
   IFileManager::Get().MakeDirectory(*FPaths::GetPath(File), true);
@@ -65,7 +65,7 @@ namespace
   auto* RGB = NewObject<UMaterialExpressionComponentMask>(M); RGB->R=true; RGB->G=true; RGB->B=true; RGB->A=false; RGB->Input.Connect(0,C); M->GetExpressionCollection().AddExpression(RGB);
   auto* Alpha = NewObject<UMaterialExpressionComponentMask>(M); Alpha->R=false; Alpha->G=false; Alpha->B=false; Alpha->A=true; Alpha->Input.Connect(0,C); M->GetExpressionCollection().AddExpression(Alpha);
   M->GetEditorOnlyData()->EmissiveColor.Connect(0,RGB); M->GetEditorOnlyData()->Opacity.Connect(0,Alpha);
-  M->PostEditChange(); return Save(M) ? M : nullptr;
+  M->PostEditChange(); return SaveQTEAsset(M) ? M : nullptr;
  }
 }
 UTAQTESetupCommandlet::UTAQTESetupCommandlet()
@@ -76,7 +76,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
  const FString Root=TEXT("/Game/DeubgItem/QTE/");
  TArray<UInputAction*> Primary;
  for (const TCHAR* Name : {TEXT("IA_QTE_E"),TEXT("IA_QTE_MouseLeft"),TEXT("IA_QTE_MouseRight"),TEXT("IA_QTE_F"),TEXT("IA_QTE_Q")})
- { auto* A=Asset<UInputAction>(Root+Name); if (!A) return 1; A->ValueType=EInputActionValueType::Boolean; if(!Save(A)) return 1; Primary.Add(A); }
+ { auto* A=Asset<UInputAction>(Root+Name); if (!A) return 1; A->ValueType=EInputActionValueType::Boolean; if(!SaveQTEAsset(A)) return 1; Primary.Add(A); }
  TArray<UInputAction*> Directions;
  for (const TCHAR* Name : {TEXT("IA_MoveForward"),TEXT("IA_MoveBackward"),TEXT("IA_MoveLeft"),TEXT("IA_MoveRight")})
  {
@@ -93,7 +93,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
  const FKey Pad[]={EKeys::Gamepad_DPad_Up,EKeys::Gamepad_DPad_Down,EKeys::Gamepad_DPad_Left,EKeys::Gamepad_DPad_Right};
  for(int32 I=0;I<4;++I)
  { IMC->MapKey(Directions[I],Letters[I]); IMC->MapKey(Directions[I],Arrows[I]); IMC->MapKey(Directions[I],Pad[I]); }
- bOk &= Save(IMC);
+ bOk &= SaveQTEAsset(IMC);
  auto Configure=[&](UTASpecialActionDefinition* D,bool bRandom)
  {
   D->KeyPulseAmplitude=.1f; D->bUseUnpausedRealTime=true; D->KeyFlipDuration=.2f; D->ExitInputBufferSeconds=.2f; D->bAlign=false; D->MappingContext=IMC; D->Stages.Reset(); D->bUseQTEPresentation=true; D->CompletionEvent=NAME_None;
@@ -101,7 +101,7 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
   S.ProgressPerPress=0.15f; S.DecayPerSecond=0.05f; S.Timeout=0; D->Stages.Add(S);
   S=FTAQTEStage(); S.Kind=ETAQTEKind::Press; S.Action=Directions[3]; S.Timeout=0;
   if(bRandom) for(auto* A:Directions) S.ActionOptions.Add(A);
-  D->Stages.Add(S); return Save(D);
+  D->Stages.Add(S); return SaveQTEAsset(D);
  };
  auto* Pipe=Asset<UTASpecialActionDefinition>(Root+TEXT("DA_Debug_QTE_Pipe"));
  auto* Random=Asset<UTASpecialActionDefinition>(Root+TEXT("DA_Debug_QTE_Random"));
@@ -114,14 +114,14 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
   if(Existing->Stages.Num()==4)
   {
    Existing->Stages[1]=Pipe->Stages[0]; Existing->Stages[2]=Pipe->Stages[1];
-   bOk &= Save(Existing);
+   bOk &= SaveQTEAsset(Existing);
   }
  }
  const FString BPPath=TEXT("/Game/DeubgItem/TA_Debug_QTE_Tester");
  if(!FPackageName::DoesPackageExist(BPPath))
  {
   auto* BP=FKismetEditorUtilities::CreateBlueprint(ATADebugQTETester::StaticClass(),CreatePackage(*BPPath),TEXT("TA_Debug_QTE_Tester"),BPTYPE_Normal,UBlueprint::StaticClass(),UBlueprintGeneratedClass::StaticClass());
-  FAssetRegistryModule::AssetCreated(BP); bOk &= Save(BP);
+  FAssetRegistryModule::AssetCreated(BP); bOk &= SaveQTEAsset(BP);
  }
  UE_LOG(LogTemp,Display,TEXT("QTE setup %s: /Game/DeubgItem/TA_Debug_QTE_Tester; use TASpawnQTE in PIE."),bOk?TEXT("OK"):TEXT("FAILED"));
  return bOk?0:1;

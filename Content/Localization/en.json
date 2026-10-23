@@ -1,4 +1,6 @@
 {
+	"Settings.Game.ToggleSprint.Name": "Toggle sprint",
+	"Settings.Game.ToggleSprint.Description": "On: press the sprint button to toggle sprinting. Off: hold to sprint. Releasing movement cancels toggle sprint once horizontal speed falls below sprint speed. Changes take effect when applied.",
 	"Pickup_Previous": "Previous item",
 	"Pickup_Next": "Next item",
 	"Pickup_Failed": "Unable to pick up. Check available inventory space.",

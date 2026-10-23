@@ -296,7 +296,7 @@ it actually implements; a capability does not itself bind a key or execute an ac
 
 | Player action | Authorized execution path |
 |---|---|
-| Move/sprint | Physical Held observation -> Move-authorized UpdateHeldGameplayInput -> UpdateMovementInput -> ExecuteMovementCommand; no parallel EI state writer. A live Freeze request advances the already accepted command without accepting new intent |
+| Move/sprint | Physical Held observation (plus authorized physical press observations for Toggle Sprint) -> Move-authorized UpdateHeldGameplayInput -> UpdateMovementInput -> ExecuteMovementCommand; no parallel EI state writer. A live Freeze request advances the already accepted command without accepting new intent |
 | Look | EI Look or cursor-look calculation -> SubmitPlayerLook -> Look gate -> DoLook |
 | Interact | TryPlayerInteract -> Interact gate -> TryInteract / domain CanInteract |
 | Parkour start/preview | CanPlayerParkourToMarker -> Parkour gate + domain CanParkourToMarker -> existing execution |
@@ -310,6 +310,14 @@ it actually implements; a capability does not itself bind a key or execute an ac
 | History close | Receiver shortcut or close button -> authorized HandleCloseClicked -> parent closes exact History instance |
 | Puzzle | Receiver or node/Undo button -> authorized Puzzle handler -> its own reticle, inverse Pan, Confirm/Undo and session command |
 | Debug Puzzle | G Character ingress or B Blueprint player opener -> OpenDebugUI gate -> public domain OpenPuzzleWithSettings |
+
+Sprint mode is the applied `Game.ToggleSprint` setting, shared by keyboard and gamepad.
+Toggle presses are observed only with Move permission and consumed through the current
+resolved mappings; a tap released between character ticks is retained. Entering a
+request that denies Move discards pending presses without clearing physical Held or
+accepted locomotion. Applying a mode change consumes old sprint presses and suppresses
+still-held sources until real release. Draft edits never change gameplay mode. See
+[MovementAndParkour.md](MovementAndParkour.md) for mode transitions and speed-based cancellation.
 
 Dialogue mouse buttons are left to UMG hit testing, so History/button clicks cannot
 be consumed as raw background Advance. Choice click carries its own index. Inventory
