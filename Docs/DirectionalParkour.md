@@ -1,97 +1,86 @@
-# 方向式双落点跑酷（2026-10-24）
+# 双执行键双落点跑酷
 
-本次范围为输入、Marker、候选选择与提示。运动继续使用起跳时固定 Start/End、原有 Flying、固定时长 Alpha、Lerp + `4 * ArcHeight * Alpha * (1 - Alpha)`、无 Sweep 的 SetActorLocation。Finish、Abort、落地惯性、扫描冻结、边缘检测、动画和镜头未重写。
+状态：2026-10-25 用户实机验收通过。本文记录最终规则；文件名沿用既有链接。
 
-## 输入与目标
+## 输入与落点
 
-`IA_ParkourJump` 是统一执行 Action，默认 Space / Xbox A。`IA_ParkourDrop` 资源和旧反射属性保留供兼容，不再映射或参与 Held 执行。Ctrl 不再执行跑酷，未添加潜行。
+| 逻辑槽位 | Input Action | 键盘默认 | Xbox 默认 |
+|---|---|---|---|
+| Upper | IA_ParkourJump | Space | B（右侧面键） |
+| Lower | IA_ParkourDrop | Left Ctrl | A（下方面键） |
 
-左右由世界 Y（当前固定水平游戏轴）上的玩家到动态落点差值决定，与 Marker 的局部深度轴独立；默认 5 cm 内拒绝，双落点跨左右两侧也拒绝。无需关卡作者配置 Left/Right。
+输入与提示均通过现有 Enhanced Input / IMC 解析，允许改键和设备切换。不要求 WASD、左摇杆方向或鼠标指向，W/S 不选择落点。Upper/Lower 是作者指定的逻辑分类，不按 Z 高度自动排序。
 
-键盘从已有四个移动 Action 读取，实际键位跟随 IMC：左右必须有且只能有一个；单落点忽略上下，双落点无上下默认 Upper、上为 Upper、下为 Lower；双落点上/下冲突拒绝。键盘移动 Action 有输入时优先于摇杆，与普通移动一致。
+| 配置 | Upper 请求 | Lower 请求 |
+|---|---|---|
+| Upper Only | Upper | 拒绝 |
+| Lower Only | 拒绝 | Lower |
+| Dual | Upper | Lower |
+| 全部关闭 | 拒绝 | 拒绝 |
 
-摇杆复用现有 Move Action、Modifier 和物理观测；额外的跑酷幅度死区默认 0.2、每轴方向阈值默认 0.35，可在 ParkourComponent 调整。水平分量达阈值才能执行，垂直分量低于阈值为默认 Upper，不要求精确 45°。已有控制器过滤与 Action Modifier 在此之前生效。
+所有配置均拒绝同时按住两个 Action。请求槽位未启用或朝向不合格时拒绝，不替换为唯一落点，也不改选另一个 Marker。无组合输入缓冲，支持提前按住进入有效 TriggerBox。
 
-无输入缓冲，动作判断时满足组合就启动，支持任意按键顺序、提前按住进入和继续按住进入下一个 Marker。输入所有权、Parkour / Move capability、冻结、业务资格和实际 TriggerBox overlap 均须有效。
+## 资格、候选与朝向
 
-提示与执行共用 `SelectDirectionalMarker`：有效配置 → 注册且真实重叠 → 未消费 → 权限/冻结/原朝向资格 → 输入水平侧 → Marker 原点距离 → 对象路径打破完全相等距离。无水平意图只允许预览最近有效 Marker。获胜 Marker 再选择唯一落点或 Upper/Lower；双落点上下冲突不会偷偷改选其他 Marker。
+`SelectParkourMarker()` 由执行和 Prompt 共用。候选需配置有效、已注册且 TriggerBox 真实重叠、未消费、角色/移动状态允许、未完全冻结，并具有输入所有权和 Parkour/Move Capability。至少一个落点通过朝向资格，Marker 才参与排序。
 
-## Marker 编辑与旧数据
+按玩家到 Marker 原点的三维距离平方选择最近候选；距离完全相等时按对象路径稳定排序。两个 Action 使用同一 Marker winner，再检查各自逻辑落点，不按按键、移动方向或注册顺序选择不同目标。
 
-仍是一个 ATAParkourMarker、一个 TriggerBox、两个独立原生 Spline / ChildActor 落点 / Prompt 锚点。`Enable Upper`、`Enable Lower` 控制逻辑落点；`Upper Arc Height / Jump Duration`、`Lower Arc Height / Jump Duration` 独立可编辑并支持蓝图覆盖。
+`CanParkourToLanding` 是执行与预览共用的逐落点资格入口。以起点到动态落点连线的水平投影为中心，角色水平前向夹角必须严格小于 80°：总开口 160°，两边界排除，正对中心允许。静止与移动使用同一规则，没有背向起跳例外。纯垂直路线没有水平朝向，沿用可执行及保持原朝向的规则。
 
-**原组件名必须保留。** 为避免丢失原生组件上的蓝图及关卡覆写，未删除、重命名或复制旧 Spline 控制点。组件树仍显示 `LandingSpline`、`LandingTargetComponent`、`PromptWidget`，新增第二套命名为 `AdditionalLandingSpline`、`AdditionalLandingTargetComponent`、`AdditionalPromptWidget`。
+双落点不要求同侧；各落点分别通过朝向门槛。请求被拒绝不消费 Marker，持续按住时转入合格扇形可启动。飞行开始后朝向固定，不随途中输入翻转。
 
-| Marker 来源 | 原组件对应逻辑落点 | Additional 对应落点 |
+角色 BeginPlay 通过 `ConfigureExecutionActions` 配置两个 Action，Tick 调用 `UpdatePlayerHeldRequests`。`TryParkourJump` / `TryParkourDrop` 分别提交各自已物理按住的请求，仍走相同权限、冲突、消费和目标检查。未新增 Slate 监听器或原始轮询。
+
+## Marker 与旧数据
+
+一个 ATAParkourMarker 保留一个 TriggerBox，两套独立 Spline / ChildActor 落点 / Prompt Anchor，以及独立 Upper/Lower ArcHeight、JumpDuration。两个落点都关闭，或任一启用曲线不足两个控制点，整个 Marker 无效。
+
+原组件名必须保留：`LandingSpline`、`LandingTargetComponent`、`PromptWidget`；另一套为 `AdditionalLandingSpline`、`AdditionalLandingTargetComponent`、`AdditionalPromptWidget`。
+
+| 来源 | 原组件 | Additional 组件 |
 |---|---|---|
 | 新 Marker / 旧 JumpToPoint | Upper | Lower |
 | 旧 DropDown | Lower | Upper |
 
-Details → Parkour → Legacy 的只读 `Legacy Spline Is Lower` 明确显示原组件属于哪个落点。蓝图可通过 `GetLandingSpline(bLower)`、`GetLandingTargetComponent(bLower)`、`GetLandingPrompt(bLower)`、`GetLandingLocationForSlot` 访问逻辑 Upper/Lower，无需按原组件名推断。
+访问逻辑槽位使用 `GetLandingSpline(bLower)`、`GetLandingTargetComponent(bLower)`、`GetLandingPrompt(bLower)`、`GetLandingLocationForSlot`。不能假设原 LandingSpline 总是 Upper。
 
-旧 Marker 在 PostLoad 按逐对象自定义版本迁移，旧 DropDown 的实例覆写优先于蓝图默认值。旧 ArcHeight / JumpDuration 自动复制到原落点所属的新参数；旧数值保留在 Legacy 下只读。已有曲线、组件变换、Prompt Widget Class、TriggerBox 和旧 LandingTarget 引用原样保留。无需重做旧点。验证后正常保存蓝图/关卡即可持久化新版本；工具不批量重存关卡。
+`bLegacySplineIsLower`、旧 MarkerType / ArcHeight / JumpDuration、逐对象自定义版本和 PostLoad 迁移均有实际用途，不能当垃圾删除。旧实例覆写优先于蓝图默认值；原曲线、组件变换、Prompt 类和 TriggerBox 数据保留。`bDirectionalLandingConfigured` 名称虽旧，仍是已序列化的迁移标志，保持名称以兼容现有资产。
 
-开启另一个落点后，请在对应 Additional 或原组件上编辑曲线与锚点，并设置该逻辑落点的独立轨迹参数。两个落点必须在 TriggerBox 有效深度范围内始终属于同一水平侧。
+`bAllowStationaryBackFacing` 由当前 BP_ThirdPersonCharacter 序列化，保留为兼容字段，执行逻辑从不读取它，不能绕过 80° 门槛。其他不再使用的方向阈值和旧速度门槛已经移除。
 
-禁用只改 Visibility / bDrawDebug，不删除控制点，不更新该 Target、不参与资格和提示。UE 原生 Spline visualizer 在直接编辑或选择组件时可能仍画控制点；未添加自定义 Spline 类或破坏曲线来强行隐藏。重新启用保留原曲线。
+禁用落点不参与资格、Target 更新和提示，不删除控制点。重新启用恢复原曲线。Visibility / bDrawDebug 只控制辅助显示，UE 原生 Visualizer 在直接编辑组件时仍可能显示控制点。
 
-`bUseXAsDepthAxis`、Marker 局部坐标与 20 次二分搜索保留；Spline 相对变换先转换回 Marker 空间后比较深度，两个落点独立计算。编辑器 Map Check 报告双禁用、无效曲线、默认玩家位置下跨侧和采样非单调深度；实际每次执行还根据玩家深度拒绝跨侧。Map Check 的采样不能证明整个曲线绝对单调，仍需关卡验证。
+## 动态落点与运动
 
-## 提示与消费
+LandingSpline 计算深度对应终点，不是飞行路径。`bUseXAsDepthAxis` 选择 Marker 局部 X 或 Y 深度；玩家位置与曲线点转换到 Marker 空间后，使用原 20 次二分搜索求解。两落点独立计算，要求深度轴单调。Map Check 保留无效配置与采样非单调警告。
 
-单落点只显示左右 + 执行；双落点两个锚点始终同时显示上/下 + 左右 + 执行，不随 W/S 选择隐藏或高亮另一个。沿用 UTAPromptComponent 类型槽位 ParkourJump / ParkourDrop 作为 Upper / Lower 显示槽位，两者都使用统一执行 Action。
+起跳保存 Start、固定 End、实际起跳水平速度和选中落点参数；Flying、固定时长 Alpha、`Lerp + 4 * ArcHeight * Alpha * (1 - Alpha)`、无 Sweep 的 SetActorLocation、提前落地、Walking 恢复、LandingResponse、死亡 Abort、冻结/CustomTimeDilation 与边缘安全保持原实现。
 
-键盘组合图标通过当前 Action 映射解析；手柄显示现有 Move Action 对应的摇杆与方向，以及当前执行键。Xbox / PS 斜方向图标现在为复制的 LS 占位纹理，附明确方向箭头。正式图标 TODO 见 [InputIcons.md](InputIcons.md)。现有图标目录已列入 AlwaysCook。
+无 Sweep 仍可能穿过途中障碍物。动画、Root Motion、Motion Warping、摄像机和碰撞改造不属于此阶段。
 
-消费仍属于整个 Marker：任意落点执行一次后阻止同框重复。只记录执行 Action 本次参与消费的物理来源，方向键变化/松开不重新武装。全部消费来源真实松开才清除；Unknown、Lost、映射遮蔽和菜单权限变化都不能当松开。真实离开 TriggerBox 清除该 Marker 消费，支持持续按住 A→B→A→B；一个碰撞组件离开但其他组件还重叠不算退出。Alt+Tab/F8 后继续按住可能仍需真实松开重按，沿用原有安全原则。
+## Prompt
 
-## 工具、验证与人工检查
+UTAPromptComponent 为获胜 Marker 的每个合格落点显示一个对应 Action 的单键提示。Upper 默认 Space/B，Lower 默认 Ctrl/A；两者都通过朝向资格时同时显示，扇形外的那个隐藏。各自跟随动态 LandingTarget；消费、冻结和权限拒绝会隐藏提示。
 
-2026-10-24 最终结果：UE 5.6.1 `The_AwakeningEditor Win64 Development` 编译通过；`TheAwakening.Input + TheAwakening.Prompt + TheAwakening.Freeze` 联合回归 **31/31 通过，0 失败、0 未运行**（21 项无警告，10 项带测试世界/无视口等 headless 环境警告）。`git diff --check` 通过。报告：`Saved/Automation/ParkourFinal/index.json`；日志：`Saved/Logs/ParkourFinalTests.log`。
+两个槽位继续使用 ETAPromptType::ParkourJump / ParkourDrop。图标按当前玩家 IMC、输入设备和语言刷新。普通交互与 QTE 仍使用现有统一锚点。
 
-`BP_ParkourMarker` 编译成功。World Partition 审计实际加载 `Lvl_ThirdPerson` 的 9 个旧实例：7 Upper、2 Lower；原组件名、各 2 个曲线控制点、75/120 的原弧高和 0.5 秒时长均保留，迁移后的逻辑落点参数与原值一致。其他两个关卡未发现 Marker。审计报告记录了每个实例的原控制点坐标：`Saved/ParkourMigrationAudit.txt`，工具退出为 0、0 错误/0 警告。审计没有重存蓝图、关卡或外部 Actor。
+通用 `ShowPromptChord` 和 Xbox/PS 四个 LS 斜方向占位纹理按既有要求保留，但跑酷不使用它们。它们是有意保留的通用能力/备用资源，不是仍运行的旧方向系统。正式图标需求见 [InputIcons.md](InputIcons.md)。
 
-`-run=TAParkourSetup` 只更新默认跑酷映射、创建缺失占位图标并审计蓝图/关卡；重复运行不覆盖已有占位纹理。加 `AuditOnly` 仅审计。报告写到 `Saved/ParkourMigrationAudit.txt`；不重存蓝图、关卡或已有 Marker。
+## 消费与重新武装
 
-新增自动化：`TheAwakening.Input.DirectionalParkour`（左右 × 三配置 × 上/中/下 × 两设备、独立参数与原公式、冲突、阈值、任意顺序、方向松开不重武装、IMC 改键、默认资源），`DirectionalParkourMarker`（双禁用、禁用重启保留控制点、不更新禁用锚点、跨侧拒绝、旋转深度），`TheAwakening.Prompt.DirectionalParkour`（双提示、独立位置、相同 winner、旧 WBP 组合容器）。原 Held、PhysicalRelease、Facing、Momentum、DialogueParticipation 回归适配统一输入并保留原生命周期断言。
+`ConsumedHeldMarkers` 以整个 Marker 为单位。任意落点执行后，两 Action 都受同一消费记录阻止；按错键、改变方向或重复 Register 都不能绕过。
 
-实机/编辑器仍需验证：
+记录实际执行 Action 当时全部非零物理来源，如 Space+B 或 Ctrl+A。全部来源均有有效零观测才重新武装；Unknown、Lost、映射遮蔽、设备断开和菜单权限变化都不是 Release。后来按下的来源不加入已有记录。
 
-1. 重启 UE，检查旧 Jump/Drop 蓝图与真实实例的原曲线、轨迹参数、Prompt 类和组件变换；关闭再打开项目，确认保存后的配置持久化。
-2. 放置左右 Upper Only、Lower Only、Dual，在不同局部深度及 Marker 旋转下进入；双落点两个提示的位置、遮挡和屏幕排版。
-3. 用真实键盘和手柄操作全部方向，测试死区/阈值手感、设备切换、IMC 改键后组合图标与两个 Prompt。
-4. 提前按住、连续进入多个框；菜单、冻结/解冻、死亡中止、Alt+Tab、F8 与重新拥有输入；验证没有同框重复。
-5. 跑酷期间保持旧轨迹/朝向，落地惯性、普通移动、扫描时间缩放、边缘安全。
+真实离开 TriggerBox 立即清除该 Marker 注册和消费，包括飞行期间；最后一个重叠组件离开才算退出。支持持续按住跨 Marker A→B→A→B。Alt+Tab/F8 失去所有权后不合成 Held/Release，恢复时可能需要真实松开重按。
 
-无 Sweep 位移可能穿过途中障碍物，是原机制的已知限制；未在本次改碰撞策略。未进行真实设备、渲染效果或完整打包验证。
+## 验证与工具
 
-## 修改文件清单
+用户已验收严格槽位绑定与 80° 朝向限制。自动化覆盖输入/改键、三配置、纯垂直与跨侧、严格角度边界、逐落点预览、消费/所有权、原公式、落地惯性和冻结。入口文件为 `Source/The_Awakening/Tests/TAUpperLowerParkourTests.cpp`，并复用 Held、PhysicalRelease、Facing、Momentum 测试。
 
-运行时：
+清理验证：Editor 编译通过，TheAwakening.Input + TheAwakening.Prompt + TheAwakening.Freeze 共 31 项通过（其中 10 项带无界面测试环境警告），失败及未运行均为 0。关键执行/轨迹/迁移函数及原角色和 Marker 蓝图与清理前快照一致，文档本地链接检查通过。报告：`Saved/Automation/ParkourFinal/index.json`；日志：`Saved/Logs/ParkourFinalTests.log`。自动化不等于完整打包验收。
 
-- `Source/The_Awakening/Movement/TAParkourMarker.h`、`.cpp`、`TAParkourMarkerPreview.cpp`
-- `Source/The_Awakening/Movement/TAParkourComponent.h`、`.cpp`
-- `Source/The_Awakening/The_AwakeningCharacter.h`、`.cpp`
-- `Source/The_Awakening/Core/TAInputIconSubsystem.h`、`.cpp`
-- `Source/The_Awakening/UI/TAInteractionPromptAnchor.h`、`.cpp`
-- `Source/The_Awakening/UI/TAPromptComponent.h`、`.cpp`、`TAPromptTypes.h`
+`-run=TAParkourSetup` 可更新默认映射、创建缺失占位图标并审计旧 Marker；`AuditOnly` 仅审计。不会重存旧蓝图、关卡或外部 Actor。当前资产审计为 8 个 Marker（6 Upper、2 Lower），原控制点及 75/120 弧高、0.5 秒参数保留；报告为 `Saved/ParkourMigrationAudit.txt`。
 
-测试与作者工具：
-
-- `Source/The_Awakening/Tests/TADirectionalParkourTests.cpp`
-- `Source/The_Awakening/Tests/TAParkourInputTestFixture.h`
-- `Source/The_Awakening/Tests/TAParkourPhysicalReleaseTests.cpp`
-- `Source/The_Awakening/Tests/TAHeldGameplayTests.cpp`
-- `Source/The_Awakening/Tests/TAPromptTests.cpp`
-- `Source/The_Awakening/Tests/TADialogueParticipationTests.cpp`
-- `Source/The_AwakeningEditor/TAParkourSetupCommandlet.h`、`.cpp`
-
-资源与文档：
-
-- `Content/Input/IMC_Default.uasset`
-- `Content/Textures/Keys/Xbox/LS_UpLeft.uasset`、`LS_DownLeft.uasset`、`LS_UpRight.uasset`、`LS_DownRight.uasset`
-- `Content/Textures/Keys/PS/LS_UpLeft.uasset`、`LS_DownLeft.uasset`、`LS_UpRight.uasset`、`LS_DownRight.uasset`
-- `Content/Localization/en.json`、`zh-CN.json`、`zh-TW.json`（统一执行键在设置里名为 Parkour／跑酷）
-- `Docs/DirectionalParkour.md`、`MovementAndParkour.md`、`InteractionPrompts.md`、`InputIcons.md`、`InputRouting.md`
-
-旧 Marker 蓝图和 World Partition 外部 Actor 资源没有重存。PlayerController、TAPlayerInput、TAMovementComponent 沿用已有实现，无源码改动。
+后续改动需回归：真实设备与改键、80° 内外和边界、单/双落点按键严格匹配、连续跨框、菜单/Alt+Tab/F8/冻结/死亡，以及旧数据保存重载。不要恢复方向组合、单落点互通或静止背向例外。

@@ -11,13 +11,14 @@ class UInputAction;
  * 世界交互提示的唯一驱动者（挂在玩家角色上）。每帧为每种提示类型选出一个目标，通过目标身上的
  * UTAInteractionPromptAnchor 显示，其余隐藏。只在提示出现、切换语言 / 设备 / 键位时刷新内容。
  * - 交互：与执行共用 FTAInteractionQuery；附近有可拾取物品时按键交给拾取列表，交互提示也让给拾取列表。
- * - 跑酷：与执行共用方向候选；获胜 Marker 的 Upper/Lower 使用两个现有类型槽位同时显示。
+ * - 跑酷：与执行共用稳定候选；获胜 Marker 的 Upper/Lower 各自通过朝向资格后，使用两个现有类型槽位显示。
  * - 角色完全冻结或没有交互 / 跑酷权限时不显示。
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class THE_AWAKENING_API UTAPromptComponent : public UActorComponent
 {
 	GENERATED_BODY()
+	friend class FTAUpperLowerParkourPromptTest;
 
 public:
 	UTAPromptComponent();

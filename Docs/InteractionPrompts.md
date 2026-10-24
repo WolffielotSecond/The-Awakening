@@ -17,18 +17,18 @@
 | 类型 | 按键 | 选择 |
 |---|---|---|
 | 交互 | Interact | 与执行相同：Visibility 球形查询内、`CanInteract` 通过、离角色最近的一个。附近有可拾取物品时交互键交给拾取列表，交互提示也让出 |
-| Upper | ParkourJump（统一执行 Action） | 与执行共享 `SelectDirectionalMarker`，显示获胜 Marker 的 Upper 锚点 |
-| Lower | ParkourJump（统一执行 Action） | 同一获胜 Marker 的 Lower 锚点；双落点时两个提示始终同时显示 |
+| Upper | ParkourJump（Upper Action） | 与执行共享 `SelectParkourMarker`，显示获胜 Marker 的 Upper 锚点 |
+| Lower | ParkourDrop（Lower Action） | 同一获胜 Marker 的 Lower 锚点；双落点分别通过朝向门槛后同时显示 |
 
 普通提示不显示的情况：角色完全冻结（扫描完全冻结、小游戏）、没有对应输入权限（菜单、对话、死亡等）。活动 QTE 的当前目标使用专门候选保留原锚点，由特殊动作权限与挂起状态控制。
 
-跑酷按输入水平侧筛选、Marker 原点距离排序，距离完全相同时用对象路径稳定排序。没有水平输入时预览最近有效 Marker；执行仍必须有水平输入。双落点 W/S 不改变 Marker 排序，也不切换提示。旧的“提示最近、执行最后注册”差异已消除。
+跑酷按 Marker 原点距离排序，距离完全相同时按对象路径稳定排序，不再按移动方向筛选。单落点只显示且只允许对应逻辑 Action：Upper Only 使用 Space/B，Lower Only 使用 Ctrl/A；双落点分别检查角色到各落点连线的水平朝向，严格在 ±80° 内才显示该提示，两边界和背向隐藏；两者均合格时同时显示。Upper 默认 Space/B，Lower 默认 Ctrl/A。两键同时按住的执行冲突不切换或隐藏提示。旧的“提示最近、执行最后注册”差异不再存在。
 
-组合图标由现有锚点在 `SizeBox_Key` 内生成横排，保留原 WBP 的文字、图标高度和样式；普通交互继续使用单图标。键盘方向与执行键来自当前 IMC，手柄方向来自现有 Move Action。详细规则与迁移见 [DirectionalParkour.md](DirectionalParkour.md)。
+两个 Action 的图标均按本玩家当前 IMC 和输入设备解析。跑酷不再调用方向组合图标；通用 `ShowPromptChord` 能力保留，普通交互提示兼容。详细规则与旧数据迁移见 [DirectionalParkour.md](DirectionalParkour.md)。
 
 ## 给元素加提示
 
-- **C++ 元素**：`ATAInteractableActor` 的子类（剧情触发器、复活点）自带锚点 `InteractPromptComponent`；`ATAParkourMarker` 自带 `PromptWidget`（挂在落点上，类型随 `MarkerType` 自动设置）。
+- **C++ 元素**：`ATAInteractableActor` 的子类（剧情触发器、复活点）自带锚点 `InteractPromptComponent`；`ATAParkourMarker` 自带两套落点 Prompt Anchor，按逻辑 Upper/Lower 设置类型；原组件与逻辑槽位的迁移关系见 DirectionalParkour.md。
 - **纯蓝图 Actor**：实现 `TAInteractable` 接口，再 Add Component → `TAInteractionPromptAnchor`，把 `PromptType` 设为交互。
 - **位置**：就是锚点组件的位置，在蓝图 / 关卡里拖动即可。默认值沿用此前实际显示的位置（可交互物 Z=100，跑酷落点 Z=−50）。
 - **控件**：锚点的 Widget Class 留空时使用项目设置的 `DefaultPromptWidgetClass`（默认 `WBP_InteractPrompt`）；需要特殊样式时在锚点上单独指定。
@@ -42,24 +42,14 @@
 
 `WBP_InteractPrompt` 的父类已设为 `TAWorldPromptWidget`。控件名保持 `Image_Key`、`Text_Prompt`，可选加一个包住图标的 `SizeBox_Key`。新建的提示控件也建议用这个父类；父类不是它的旧控件仍可用，系统会按这几个控件名查找并填充。
 
-## 与之前的差异
-
-- 删除了 `ATAInteractableActor`、`ATAWorldItem`、`ATAParkourMarker` 各自的 `SetPromptVisible` / `RefreshPrompt` / `GetPromptWidgetComponent`（蓝图中无调用），改为 `GetPromptAnchor()`。
-- 掉落物品的头顶提示组件已删除；物品蓝图里设置的提示 Widget Class 不再使用。
-- 剧情触发器不再在构造函数里写死提示控件，改用项目设置的默认值；复活点因此也有了提示。
-- 跑酷落点预览不再单独控制提示显隐。
-- 不再按显示顺序把多个提示叠放（原叠放基于各自 Actor，实际并不对齐）；每个提示就在自己锚点的位置。
-- 冻结时隐藏提示（原先提示组件停止 Tick，会停在冻结前的状态）。
-- 繁体中文 `Parkour_Jump` 由“越过”改为“越過”。
-
 ## 验证
 
-自动化测试：`TheAwakening.Prompt.InteractMatchesExecution`（最近目标、提示即执行目标、默认控件、冻结隐藏 / 恢复、拾取物品让出）、`TheAwakening.Prompt.Elements`（复活点文本、锚点覆盖、跨越 / 跳下分别最近、离开后切换）；`TheAwakening.Input.ParkourFacing` 改为检查提示资格。
+自动化测试：`TheAwakening.Prompt.InteractMatchesExecution`（最近目标、提示即执行目标、默认控件、冻结隐藏 / 恢复、拾取物品让出）、`TheAwakening.Prompt.Elements`（复活点文本、锚点覆盖、Upper/Lower 共用稳定 Marker winner、离开后切换）；`TheAwakening.Input.ParkourFacing` 检查严格 80° 门槛；`TheAwakening.Prompt.UpperLowerParkour` 检查逐落点显示、严格按键与实际终点一致性。
 
-PIE 待验证：
+后续人工回归清单（本轮跑酷已由用户验收）：
 
 - 复活点、剧情触发器、跑酷标记的提示位置与之前一致（复活点首次出现提示）。
-- 跨越和跳下同时可用时两个提示都出现。
+- Upper/Lower 各自符合朝向资格时显示；背向/80° 边界隐藏，并与执行一致。
 - 按住扫描完全冻结、打开小游戏时提示消失，结束后恢复。
 - 站在掉落物品旁：只有拾取列表，物品头顶无提示，其他交互提示让出。
 - 切换语言、键鼠 / 手柄、改键位后提示刷新。

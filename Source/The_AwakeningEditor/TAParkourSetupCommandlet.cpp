@@ -5,12 +5,9 @@
 #include "Engine/Blueprint.h"
 #include "Engine/World.h"
 #include "Engine/Level.h"
-#include "EngineUtils.h"
 #include "Movement/TAParkourMarker.h"
 #include "Components/SplineComponent.h"
-#include "UI/TAInteractionPromptAnchor.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
 #include "Misc/FileHelper.h"
@@ -39,12 +36,17 @@ int32 UTAParkourSetupCommandlet::Main(const FString& Params)
 		auto* Jump = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ParkourJump.IA_ParkourJump"));
 		auto* Drop = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ParkourDrop.IA_ParkourDrop"));
 		if (!Context || !Jump || !Drop) return 1;
-		Context->UnmapAllKeysFromAction(Drop);
-		Context->UnmapKey(Jump, EKeys::Gamepad_FaceButton_Right);
-		bool HasA = false;
-		for (const auto& Mapping : Context->GetMappings())
-			if (Mapping.Action == Jump && Mapping.Key == EKeys::Gamepad_FaceButton_Bottom) HasA = true;
-		if (!HasA) Context->MapKey(Jump, EKeys::Gamepad_FaceButton_Bottom);
+		Context->UnmapKey(Jump, EKeys::Gamepad_FaceButton_Bottom);
+		auto EnsureMapping = [&](UInputAction* Action, FKey Key)
+		{
+			for (const auto& Mapping : Context->GetMappings())
+				if (Mapping.Action == Action && Mapping.Key == Key) return;
+			Context->MapKey(Action, Key);
+		};
+		EnsureMapping(Jump, EKeys::SpaceBar);
+		EnsureMapping(Jump, EKeys::Gamepad_FaceButton_Right);
+		EnsureMapping(Drop, EKeys::LeftControl);
+		EnsureMapping(Drop, EKeys::Gamepad_FaceButton_Bottom);
 		SaveParkourAsset(Context);
 		for (const FString Folder : {TEXT("Xbox"), TEXT("PS")})
 		{
@@ -87,10 +89,10 @@ int32 UTAParkourSetupCommandlet::Main(const FString& Params)
 		{
 			auto* It = Cast<ATAParkourMarker>(Actor); if (!It) return;
 			++Count;
-			Line(FString::Printf(TEXT("%s %s type=%d upper=%d lower=%d original=%s points=%d arc=%.2f duration=%.2f side=%d"),
+			Line(FString::Printf(TEXT("%s %s type=%d upper=%d lower=%d original=%s points=%d arc=%.2f duration=%.2f"),
 				*Asset.PackageName.ToString(), *It->GetName(), int32(It->MarkerType), It->bEnableUpper, It->bEnableLower,
 				*GetNameSafe(It->LandingSpline), It->LandingSpline ? It->LandingSpline->GetNumberOfSplinePoints() : 0,
-				It->ArcHeight, It->JumpDuration, It->GetLandingSide(It->GetActorLocation())));
+				It->ArcHeight, It->JumpDuration));
 			Line(FString::Printf(TEXT("  migrated slot=%s arc=%.2f duration=%.2f originalFirst=%s originalLast=%s"),
 				It->bLegacySplineIsLower ? TEXT("Lower") : TEXT("Upper"), It->GetArcHeight(It->bLegacySplineIsLower),
 				It->GetJumpDuration(It->bLegacySplineIsLower),

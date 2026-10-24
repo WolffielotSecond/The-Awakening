@@ -4,9 +4,6 @@
 #include "Components/ChildActorComponent.h"
 #include "UI/TAInteractionPromptAnchor.h"
 #include "Engine/TargetPoint.h"
-#include "Blueprint/UserWidget.h"
-#include "Components/Image.h"
-#include "Components/TextBlock.h"
 #include "Components/SplineComponent.h"
 #include "Serialization/CustomVersion.h"
 namespace
@@ -42,7 +39,7 @@ ATAParkourMarker::ATAParkourMarker()
 	LandingTargetComponent->SetRelativeLocation(FVector(300.f, 0.f, 0.f));
 	LandingTargetComponent->SetChildActorClass(ATargetPoint::StaticClass());
 
-	//落点换成SplineComponent，方便后续做轨迹显示
+	// Landing splines define depth-matched endpoints, not the flight path.
 	LandingSpline = CreateDefaultSubobject<USplineComponent>(TEXT("LandingSpline"));
 	LandingSpline->SetupAttachment(SceneRoot);
 	LandingSpline->ClearSplinePoints(false);
@@ -171,20 +168,6 @@ bool ATAParkourMarker::IsValidMarker() const
 	return (bEnableUpper || bEnableLower) && (!bEnableUpper || HasValidLanding(false)) &&
 		(!bEnableLower || HasValidLanding(true));
 }
-int32 ATAParkourMarker::GetLandingSide(const FVector& PlayerLocation, float Tolerance) const
-{
-	if (!IsValidMarker()) return 0;
-	int32 Side = 0;
-	for (bool bLower : {false, true})
-	{
-		if (!HasValidLanding(bLower)) continue;
-		const float Delta = GetLandingLocationForSlot(PlayerLocation, bLower).Y - PlayerLocation.Y;
-		const int32 SlotSide = FMath::Abs(Delta) <= Tolerance ? 0 : (Delta > 0 ? 1 : -1);
-		if (!SlotSide || (Side && Side != SlotSide)) return 0;
-		Side = SlotSide;
-	}
-	return Side;
-}
 void ATAParkourMarker::UpdateLandingTargets(const FVector& PlayerLocation)
 {
 	for (bool bLower : {false, true})
@@ -202,8 +185,6 @@ void ATAParkourMarker::CheckForErrors()
 		FMessageLog("MapCheck").Warning()->AddToken(FUObjectToken::Create(this))->AddToken(FTextToken::Create(Text));
 	};
 	if (!IsValidMarker()) Warn(FText::FromString(TEXT("Parkour: enable at least one landing; enabled splines need two points.")));
-	if (bEnableUpper && bEnableLower && !GetLandingSide(GetActorLocation()))
-		Warn(FText::FromString(TEXT("Parkour: landings must share one horizontal side (world Y). Verify throughout the trigger.")));
 	for (bool bLower : {false, true})
 	{
 		if (!HasValidLanding(bLower)) continue;

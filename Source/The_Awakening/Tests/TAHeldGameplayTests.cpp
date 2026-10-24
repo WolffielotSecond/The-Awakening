@@ -255,6 +255,7 @@ bool FTAHeldParkourTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Still held request starts after thaw"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
 	Pawn->SetActorLocation(FVector::ZeroVector);
+	Parkour->UnregisterMarker(Marker); // Leave the Upper marker before requesting a different Lower marker.
 	ATAParkourMarker* Next = World->SpawnActor<ATAParkourMarker>();
 	Next->bEnableUpper = false; Next->bEnableLower = true;
 	FTAParkourInputTestFixture::Register(Parkour, Next); Held.Update(false, true);
@@ -296,27 +297,33 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	Pawn->SetActorRotation(FRotator(0, -90, 0));
 	Move->Velocity = FVector(0, -500, 0);
 	TestFalse(TEXT("Moving backward cannot parkour"), Parkour->CanParkourToMarker(Marker));
-	static_cast<AActor*>(Marker)->Tick(.016f);
-	// 落点提示的显隐由统一提示系统按 CanPlayerParkourToMarker 决定（与执行同一条件）
-	TestFalse(TEXT("Unavailable marker is not promptable"), Parkour->CanPlayerParkourToMarker(Marker));
-	for (float Yaw : {0.f, 90.f, 180.f})
+	TestFalse(TEXT("Back-facing marker is not promptable"), Parkour->CanPlayerParkourToMarker(Marker));
+	for (float Speed : {0.f, 500.f})
 	{
-		Pawn->SetActorRotation(FRotator(0, Yaw, 0));
-		TestTrue(TEXT("Forward hemisphere includes both boundaries"), Parkour->CanParkourToMarker(Marker));
+		Move->Velocity = FVector(0, Speed, 0);
+		for (float Offset : {-180.f, -80.01f, -80.f, -79.99f, -45.f, 0.f, 45.f, 79.99f, 80.f, 80.01f, 180.f})
+		{
+			Pawn->SetActorRotation(FRotator(0, 90 + Offset, 0));
+			const bool Expected = FMath::Abs(Offset) < 80;
+			TestEqual(TEXT("Strict +/-80 cone applies at rest and while moving"), Parkour->CanParkourToMarker(Marker), Expected);
+			TestEqual(TEXT("Player preview eligibility shares exact strict cone"), Parkour->CanPlayerParkourToMarker(Marker), Expected);
+		}
 	}
-	Pawn->SetActorRotation(FRotator(0, -90, 0)); Move->Velocity = FVector::ZeroVector;
-	TestTrue(TEXT("Stationary exception enabled by default"), Parkour->CanParkourToMarker(Marker));
-	Parkour->bAllowStationaryBackFacing = false;
-	TestFalse(TEXT("Stationary exception can be disabled"), Parkour->CanParkourToMarker(Marker));
+	Move->Velocity = FVector::ZeroVector;
+	Pawn->SetActorRotation(FRotator(0, -90, 0));
 	Parkour->bAllowStationaryBackFacing = true;
+	Held.Update(true, false);
+	TestFalse(TEXT("Legacy stationary exception cannot bypass new cone"), Parkour->IsParkouring());
+	Held.Update(false, false);
+	Pawn->SetActorRotation(FRotator(0, 90, 0));
 	static_cast<AActor*>(Marker)->Tick(.016f);
-	TestTrue(TEXT("Stationary exception also allows the prompt"), Parkour->CanPlayerParkourToMarker(Marker));
-	TestFalse(TEXT("Prompt anchor is not hidden together with the landing anchor"), Marker->GetPromptAnchor()->bHiddenInGame);
+	TestTrue(TEXT("Facing the landing allows its preview"), Parkour->CanPlayerParkourToMarker(Marker));
+	TestFalse(TEXT("Prompt anchor is not hidden together with the landing anchor"), Marker->GetLandingPrompt(false)->bHiddenInGame);
 	TestTrue(TEXT("Landing anchor stays hidden when preview allowed"), Marker->LandingTargetComponent->bHiddenInGame);
 	if (AActor* Anchor = Marker->LandingTargetComponent->GetChildActor())
 		TestTrue(TEXT("Landing child actor stays hidden"), Anchor->IsHidden());
 	Held.Update(true, false);
-	TestTrue(TEXT("Stationary backward launch starts"), Parkour->IsParkouring());
+	TestTrue(TEXT("Facing-approved launch starts"), Parkour->IsParkouring());
 	TestTrue(TEXT("Launch faces landing direction"), Pawn->GetActorForwardVector().Equals(FVector(0, 1, 0), .001f));
 	TestFalse(TEXT("Movement auto rotation suspended"), Move->bOrientRotationToMovement);
 	static_cast<AActor*>(Marker)->Tick(.016f);
@@ -335,7 +342,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	Marker->LandingSpline->SetLocationAtSplinePoint(0, FVector(-100, 0, -200), ESplineCoordinateSpace::Local);
 	Marker->LandingSpline->SetLocationAtSplinePoint(1, FVector(100, 0, -200), ESplineCoordinateSpace::Local);
 	Pawn->SetActorRotation(FRotator(0, -90, 0));
-	TestFalse(TEXT("Vertical route has no horizontal side and is rejected"), Parkour->CanParkourToMarker(Marker));
+	TestTrue(TEXT("Vertical route is eligible without horizontal input"), Parkour->CanParkourToMarker(Marker));
 	World->DestroyWorld(false);
 	return true;
 }

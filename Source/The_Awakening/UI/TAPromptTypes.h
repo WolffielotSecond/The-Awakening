@@ -28,12 +28,7 @@ struct FTAPromptCandidate
 	TWeakObjectPtr<AActor> Source;
 
 	UPROPERTY(BlueprintReadOnly)
-	float DistanceSq = 0.f;
-
-	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<UInputAction> Action = nullptr;
-	UPROPERTY() int32 HorizontalDirection = 0;
-	UPROPERTY() int32 VerticalDirection = 0;
 	UPROPERTY(BlueprintReadOnly)
 	FString TextOverride;
 

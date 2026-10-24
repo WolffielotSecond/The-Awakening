@@ -111,10 +111,10 @@ protected:
 
 	/** 跑酷输入 */
 	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* ParkourJumpAction;   // Unified execution; default Space / Xbox A, resolved through IMC.
+	UInputAction* ParkourJumpAction;   // Upper request; default Space / Xbox B, resolved through IMC.
 
 	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* ParkourDropAction;   // Legacy serialized reference; no separate Drop binding or execution.
+	UInputAction* ParkourDropAction;   // Lower request; default Left Ctrl / Xbox A, resolved through IMC.
 
 	/** 切换背包输入 */
 	UPROPERTY(EditAnywhere, Category = "Input")
@@ -246,11 +246,6 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	bool IsInventoryOpen() const { return InventoryPanelInstance != nullptr; }
 	
-	//2D的角色朝向问题
-
-	/** 2D角色当前视觉朝向，只有 -1 和 1 */
-	float SpriteFacingDirection = 1.f;
-
 	/** 更新Sprite视觉朝向 */
 	void UpdateSpriteFacing();
 	

@@ -545,16 +545,20 @@ receiver execution. No Inventory/B/edge-coordinate special case is introduced.
 
 Held is a continuous request. ConsumedHeldMarkers belongs to the current Marker
 overlap/execution opportunity, not an entire physical hold. Character calls
-UpdatePlayerHeldRequests with the local PC and the unified Jump action (the Drop
-parameter is retained only for source compatibility). Startup uses Parkour/Move
-capabilities, existing business feasibility and the shared directional candidate
-selection described in [DirectionalParkour.md](DirectionalParkour.md).
+UpdatePlayerHeldRequests with the local PC and both Upper (Jump) / Lower (Drop)
+actions. Startup uses Parkour/Move capabilities, existing business feasibility
+and the shared input-independent marker candidate
+selection described in [DirectionalParkour.md](DirectionalParkour.md). Each landing
+also requires a strict horizontal facing angle below 80 degrees; execution and
+preview share this gate, with no stationary back-facing exception.
 
 A successful launch stores only the participating physical Key identities for
 that marker. GetObservedHeldKeysForAction obtains nonzero observations from the
-currently resolved mappings without reevaluating modifiers. The unified execution
-defaults are digital Space/A; direction comes from the existing Move actions and
-modifiers. Direction sources do not participate in consumption. Parkour stores no
+currently resolved mappings without reevaluating modifiers. Upper defaults to
+Space/B, Lower to Ctrl/A; movement input is not consulted. Simultaneous Upper/Lower
+actions are rejected on every marker configuration. Each action strictly targets
+its logical slot; a disabled slot never falls back to the other landing. All
+current physical sources of the executing action participate in consumption. Parkour stores no
 physical values and never adds later presses to an existing consumption.
 
 There are two independent ways to regain an execution opportunity:

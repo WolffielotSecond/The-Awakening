@@ -8,7 +8,6 @@
 class UBoxComponent;
 class UChildActorComponent;
 class UTAInteractionPromptAnchor;
-class UTexture2D;
 class USplineComponent;
 class USceneComponent;
 
@@ -77,8 +76,6 @@ public:
 	FVector GetLandingLocationForSlot(const FVector& PlayerWorldLocation, bool bLower) const;
 	float GetArcHeight(bool bLower) const { return bLower ? LowerArcHeight : UpperArcHeight; }
 	float GetJumpDuration(bool bLower) const { return bLower ? LowerJumpDuration : UpperJumpDuration; }
-	// Fixed gameplay horizontal axis is world Y, independently of the marker's depth axis.
-	int32 GetLandingSide(const FVector& PlayerLocation, float Tolerance = 5.f) const;
 	void UpdateLandingTargets(const FVector& PlayerLocation);
 	void InitializeLandingConfiguration();
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -87,7 +84,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UChildActorComponent> LandingTargetComponent;
 
-	/** 跑酷提示锚点（统一提示系统），挂在随玩家位置移动的落点上，所以提示显示在落点处。类型随 MarkerType 自动设置。 */
+	/** 跑酷提示锚点（统一提示系统），挂在随玩家位置移动的落点上，所以提示显示在落点处。类型由逻辑 Upper/Lower 槽位设置。 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTAInteractionPromptAnchor> PromptWidget;
 
@@ -119,15 +116,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
 	FVector GetLandingLocation(const FVector& PlayerWorldLocation) const;
 
-	UTAInteractionPromptAnchor* GetPromptAnchor() const { return PromptWidget; }
-	/** 跨台跳 → 跨越提示，高台跳下 → 跳下提示。 */
-	ETAPromptType GetPromptType() const
-	{
-		return MarkerType == ETAParkourMarkerType::DropDown ? ETAPromptType::ParkourDrop : ETAPromptType::ParkourJump;
-	}
 
 protected:
-	// New actors/Blueprint defaults are already directional. Only legacy archives reset this in PostLoad.
+	// Serialized migration flag; retain its historical name for existing Blueprint/level data.
 	UPROPERTY() bool bDirectionalLandingConfigured = true;
 	UFUNCTION()
 	void OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

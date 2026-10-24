@@ -145,7 +145,7 @@ void AThe_AwakeningCharacter::BeginPlay()
 
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
-	if (ParkourComponent) ParkourComponent->ConfigureDirectionActions(MoveForwardAction, MoveBackwardAction, MoveLeftAction, MoveRightAction, MoveAction);
+	if (ParkourComponent) ParkourComponent->ConfigureExecutionActions(ParkourJumpAction, ParkourDropAction);
 
 	if (CameraBoom)
 	{
@@ -991,22 +991,6 @@ void AThe_AwakeningCharacter::UpdateSpriteFacing()
 	{
 		return;
 	}
-	/*
-	const FVector Forward = GetActorForwardVector();
-
-	// Actor明显朝世界Y方向时，更新角色左右视觉朝向
-	if (FMath::Abs(Forward.Y) > 0.1f)
-	{
-		SpriteFacingDirection = FMath::Sign(Forward.Y);
-	}
-
-	const float SpriteYaw =
-		SpriteFacingDirection > 0.f ? 90.f : -90.f;
-
-	FlipbookComponent->SetWorldRotation(
-		FRotator(0.f, SpriteYaw, 0.f)
-	);
-	*/
 	FlipbookComponent->SetWorldRotation(
 		FRotator(0.f, 90.f, 0.f)
 	);

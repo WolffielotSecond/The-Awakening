@@ -3,7 +3,6 @@
 #include "Movement/TAMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/BoxComponent.h"
 #include "Core/TAFreezeComponent.h"
 #include "The_AwakeningPlayerController.h"
@@ -66,22 +65,30 @@ bool UTAParkourComponent::CanParkourToMarker(ATAParkourMarker* Marker) const
 	if ((OwnerCharacter->GetController() && OwnerCharacter->GetController()->IsMoveInputIgnored()) ||
 		!OwnerCharacter->GetCharacterMovement() || OwnerCharacter->GetCharacterMovement()->MovementMode == MOVE_None) return false;
 
-	if (!Marker->GetLandingSide(OwnerCharacter->GetActorLocation(), HorizontalTolerance)) return false;
-	for (bool bLower : {false, true})
-	{
-		if (!Marker->HasValidLanding(bLower)) continue;
-		const FVector Direction = (Marker->GetLandingLocationForSlot(OwnerCharacter->GetActorLocation(), bLower) -
-			OwnerCharacter->GetActorLocation()).GetSafeNormal2D();
-		if (bAllowStationaryBackFacing && OwnerCharacter->GetVelocity().SizeSquared2D() <=
-			FMath::Square(FMath::Max(0.f, StationarySpeedThreshold))) continue;
-		if (FVector::DotProduct(OwnerCharacter->GetActorForwardVector().GetSafeNormal2D(), Direction) < -KINDA_SMALL_NUMBER) return false;
-	}
-	return true;
+	return IsFacingLanding(Marker, false) || IsFacingLanding(Marker, true);
+}
+
+bool UTAParkourComponent::IsFacingLanding(ATAParkourMarker* Marker, bool bLower) const
+{
+	if (!OwnerCharacter.IsValid() || !IsValid(Marker) || !Marker->HasValidLanding(bLower)) return false;
+	const FVector Direction = (Marker->GetLandingLocationForSlot(OwnerCharacter->GetActorLocation(), bLower) -
+		OwnerCharacter->GetActorLocation()).GetSafeNormal2D();
+	// A purely vertical route has no horizontal bearing; keep the existing vertical behavior.
+	if (Direction.IsNearlyZero()) return true;
+	const FVector Facing = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
+	const double MinimumDot = FMath::Cos(FMath::DegreesToRadians(80.0));
+	// Exclude both 80-degree edges, including floating-point error at the boundary.
+	return FVector::DotProduct(Facing, Direction) > MinimumDot + 1.e-6;
+}
+
+bool UTAParkourComponent::CanParkourToLanding(ATAParkourMarker* Marker, bool bLower) const
+{
+	return CanParkourToMarker(Marker) && IsFacingLanding(Marker, bLower);
 }
 
 bool UTAParkourComponent::StartParkour(ATAParkourMarker* Marker, const TArray<FKey>& ConsumptionSources, bool bLower)
 {
-	if (!CanPlayerParkourToMarker(Marker) || !Marker->HasValidLanding(bLower)) return false;
+	if (!CanPlayerParkourToMarker(Marker) || !CanParkourToLanding(Marker, bLower)) return false;
 
 	ParkourStart = OwnerCharacter->GetActorLocation();
 	PreParkourVelocity = OwnerCharacter->GetVelocity();
@@ -217,44 +224,18 @@ FVector UTAParkourComponent::EvalParabola(const FVector& Start, const FVector& E
 	return Linear + FVector(0.f, 0.f, HeightOffset);
 }
 
-void UTAParkourComponent::ConfigureDirectionActions(UInputAction* Forward, UInputAction* Backward,
-	UInputAction* Left, UInputAction* Right, UInputAction* Stick)
+void UTAParkourComponent::ConfigureExecutionActions(UInputAction* Upper, UInputAction* Lower)
 {
-	DirectionForward = Forward; DirectionBackward = Backward; DirectionLeft = Left; DirectionRight = Right; DirectionStick = Stick;
+	UpperExecutionAction = Upper;
+	LowerExecutionAction = Lower;
 }
-UInputAction* UTAParkourComponent::GetDirectionAction(int32 Side, int32 Vertical) const
-{
-	return Vertical ? (Vertical > 0 ? DirectionForward.Get() : DirectionBackward.Get()) :
-		(Side > 0 ? DirectionRight.Get() : DirectionLeft.Get());
-}
-FVector2D UTAParkourComponent::ReadDirectionalIntent(bool& bVerticalConflict) const
-{
-	bVerticalConflict = false;
-	auto* PC = OwnerCharacter.IsValid() ? Cast<AThe_AwakeningPlayerController>(OwnerCharacter->GetController()) : nullptr;
-	if (!PC || !PC->AllowsInput(ETAInputCapability::Parkour) || !PC->AllowsInput(ETAInputCapability::Move)) return FVector2D::ZeroVector;
-	const bool Forward = PC->ReadHeldAction(DirectionForward).IsNonZero();
-	const bool Backward = PC->ReadHeldAction(DirectionBackward).IsNonZero();
-	const bool Left = PC->ReadHeldAction(DirectionLeft).IsNonZero();
-	const bool Right = PC->ReadHeldAction(DirectionRight).IsNonZero();
-	if (Forward || Backward || Left || Right)
-	{
-		bVerticalConflict = Forward && Backward;
-		return FVector2D(int32(Right) - int32(Left), int32(Forward) - int32(Backward));
-	}
-	const auto Value = PC->ReadHeldAction(DirectionStick);
-	const FVector2D Stick(Value[0], Value[1]);
-	if (Stick.Size() <= StickDeadZone) return FVector2D::ZeroVector;
-	return FVector2D(FMath::Abs(Stick.X) >= DirectionThreshold ? FMath::Sign(Stick.X) : 0.f,
-		FMath::Abs(Stick.Y) >= DirectionThreshold ? FMath::Sign(Stick.Y) : 0.f);
-}
-ATAParkourMarker* UTAParkourComponent::SelectDirectionalMarker(int32 Side) const
+ATAParkourMarker* UTAParkourComponent::SelectParkourMarker() const
 {
 	ATAParkourMarker* Best = nullptr;
 	float BestDistance = MAX_flt;
 	for (ATAParkourMarker* Marker : OverlappingMarkers)
 	{
 		if (!CanPlayerParkourToMarker(Marker)) continue;
-		if (Side && Marker->GetLandingSide(OwnerCharacter->GetActorLocation(), HorizontalTolerance) != Side) continue;
 		const float Distance = FVector::DistSquared(OwnerCharacter->GetActorLocation(), Marker->GetActorLocation());
 		// Exact distance ties use stable object path; registration order never changes the winner.
 		if (!Best || Distance < BestDistance || (Distance == BestDistance && Marker->GetPathName() < Best->GetPathName()))
@@ -262,29 +243,19 @@ ATAParkourMarker* UTAParkourComponent::SelectDirectionalMarker(int32 Side) const
 	}
 	return Best;
 }
-bool UTAParkourComponent::SelectLowerLanding(ATAParkourMarker* Marker, float Vertical, bool bConflict, bool& bLower) const
-{
-	if (!IsValid(Marker) || !Marker->IsValidMarker()) return false;
-	if (Marker->bEnableUpper && Marker->bEnableLower)
-	{
-		if (bConflict) return false;
-		bLower = Vertical < 0;
-	}
-	else bLower = Marker->bEnableLower;
-	return Marker->HasValidLanding(bLower);
-}
-// Legacy Blueprint entry points now submit the same directional intent. Drop no longer owns a key.
 void UTAParkourComponent::TryParkourJump()
 {
-	bool Conflict = false; const FVector2D Intent = ReadDirectionalIntent(Conflict);
-	if (!Intent.X) return;
-	if (auto* Marker = SelectDirectionalMarker(FMath::Sign(Intent.X)))
-	{
-		bool Lower = false;
-		if (SelectLowerLanding(Marker, Intent.Y, Conflict, Lower)) StartParkour(Marker, {}, Lower);
-	}
+	auto* PC = OwnerCharacter.IsValid() ? Cast<AThe_AwakeningPlayerController>(OwnerCharacter->GetController()) : nullptr;
+	if (PC && PC->ReadHeldAction(UpperExecutionAction).IsNonZero())
+		UpdatePlayerHeldRequests(PC, UpperExecutionAction, LowerExecutionAction);
 }
-void UTAParkourComponent::TryParkourDrop() { TryParkourJump(); }
+
+void UTAParkourComponent::TryParkourDrop()
+{
+	auto* PC = OwnerCharacter.IsValid() ? Cast<AThe_AwakeningPlayerController>(OwnerCharacter->GetController()) : nullptr;
+	if (PC && PC->ReadHeldAction(LowerExecutionAction).IsNonZero())
+		UpdatePlayerHeldRequests(PC, UpperExecutionAction, LowerExecutionAction);
+}
 
 void UTAParkourComponent::RegisterMarker(ATAParkourMarker* Marker)
 {
@@ -327,16 +298,16 @@ void UTAParkourComponent::UpdatePlayerHeldRequests(AThe_AwakeningPlayerControlle
 			It.RemoveCurrent();
 		}
 	}
-	if (bIsParkouring || !PC->ReadHeldAction(JumpAction).IsNonZero()) return;
-	const TArray<FKey> Sources = PC->GetObservedHeldKeysForAction(JumpAction);
-	if (Sources.IsEmpty()) return;
-	bool Conflict = false; const FVector2D Intent = ReadDirectionalIntent(Conflict);
-	if (!Intent.X) return;
-	if (auto* Marker = SelectDirectionalMarker(FMath::Sign(Intent.X)))
-	{
-		bool Lower = false;
-		if (SelectLowerLanding(Marker, Intent.Y, Conflict, Lower)) StartParkour(Marker, Sources, Lower);
-	}
+	if (bIsParkouring || !PC->AllowsInput(ETAInputCapability::Parkour)) return;
+	const bool bUpperHeld = PC->ReadHeldAction(JumpAction).IsNonZero();
+	const bool bLowerHeld = PC->ReadHeldAction(DropAction).IsNonZero();
+	if (bUpperHeld == bLowerHeld) return; // No request, or conflicting Upper/Lower requests.
+	ATAParkourMarker* Marker = SelectParkourMarker();
+	if (!Marker) return;
+	// Action and logical slot are strictly paired, including on single-landing markers.
+	if (!CanParkourToLanding(Marker, bLowerHeld)) return;
+	const TArray<FKey> Sources = PC->GetObservedHeldKeysForAction(bLowerHeld ? DropAction : JumpAction);
+	if (!Sources.IsEmpty()) StartParkour(Marker, Sources, bLowerHeld);
 }
 
 bool UTAParkourComponent::GetParkourFacing() const

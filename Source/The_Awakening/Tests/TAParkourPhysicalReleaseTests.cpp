@@ -18,12 +18,11 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
     auto* Parkour = NewObject<UTAParkourComponent>(Pawn);
     Pawn->AddInstanceComponent(Parkour); Parkour->RegisterComponent(); Parkour->BeginPlay();
     FTAParkourInputTestFixture Held(Pawn, Parkour);
-    if (!TestNotNull(TEXT("Controller"), Held.PC) || !TestNotNull(TEXT("Unified action"), Held.Jump))
+    if (!TestNotNull(TEXT("Controller"), Held.PC) || !TestNotNull(TEXT("Upper action"), Held.Jump))
     {
         World->DestroyWorld(false); GEngine->DestroyWorldContext(World); return false;
     }
     auto* PC = Held.PC;
-    Held.Observe(EKeys::D, 1.f);
     using TAInputOwnershipAdapter::EState;
     PC->ObservePlayerInputOwnership(EState::Owned);
     FTAInputDeviceDetector Processor(PC);
@@ -50,7 +49,6 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
     TestFalse(TEXT("Lost invalidates instead of recording Up"), PC->FindHeldKeyObservation(EKeys::SpaceBar).IsSet());
     Blocked(TEXT("Lost is not Release"));
     PC->ObservePlayerInputOwnership(EState::Owned);
-    Held.Observe(EKeys::D, 1.f);
     Blocked(TEXT("Recovery without physical sample cannot rearm"));
     FKeyEvent Repeat(EKeys::SpaceBar, FModifierKeysState(), Held.User, true, 0, 0);
     Processor.HandleKeyDownEvent(FSlateApplication::Get(), Repeat);
@@ -66,8 +64,8 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
     for (bool bDrop : {false, true})
     {
         Marker->bEnableUpper = !bDrop; Marker->bEnableLower = bDrop;
-        const FKey Keyboard = EKeys::SpaceBar;
-        const FKey Pad = EKeys::Gamepad_FaceButton_Bottom;
+        const FKey Keyboard = bDrop ? EKeys::LeftControl : EKeys::SpaceBar;
+        const FKey Pad = bDrop ? EKeys::Gamepad_FaceButton_Bottom : EKeys::Gamepad_FaceButton_Right;
         Held.Observe(Keyboard, 1.f); Held.Observe(Pad, 1.f); Held.Poll();
         TestTrue(TEXT("Two-source consumption launches"), Parkour->IsParkouring()); Finish();
         Held.Observe(Keyboard, 0.f);
@@ -80,20 +78,38 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
         Rearmed(TEXT("All consumed sources valid zero rearms"));
     }
 
+    // Dual consumes all sources of the selected action, across keyboard and pad.
+    Marker->bEnableUpper = Marker->bEnableLower = true;
+    for (bool Lower : {false, true})
+    {
+        const FKey Keyboard = Lower ? EKeys::LeftControl : EKeys::SpaceBar;
+        const FKey Pad = Lower ? EKeys::Gamepad_FaceButton_Bottom : EKeys::Gamepad_FaceButton_Right;
+        const FKey Alternate = Lower ? EKeys::SpaceBar : EKeys::LeftControl;
+        Held.Observe(Keyboard, 1); Held.Observe(Pad, 1); Held.Poll();
+        TestTrue(TEXT("Dual keyboard/pad sources select one action"), Parkour->IsParkouring()); Finish();
+        const auto* Sources = Parkour->ConsumedHeldMarkers.Find(Marker);
+        TestTrue(TEXT("Both actual sources belong to consumption"), Sources && Sources->Num() == 2 && Sources->Contains(Keyboard) && Sources->Contains(Pad));
+        Held.Observe(Keyboard, 0); Blocked(TEXT("Partial selected-action release cannot rearm"));
+        Held.Observe(Alternate, 1); Blocked(TEXT("Alternate action cannot bypass selected pad still held"));
+        Held.Observe(Alternate, 0); Blocked(TEXT("Alternate action release cannot rearm selected action"));
+        Held.Observe(Pad, 0); Rearmed(TEXT("All selected-action sources release rearms Dual"));
+    }
+
     // Real resolved mapping shadowing: A is no longer in execution mappings, but
     // the consumed source's physical identity must survive that change.
     Marker->bEnableUpper = false; Marker->bEnableLower = true;
     Held.Observe(EKeys::Gamepad_FaceButton_Bottom, 1.f); Held.Poll();
-    TestTrue(TEXT("A plus direction launches the sole Lower slot"), Parkour->IsParkouring()); Finish();
+    TestTrue(TEXT("A alone launches the sole Lower slot"), Parkour->IsParkouring()); Finish();
     auto* CoverContext = NewObject<UInputMappingContext>(PC);
     auto* Confirm = NewObject<UInputAction>(PC); Confirm->bConsumeInput = true;
     CoverContext->MapKey(Confirm, EKeys::Gamepad_FaceButton_Bottom);
+    CoverContext->MapKey(Confirm, EKeys::Gamepad_FaceButton_Right);
     FModifyContextOptions Options; Options.bForceImmediately = true;
     Held.Mappings.AddMappingContext(CoverContext, 20, Options);
-    TestFalse(TEXT("UI mapping shadows unified execution action value"), PC->ReadHeldAction(Held.Jump).IsNonZero());
+    TestFalse(TEXT("UI mapping shadows Lower execution action value"), PC->ReadHeldAction(Held.Drop).IsNonZero());
     Blocked(TEXT("Mapping shadow is not Release"));
     Held.Mappings.RemoveMappingContext(CoverContext, Options);
-    TestTrue(TEXT("Mapping restoration exposes still-Held A"), PC->ReadHeldAction(Held.Jump).IsNonZero());
+    TestTrue(TEXT("Mapping restoration exposes still-Held A"), PC->ReadHeldAction(Held.Drop).IsNonZero());
     Blocked(TEXT("Mapping restoration does not rearm"));
     FTAInputRequest Cover; Cover.Owner = PC; Cover.Priority = 200;
     Cover.Allowed = {ETAInputCapability::Confirm};
@@ -105,13 +121,13 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
 
     // Exercise the same action on Upper; overlap exit never proves physical release.
     Marker->bEnableUpper = true; Marker->bEnableLower = false;
-    Held.Observe(EKeys::Gamepad_FaceButton_Bottom, 1.f); Held.Poll();
-    TestTrue(TEXT("A plus direction launches Upper"), Parkour->IsParkouring()); Finish();
+    Held.Observe(EKeys::Gamepad_FaceButton_Right, 1.f); Held.Poll();
+    TestTrue(TEXT("B alone launches Upper"), Parkour->IsParkouring()); Finish();
     Held.Mappings.AddMappingContext(CoverContext, 20, Options);
-    TestFalse(TEXT("UI mapping shadows Jump action value"), PC->ReadHeldAction(Held.Jump).IsNonZero());
-    Blocked(TEXT("A mapping shadow retains consumption"));
+    TestFalse(TEXT("UI mapping shadows Upper action value"), PC->ReadHeldAction(Held.Jump).IsNonZero());
+    Blocked(TEXT("Upper mapping shadow retains consumption"));
     Held.Mappings.RemoveMappingContext(CoverContext, Options);
-    Blocked(TEXT("A mapping restoration retains consumption"));
+    Blocked(TEXT("Upper mapping restoration retains consumption"));
     Parkour->UnregisterMarker(Marker); FTAParkourInputTestFixture::Register(Parkour, Marker); Held.Poll();
     TestTrue(TEXT("Idle exit/reentry creates a new opportunity"), Parkour->IsParkouring()); Finish();
     Marker->Destroy(); Held.Poll();
@@ -119,14 +135,14 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
     TestTrue(TEXT("Destroyed marker consumption is actually pruned"), Parkour->ConsumedHeldMarkers.IsEmpty());
     Marker = World->SpawnActor<ATAParkourMarker>(); FTAParkourInputTestFixture::Register(Parkour, Marker); Held.Poll();
     TestTrue(TEXT("Destroyed consumption does not block another marker"), Parkour->IsParkouring()); Finish();
-    Held.Observe(EKeys::Gamepad_FaceButton_Bottom, 0.f);
+    Held.Observe(EKeys::Gamepad_FaceButton_Right, 0.f);
     Rearmed(TEXT("Gamepad-only consumption rearms without unused Space"));
 
     // Real regression: consuming A naturally leaves its volume during parkour.
     // Continuous Held supports A -> B -> A -> B across real overlap opportunities.
     auto* MarkerA = Marker;
     auto* MarkerB = World->SpawnActor<ATAParkourMarker>();
-    Held.Observe(EKeys::SpaceBar, 1.f); Held.Observe(EKeys::Gamepad_FaceButton_Bottom, 1.f);
+    Held.Observe(EKeys::SpaceBar, 1.f); Held.Observe(EKeys::Gamepad_FaceButton_Right, 1.f);
     Held.Poll(); TestTrue(TEXT("A launches with both physical sources"), Parkour->IsParkouring());
     TestEqual(TEXT("A records both sources"), (Parkour->ConsumedHeldMarkers.Find(MarkerA) ? Parkour->ConsumedHeldMarkers.Find(MarkerA)->Num() : 0), 2);
     FTAParkourInputTestFixture::Register(Parkour, MarkerA);
@@ -149,8 +165,8 @@ bool FTAParkourPhysicalReleaseTest::RunTest(const FString&)
     Held.Observe(EKeys::SpaceBar, 0.f);
     Blocked(TEXT("Same A overlap with only Space released cannot execute"));
     Held.Observe(EKeys::SpaceBar, 1.f);
-    Blocked(TEXT("Repressing Space while B remains Held cannot execute"));
-    Held.Observe(EKeys::SpaceBar, 0.f); Held.Observe(EKeys::Gamepad_FaceButton_Bottom, 0.f);
+    Blocked(TEXT("Repressing Space while gamepad B remains held cannot execute"));
+    Held.Observe(EKeys::SpaceBar, 0.f); Held.Observe(EKeys::Gamepad_FaceButton_Right, 0.f);
     Rearmed(TEXT("All sources released rearms A after natural exit"));
     TestTrue(TEXT("Release clears the remaining same-overlap consumption"), Parkour->ConsumedHeldMarkers.IsEmpty());
     Held.Observe(EKeys::SpaceBar, 1.f); Held.Poll();

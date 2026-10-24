@@ -12,8 +12,9 @@
 <img width="191" height="159" alt="屏幕截图 2026-02-19 145546" src="https://github.com/user-attachments/assets/ae98ef53-3899-4d5b-ab60-f54fc943a7d4" />
 
 
-## 开发文档：交互与 QTE
+## 开发文档
 
+- [跑酷：严格 Upper/Lower 按键、朝向与旧数据](Docs/DirectionalParkour.md)
 - [交互物体与 QTE：Blueprint 操作指南](Docs/InteractableObjects.md)
 - [通用交互、世界剧情事件与特殊动作架构](Docs/WorldInteractionSystem.md)
 - [QTE 调试组件、参数与事件](Docs/QTEDebugTester.md)

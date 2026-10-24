@@ -52,15 +52,18 @@ back to the same key's Xbox icon (`bFallbackToXboxIcons`, Config). Loaded textur
 are cached with strong references; missing paths are remembered and logged once
 (`LogTAInputIcon`). The cache is released in `Deinitialize`.
 
-## Tests
+## Reserved direction artwork
 
-Directional parkour adds `LS_UpLeft`, `LS_DownLeft`, `LS_UpRight`, `LS_DownRight`
-under both Xbox and PS. These are duplicated LS textures for now; an explicit
-direction arrow accompanies them in the chord. Keyboard chord icons resolve the
-current movement/parkour actions, rather than physical WASD/Space constants.
+The former directional parkour added `LS_UpLeft`, `LS_DownLeft`, `LS_UpRight`,
+`LS_DownRight` under both Xbox and PS. These duplicated LS placeholders and the
+generic chord widget are retained, but parkour no longer uses direction chords.
+Current parkour prompts show one resolved action icon per landing: Upper defaults
+to Space/B and Lower to Ctrl/A. Both follow the player's actual IMC bindings.
 
 **待办：后续需要绘制并替换四个正式的 LS 斜方向按键图标。** Xbox 和 PS
 目前各有一套同名占位资产；替换纹理内容即可，不需要改资源路径。
+
+## Tests
 
 - `TheAwakening.Input.GamepadBrand.Mapping` - Steam type and vendor id mapping.
 - `TheAwakening.Input.GamepadBrand.Detection` - switch/slot/cache/retry rules, style

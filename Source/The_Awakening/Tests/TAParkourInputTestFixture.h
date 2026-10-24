@@ -32,17 +32,13 @@ struct FTAParkourInputTestFixture
 	AThe_AwakeningPlayerController* PC = nullptr;
 	UInputAction* Jump = nullptr;
 	UInputAction* Drop = nullptr;
-	UInputAction* Forward = nullptr;
-	UInputAction* Backward = nullptr;
-	UInputAction* Left = nullptr;
-	UInputAction* Right = nullptr;
-	UInputAction* Stick = nullptr;
 	UInputMappingContext* Context = nullptr;
 	UTAParkourComponent* Parkour = nullptr;
 	int32 User = 0;
 
 	FTAParkourInputTestFixture(ACharacter* Pawn, UTAParkourComponent* InParkour) : Parkour(InParkour)
 	{
+		Pawn->SetActorRotation(FRotator(0, 90, 0)); // Default fixtures face their +Y landing.
 		auto* World = Pawn->GetWorld();
 		auto* Class = LoadClass<AThe_AwakeningPlayerController>(nullptr,
 			TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
@@ -56,14 +52,13 @@ struct FTAParkourInputTestFixture
 		Jump = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ParkourJump.IA_ParkourJump"));
 		Drop = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ParkourDrop.IA_ParkourDrop"));
 		Context = NewObject<UInputMappingContext>(PC);
-		Context->MapKey(Jump, EKeys::SpaceBar); Context->MapKey(Jump, EKeys::Gamepad_FaceButton_Bottom);
-		Forward = NewObject<UInputAction>(PC); Backward = NewObject<UInputAction>(PC);
-		Left = NewObject<UInputAction>(PC); Right = NewObject<UInputAction>(PC);
-		Stick = NewObject<UInputAction>(PC); Stick->ValueType = EInputActionValueType::Axis2D;
-		Context->MapKey(Forward, EKeys::W); Context->MapKey(Backward, EKeys::S);
-		Context->MapKey(Left, EKeys::A); Context->MapKey(Right, EKeys::D);
+		Context->MapKey(Jump, EKeys::SpaceBar); Context->MapKey(Jump, EKeys::Gamepad_FaceButton_Right);
+		Context->MapKey(Drop, EKeys::LeftControl); Context->MapKey(Drop, EKeys::Gamepad_FaceButton_Bottom);
+		// Unrelated movement mappings ensure held movement cannot select a parkour landing.
+		for (FKey Key : {EKeys::W, EKeys::S, EKeys::A, EKeys::D}) Context->MapKey(NewObject<UInputAction>(PC), Key);
+		auto* Stick = NewObject<UInputAction>(PC); Stick->ValueType = EInputActionValueType::Axis2D;
 		Context->MapKey(Stick, EKeys::Gamepad_Left2D);
-		Parkour->ConfigureDirectionActions(Forward, Backward, Left, Right, Stick);
+		Parkour->ConfigureExecutionActions(Jump, Drop);
 		FModifyContextOptions Options; Options.bForceImmediately = true;
 		Mappings.AddMappingContext(Context, 0, Options);
 	}
@@ -71,8 +66,8 @@ struct FTAParkourInputTestFixture
 	void Poll() { Parkour->UpdatePlayerHeldRequests(PC, Jump, Drop); }
 	void Update(bool bJump, bool bDrop)
 	{
-		Observe(EKeys::D, 1.f);
-		Observe(EKeys::SpaceBar, bJump || bDrop ? 1.f : 0.f);
+		Observe(EKeys::SpaceBar, bJump ? 1.f : 0.f);
+		Observe(EKeys::LeftControl, bDrop ? 1.f : 0.f);
 		Poll();
 	}
 };
