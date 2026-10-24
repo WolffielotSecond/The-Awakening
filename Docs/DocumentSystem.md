@@ -183,6 +183,28 @@
 
 ## 生成资源
 
+### 打包依赖与初始化失败处理
+
+日记阅读使用 `/Game/Models/Diary` 下的 `SK_Journal_Body`、`SK_TurningPage`、共享骨架及
+`Book_Open`、`Book_Close`、`Page_Turn_Forward`、`Page_Turn_Backward`。这些资源由原生代码的软路径加载，
+场景拾取物引用的 `SM_Diary_Closed` 不会把骨骼模型和动画带入 Cook。`DefaultGame.ini` 已将
+`/Game/Models/Diary` 加入 `DirectoriesToAlwaysCook`；预览材质仍由既有 `/Game/UI` Cook 目录覆盖。
+该目录整体参与 Cook（包括保留的源包资产），实际播放的书本动画仍只有上述四个。
+
+快捷预览与背包「查看内容」共用打开流程：先加载校验日记模型、动画和预览材质，再加入视口。
+失败时返回空指针并销毁预览 Actor，不显示模态层；控件构造失败则在加入视口后统一移除，
+避免在 `NativeConstruct` 内提前移除但随后又被挂上视口。缺失资源会记录具体路径。
+等待图标布局期间可直接返回；已失效的预览台也可关闭。正常书本播放期间仍维持原有输入限制。
+
+2026-10-24 排查时，旧 Windows Cook 目录只有合书静态模型及其材质，缺少阅读所需的两个骨骼模型及四个动画。
+修正配置后的实际 Windows Cook 已包含这些资源及骨架、翻动纸材质，Cook 完成 0 错误、0 警告。
+证据：`Saved/Logs/DiaryPackagingCook.log`。更新代码和配置后需重新打包；已有的 StagedBuilds/导出包不会自动更新。
+产物核对清单：`Saved/DiaryPackagingCookVerification.json`。Editor 编译通过，日记组 6/6 通过（其中输入测试有一条 `UIInputMappingContext is not available` 警告）；
+覆盖正常打开/关闭、等待图标时取消、两个入口缺资源时拒绝显示及 Actor 清理。报告 `Saved/Automation/DiaryPackaging/`，日志 `Saved/Logs/DiaryPackagingTests.log`。
+本次未重新导出整包或执行打包游戏的视觉验收，需按打包回归清单复测。
+
+### 生成命令
+
 界面和样例都由命令行工具生成，已有资源默认不覆盖：
 
 | 命令 | 生成 |

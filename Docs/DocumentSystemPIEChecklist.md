@@ -4,6 +4,10 @@
 
 **准备**：关卡里放两份文本（`BP_Document` 或 `TAWorldDocument`，例如 `DA_Document_Sample01`、`DA_Document_67`）、一个日记本掉落物 `BP_WorldItem_Diary`、几个可堆叠和不可堆叠的物品、一个复活点。开始前 `TASaveDelete`、`TADocReset`。键鼠和手柄各走一遍。
 
+**打包回归**：用更新后的代码与配置重新打 Windows 包，在包内分别测试捡起日记快捷查看、背包「查看内容」、文本快捷阅读及返回。
+书本应正常显示、开合和翻页，返回后可继续操作背包。Cook 产物必须包含 `SK_Journal_Body`、`SK_TurningPage`、共享骨架及四个书本动画；
+预览材质位于既有 `/Game/UI` Cook 范围。编辑器能显示不代表运行时软路径资源已被打包。
+
 ## 1. 没有日记本时拿起文本
 
 | 操作 | 预期 |

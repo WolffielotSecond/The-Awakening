@@ -20,6 +20,8 @@
 #include "InputAction.h"
 #include "InputKeyEventArgs.h"
 #include "Engine/LocalPlayer.h"
+#include "EngineUtils.h"
+#include "Misc/ConfigCacheIni.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
@@ -28,6 +30,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTADiaryPreviewTest, "TheAwakening.Document.Dia
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FTADiaryPreviewTest::RunTest(const FString&)
 {
+	TArray<FString> CookDirectories;
+	GConfig->GetArray(TEXT("/Script/UnrealEd.ProjectPackagingSettings"), TEXT("DirectoriesToAlwaysCook"), CookDirectories, GGameIni);
+	TestTrue(TEXT("Native diary soft references have an explicit cook root"), CookDirectories.Contains(TEXT("(Path=\"/Game/Models/Diary\")")));
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
 	World->InitializeActorsForPlay(FURL());
@@ -198,6 +203,35 @@ bool FTADiaryWidgetIntegrationTest::RunTest(const FString&)
 		Quick->RemoveFromParent();
 		TestNull(TEXT("Forced removal during turn releases book"), Quick->BookStage.Get());
 		Quick->NativeDestruct();
+		// Waiting for icon geometry must remain cancellable even before the opening starts.
+		auto* Pending = CreateWidget<UTADiaryWidget>(World, WidgetClass);
+		Pending->SourcePosition = FVector2D(20.f, 20.f);
+		const auto PendingSlate = Pending->TakeWidget();
+		TestTrue(TEXT("Icon layout pending before opening"), Pending->bPendingOpenFromIcon);
+		Pending->RequestClose();
+		TestNull(TEXT("Cancel while waiting for icon releases stage"), Pending->BookStage.Get());
+		Pending->NativeDestruct();
+		// Reproduce a packaged asset missing from cook: both entry modes must fail before
+		// AddToViewport can attach an uninitialized, uncloseable modal background.
+		auto* PC = World->SpawnActor<APlayerController>();
+		auto* Local = NewObject<ULocalPlayer>(GEngine);
+		PC->Player = Local; Local->PlayerController = PC;
+		AddExpectedError(TEXT("Diary preview: book meshes missing or incompatible"), EAutomationExpectedErrorFlags::Contains, 2);
+		AddExpectedError(TEXT("refusing to display modal UI"), EAutomationExpectedErrorFlags::Contains, 2);
+		for (bool QuickView : {false, true})
+		{
+			auto* Failed = CreateWidget<UTADiaryWidget>(PC, WidgetClass);
+			Failed->bSkipOpenAnimation = QuickView;
+			Failed->bOpenDocumentImmediately = QuickView;
+			Failed->BookStage = Cast<ATADiaryPreviewStage>(ATAPreviewStage::SpawnPreviewStage(World, ATADiaryPreviewStage::StaticClass(), 1));
+			Failed->BookStage->BodyMesh.Reset();
+			TestFalse(TEXT("Missing cooked book refuses modal creation in both entry modes"), Failed->TryOpen());
+			TestFalse(TEXT("Failed modal never attaches to viewport"), Failed->IsInViewport());
+			TestNull(TEXT("Failed modal releases book"), Failed->BookStage.Get());
+		}
+		int32 RemainingStages = 0;
+		for (TActorIterator<ATADiaryPreviewStage> It(World); It; ++It) ++RemainingStages;
+		TestEqual(TEXT("Failed initialization leaves no preview actors"), RemainingStages, 0);
 	}
 	GI->Shutdown();
 	World->DestroyWorld(false);

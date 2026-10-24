@@ -61,8 +61,44 @@ UTADiaryWidget* UTADiaryWidget::Open(APlayerController* PC, TSubclassOf<UTADiary
 	Diary->RequestedPage = OpenPage;
 	Diary->bSkipOpenAnimation = bInSkipOpenAnimation;
 	Diary->bOpenDocumentImmediately = bInOpenDocumentImmediately;
-	Diary->AddToViewport(DiaryZOrder);
-	return Diary;
+	return Diary->TryOpen() ? Diary : nullptr;
+}
+
+bool UTADiaryWidget::TryOpen()
+{
+	// Validate cooked assets before attaching the modal layer. NativeConstruct runs inside
+	// AddToViewport; removing there can happen before the viewport has attached the widget.
+	if (!InitializeBookStage())
+	{
+		ReleasePreviewStages();
+		return false;
+	}
+	AddToViewport(DiaryZOrder);
+	if (!bInitialized)
+	{
+		RemoveFromParent();
+		return false;
+	}
+	return true;
+}
+
+bool UTADiaryWidget::InitializeBookStage()
+{
+	if (!BookStage)
+		BookStage = Cast<ATADiaryPreviewStage>(ATAPreviewStage::SpawnPreviewStage(this, ATADiaryPreviewStage::StaticClass(), 1));
+	if (!BookStage) return false;
+	BookStage->CameraPitch = BookCameraPitch;
+	BookStage->FramingPadding = BookFramingPadding;
+	BookStage->BookTransform = BookTransform;
+	BookStage->DocumentSize = DocumentSize;
+	BookStage->RightDocumentPosition = RightDocumentPosition;
+	BookStage->PlaybackRate = BookPlaybackRate;
+	if (!BookStage->InitializeDiary() || !BookStage->GetDisplayMaterial())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Diary: 3D book assets or preview material unavailable; refusing to display modal UI."));
+		return false;
+	}
+	return true;
 }
 
 void UTADiaryWidget::LoadDefaultAssets()
@@ -76,6 +112,7 @@ void UTADiaryWidget::LoadDefaultAssets()
 void UTADiaryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	bInitialized = false;
 	LoadDefaultAssets();
 
 	if (UGameInstance* GI = GetGameInstance())
@@ -91,23 +128,15 @@ void UTADiaryWidget::NativeConstruct()
 		}
 	}
 
-	BookStage = Cast<ATADiaryPreviewStage>(ATAPreviewStage::SpawnPreviewStage(this, ATADiaryPreviewStage::StaticClass(), 1));
-	if (!BookStage || !Image_Book)
+	if (!Image_Book || !Panel_Book)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Diary: book stage or Image_Book missing; rebuild with -run=TADocumentUI -RebuildDiaryOnly."));
-		RemoveFromParent();
+		ReleasePreviewStages();
 		return;
 	}
-	BookStage->CameraPitch = BookCameraPitch;
-	BookStage->FramingPadding = BookFramingPadding;
-	BookStage->BookTransform = BookTransform;
-	BookStage->DocumentSize = DocumentSize;
-	BookStage->RightDocumentPosition = RightDocumentPosition;
-	BookStage->PlaybackRate = BookPlaybackRate;
-	if (!BookStage->InitializeDiary())
+	if (!InitializeBookStage())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Diary: failed to initialize 3D book assets."));
-		RemoveFromParent();
+		ReleasePreviewStages();
 		return;
 	}
 	BookStage->OnMotionFinished.AddUniqueDynamic(this, &UTADiaryWidget::HandleBookMotionFinished);
@@ -150,6 +179,7 @@ void UTADiaryWidget::NativeConstruct()
 	AcquireInput();
 	// Wait for the book's first rendered layout/pose before handing it to the reader.
 	bPendingQuickRead = bOpenDocumentImmediately && bSkipOpenAnimation;
+	bInitialized = true;
 }
 
 void UTADiaryWidget::NativeDestruct()
@@ -474,6 +504,11 @@ bool UTADiaryWidget::HandleMenuBackRequested()
 
 void UTADiaryWidget::RequestClose()
 {
+	if (!IsValid(BookStage) || !BookStage->IsReady() || bPendingOpenFromIcon)
+	{
+		RemoveFromParent();
+		return;
+	}
 	if (Phase != EPhase::Open)
 	{
 		return;
@@ -491,6 +526,7 @@ void UTADiaryWidget::RequestClose()
 
 void UTADiaryWidget::RemoveFromParent()
 {
+	bInitialized = false;
 	if (ActiveReader)
 	{
 		UTADocumentReaderWidget* Reader = ActiveReader;

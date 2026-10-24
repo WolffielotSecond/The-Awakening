@@ -185,6 +185,8 @@ private:
 	enum class EPhase : uint8 { Opening, Open, Flipping, Reading, Closing };
 
 	void LoadDefaultAssets();
+	bool InitializeBookStage();
+	bool TryOpen();
 	void BuildControls();
 	void ShowPage(int32 PageIndex);
 	void RefreshControls();
@@ -244,6 +246,7 @@ private:
 	bool bPageHoldTriggered = false;
 	bool bPendingOpenFromIcon = false;
 	bool bPendingQuickRead = false;
+	bool bInitialized = false;
 	/** 快速查看：跳过入场动画，打开后直接进入当前页文本的预览 */
 	bool bSkipOpenAnimation = false;
 	bool bOpenDocumentImmediately = false;

@@ -2,6 +2,8 @@
 #include "Interaction/TASpecialActionComponent.h"
 #include "InputAction.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogTAQTESequence, Log, All);
+
 UTAQTESequenceComponent::UTAQTESequenceComponent()
 {
  PrimaryComponentTick.bCanEverTick = false;
@@ -32,8 +34,14 @@ bool UTAQTESequenceComponent::GenerateQTE(AActor* Interactor, const TArray<FTAQT
 {
  if (RunningAction.IsValid() || !IsValid(Interactor) || InSteps.IsEmpty()) return false;
  auto* Action = Interactor->FindComponentByClass<UTASpecialActionComponent>();
+ if (!Action) return false;
  auto* Source = ActionTemplate.LoadSynchronous();
- if (!Action || !Source) return false;
+ if (!Source)
+ {
+  UE_LOG(LogTAQTESequence, Warning, TEXT("QTE action template unavailable: '%s' on %s. Verify the template and its dependencies are cooked."),
+   *ActionTemplate.ToSoftObjectPath().ToString(), *GetNameSafe(GetOwner()));
+  return false;
+ }
  auto* Runtime = DuplicateObject<UTASpecialActionDefinition>(Source, this);
  TArray<TObjectPtr<UInputAction>> InteractionActions;
  for (const auto& Stage : Source->Stages)
@@ -63,7 +71,12 @@ bool UTAQTESequenceComponent::GenerateQTE(AActor* Interactor, const TArray<FTAQT
    {
     if (!DirectionActions.IsValidIndex(Index)) return false;
     auto* Direction = DirectionActions[Index].LoadSynchronous();
-    if (!Direction) return false;
+    if (!Direction)
+    {
+     UE_LOG(LogTAQTESequence, Warning, TEXT("QTE direction action unavailable: '%s' on %s. Verify cooked input assets."),
+      *DirectionActions[Index].ToSoftObjectPath().ToString(), *GetNameSafe(GetOwner()));
+     return false;
+    }
     Stage.ActionOptions.Add(Direction);
    }
   }

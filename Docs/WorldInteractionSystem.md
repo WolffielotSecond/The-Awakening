@@ -159,6 +159,9 @@ Prompt 仍由 UTAPromptComponent 驱动。动作活动时同一 Interact 分组�
 
 见 [QTEDebugTester.md](QTEDebugTester.md)。现已提供可放置的 TA_Debug_QTE_Tester、带衰减及可调点击冷却的连按、单次点按、随机 IA 池、圆环、呼吸缩放和透视翻转；暂停菜单现在挂起并恢复 QTE，活动 QTE 拒绝存档。钢管示例方向阶段已改为复用 IA_MoveRight，支持 D / 右箭头 / 手柄方向键右；最终剧情事件时机保持不变。
 
+打包注意：原生 QTESequence 的默认模板为运行时软路径，`/Game/DeubgItem/QTE` 必须参与 Cook。
+2026-10-24 已补入 `DirectoriesToAlwaysCook` 并验证模板、IMC 和 IA 实际进入 Windows 产物；缺失资源不再静默返回，详情及验证记录见上述调试文档。
+
 
 ## 10. 最新收尾状态
 

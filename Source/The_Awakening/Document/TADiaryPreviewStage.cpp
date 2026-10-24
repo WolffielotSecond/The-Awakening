@@ -50,14 +50,20 @@ bool ATADiaryPreviewStage::InitializeDiary()
 	if (bReady) return true;
 	USkeletalMesh* Body = BodyMesh.LoadSynchronous();
 	USkeletalMesh* Page = PageMesh.LoadSynchronous();
-	if (!Body || !Page || !Body->GetSkeleton() || Page->GetSkeleton() != Body->GetSkeleton()) return false;
-	LoadedAnimations.Reset();
-	for (UAnimSequence* Animation : {OpenAnimation.LoadSynchronous(), CloseAnimation.LoadSynchronous(),
-		ForwardAnimation.LoadSynchronous(), BackwardAnimation.LoadSynchronous()})
+	if (!Body || !Page || !Body->GetSkeleton() || Page->GetSkeleton() != Body->GetSkeleton())
 	{
+		UE_LOG(LogTemp, Error, TEXT("Diary preview: book meshes missing or incompatible: body=%s (loaded=%d), page=%s (loaded=%d). Check cooked diary assets."),
+			*BodyMesh.ToSoftObjectPath().ToString(), Body != nullptr, *PageMesh.ToSoftObjectPath().ToString(), Page != nullptr);
+		return false;
+	}
+	LoadedAnimations.Reset();
+	for (const auto* Reference : {&OpenAnimation, &CloseAnimation, &ForwardAnimation, &BackwardAnimation})
+	{
+		UAnimSequence* Animation = Reference->LoadSynchronous();
 		if (!Animation || Animation->GetSkeleton() != Body->GetSkeleton() || Animation->GetPlayLength() <= 0.f)
 		{
-			UE_LOG(LogTemp, Error, TEXT("Diary preview: missing animation or incompatible skeleton."));
+			UE_LOG(LogTemp, Error, TEXT("Diary preview: missing animation or incompatible skeleton: %s. Check cooked diary assets."),
+				*Reference->ToSoftObjectPath().ToString());
 			return false;
 		}
 		LoadedAnimations.Add(Animation);

@@ -8,6 +8,25 @@
 
 每次交互启动一次独立 QTE。成功后物体标签显示 `QTE SUCCESS`，可再次交互重复测试；取消后可重试。`bLastSucceeded`、`SuccessfulRuns` 和 `OnTestEnded` 可在 Blueprint 中查看或绑定。
 
+## 打包依赖
+
+默认 `Action Template` 是原生组件构造函数中通过软路径设置的
+`/Game/DeubgItem/QTE/DA_Debug_QTE_Pipe`。关卡中的原生 `TADebugQTETester` Actor 即使被 Cook，
+也不保证该默认路径会自动带入动作模板；缺少模板时，交互被调用但 QTE 无法启动。
+2026-10-24 排查时，Windows Cook 中存在测试器 Actor，缺少该模板、`IMC_QTE` 及专用交互 IA。
+
+`DefaultGame.ini` 已将 `/Game/DeubgItem/QTE` 加入 `DirectoriesToAlwaysCook`，包含两个模板、专用 IMC 和五个交互 IA。
+四个方向 IA 继续由已有 `/Game/Input` 范围覆盖，圆环与按键材质由 `/Game/UI` 覆盖；无需修改现有交互检测或另建按键流程。
+模板或方向资源加载失败会记录具体软路径；启动失败不持有运行状态或新增 QTE IMC，可再次尝试交互。
+修正配置后必须重新打包，已有导出包不会自动更新。
+
+本次 Editor 编译通过；`TheAwakening.Interaction.QTE` 2/2 通过，覆盖真实 Enhanced Input 完成流程、缺模板时无残留及恢复模板后重试。
+其中 DebugPipe 有 3 条测试环境警告（GameplayCue 扫描路径、测试 GameMode 拒绝暂停/恢复），无失败。
+报告：`Saved/Automation/QTEPackaging/`，日志：`Saved/Logs/QTEPackagingTests.log`。
+实际 Windows Cook 完成 0 错误、0 警告，并核对 14 个包的非空 header/export（8 个 QTE 包、4 个方向 IA、2 个 UI 材质）；
+日志：`Saved/Logs/QTEPackagingCook.log`，清单：`Saved/QTEPackagingCookVerification.json`。
+尚未重新导出整包并手动验收；包内应测试靠近交互、连按/方向步骤、完成或取消后再次交互。
+
 ## 在 QTESequence 组件中配置组合
 
 选中关卡中的 `TA_Debug_QTE_Tester`，在组件列表选中 **QTESequence**，展开 QTE 分类的 **Steps** 数组。数组长度就是阶段数量，支持增删、排序；依次完成全部阶段才成功。

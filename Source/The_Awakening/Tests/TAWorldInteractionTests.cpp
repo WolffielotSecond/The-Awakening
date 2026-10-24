@@ -1,5 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Story/TADialogueSubsystem.h"
 #include "Story/TAWorldEventDefinition.h"
 #include "Interaction/TAInteractionBehaviorComponent.h"
@@ -296,6 +297,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAQTEPipeTest, "TheAwakening.Interaction.QTE.D
  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FTAQTEPipeTest::RunTest(const FString&)
 {
+ TArray<FString> CookDirectories;
+ GConfig->GetArray(TEXT("/Script/UnrealEd.ProjectPackagingSettings"),TEXT("DirectoriesToAlwaysCook"),CookDirectories,GGameIni);
+ TestTrue(TEXT("Native QTE template has an explicit cook root"),CookDirectories.Contains(TEXT("(Path=\"/Game/DeubgItem/QTE\")")));
  TAWorldInteractionTests::FFixture F;
  auto* PCClass=LoadClass<AThe_AwakeningPlayerController>(nullptr,TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
  auto* PawnClass=LoadClass<AThe_AwakeningCharacter>(nullptr,TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter_C"));
@@ -316,6 +320,14 @@ bool FTAQTEPipeTest::RunTest(const FString&)
  auto* Definition=Target->QTESequence->ActionTemplate.LoadSynchronous();
  if(!TestNotNull(TEXT("Debug QTE data loads"),Definition)) { F.GI->RemoveLocalPlayer(Local); return false; }
  auto* Subsystem=Local->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+ {
+  TGuardValue<TSoftObjectPtr<UTASpecialActionDefinition>> MissingTemplate(Target->QTESequence->ActionTemplate, TSoftObjectPtr<UTASpecialActionDefinition>());
+  AddExpectedError(TEXT("QTE action template unavailable"),EAutomationExpectedErrorFlags::Contains,1);
+  Target->OnInteract_Implementation(Pawn);
+  TestFalse(TEXT("Missing cooked template starts no action"),Action->IsSpecialActionActive());
+  TestFalse(TEXT("Missing cooked template adds no QTE input context"),Subsystem->HasMappingContext(Definition->MappingContext));
+  TestTrue(TEXT("Failed startup leaves tester available for retry"),Target->CanInteract_Implementation(Pawn));
+ }
  FModifyContextOptions Options; Options.bForceImmediately=true; Options.bIgnoreAllPressedKeysUntilRelease=false;
  auto Rebuild=[&]{Subsystem->RequestRebuildControlMappings(Options,EInputMappingRebuildType::RebuildWithFlush);};
  auto Send=[&](FKey Key,EInputEvent Event)
