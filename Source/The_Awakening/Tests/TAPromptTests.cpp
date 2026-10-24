@@ -1,4 +1,5 @@
 #include "UI/TAPromptComponent.h"
+#include "Tests/TAParkourInputTestFixture.h"
 #include "Tests/TAHealthTestListener.h"
 #include "UI/TAInteractionPromptAnchor.h"
 #include "UI/TAPromptSettings.h"
@@ -98,8 +99,10 @@ namespace TAPromptTests
 		{
 			auto* Marker = World->SpawnActorDeferred<ATAParkourMarker>(ATAParkourMarker::StaticClass(), FTransform(Location));
 			Marker->MarkerType = Type;
+			Marker->bEnableUpper = Type == ETAParkourMarkerType::JumpToPoint;
+			Marker->bEnableLower = Type == ETAParkourMarkerType::DropDown;
 			Marker->FinishSpawning(FTransform(Location));
-			Pawn->GetParkourComponent()->RegisterMarker(Marker);
+			FTAParkourInputTestFixture::Register(Pawn->GetParkourComponent(), Marker);
 			return Marker;
 		}
 	};
@@ -174,17 +177,18 @@ bool FTAPromptElementsTest::RunTest(const FString&)
 	ATAParkourMarker* JumpNear = F.SpawnMarker(FVector(60.f, 0.f, 0.f), ETAParkourMarkerType::JumpToPoint);
 	ATAParkourMarker* Drop = F.SpawnMarker(FVector(100.f, 50.f, 0.f), ETAParkourMarkerType::DropDown);
 	TestTrue(TEXT("Marker prompt type follows MarkerType"),
-		JumpNear->GetPromptAnchor()->PromptType == ETAPromptType::ParkourJump && Drop->GetPromptAnchor()->PromptType == ETAPromptType::ParkourDrop);
-	TestEqual(TEXT("Drop marker default text"), Drop->GetPromptAnchor()->ResolveTextId(), GetDefault<UTAPromptSettings>()->ParkourDropTextId);
+		JumpNear->GetLandingPrompt(false)->PromptType == ETAPromptType::ParkourJump && Drop->GetLandingPrompt(true)->PromptType == ETAPromptType::ParkourDrop);
+	TestEqual(TEXT("Drop marker default text"), Drop->GetLandingPrompt(true)->ResolveTextId(), GetDefault<UTAPromptSettings>()->ParkourDropTextId);
 
 	F.Prompt->UpdatePrompts();
 	TestTrue(TEXT("Jump prompt on the nearest eligible jump marker"), F.Prompt->GetShownSource(ETAPromptType::ParkourJump) == JumpNear);
-	TestTrue(TEXT("Drop prompt handled separately"), F.Prompt->GetShownSource(ETAPromptType::ParkourDrop) == Drop);
+	TestNull(TEXT("Only the shared winning marker is shown"), F.Prompt->GetShownSource(ETAPromptType::ParkourDrop));
 	TestFalse(TEXT("Farther jump marker not prompted"), JumpFar->GetPromptAnchor()->IsPromptShown());
 
 	F.Pawn->GetParkourComponent()->UnregisterMarker(JumpNear);
 	F.Prompt->UpdatePrompts();
-	TestTrue(TEXT("Leaving a marker moves the prompt to the next eligible one"), F.Prompt->GetShownSource(ETAPromptType::ParkourJump) == JumpFar);
+	TestTrue(TEXT("Leaving a marker moves both execution and prompt to the nearest remaining marker"),
+		F.Prompt->GetShownSource(ETAPromptType::ParkourDrop) == Drop && F.Pawn->GetParkourComponent()->SelectDirectionalMarker(0) == Drop);
 	TestFalse(TEXT("Left marker's prompt hidden"), JumpNear->GetPromptAnchor()->IsPromptShown());
 	return true;
 }

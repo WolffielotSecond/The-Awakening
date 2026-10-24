@@ -50,7 +50,7 @@
 	"Settings.Binding.IA_MoveLeft": "向左移动",
 	"Settings.Binding.IA_MoveRight": "向右移动",
 	"Settings.Binding.IA_ParkourDrop": "跑酷下落",
-	"Settings.Binding.IA_ParkourJump": "跑酷跳跃",
+	"Settings.Binding.IA_ParkourJump": "跑酷",
 	"Settings.Binding.IA_Pause": "暂停",
 	"Settings.Binding.IA_PuzzleConfirm": "谜题确认",
 	"Settings.Binding.IA_PuzzlePan": "谜题平移",

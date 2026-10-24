@@ -54,6 +54,14 @@ are cached with strong references; missing paths are remembered and logged once
 
 ## Tests
 
+Directional parkour adds `LS_UpLeft`, `LS_DownLeft`, `LS_UpRight`, `LS_DownRight`
+under both Xbox and PS. These are duplicated LS textures for now; an explicit
+direction arrow accompanies them in the chord. Keyboard chord icons resolve the
+current movement/parkour actions, rather than physical WASD/Space constants.
+
+**待办：后续需要绘制并替换四个正式的 LS 斜方向按键图标。** Xbox 和 PS
+目前各有一套同名占位资产；替换纹理内容即可，不需要改资源路径。
+
 - `TheAwakening.Input.GamepadBrand.Mapping` - Steam type and vendor id mapping.
 - `TheAwakening.Input.GamepadBrand.Detection` - switch/slot/cache/retry rules, style
   override, icon cache, Switch -> Xbox icons.

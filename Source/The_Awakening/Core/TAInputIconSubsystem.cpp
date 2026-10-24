@@ -401,6 +401,14 @@ UTexture2D* UTAInputIconSubsystem::GetIconForKey(FKey Key) const
 	return LoadIconForDevice(Key, CurrentDeviceType);
 }
 
+UTexture2D* UTAInputIconSubsystem::GetStickDirectionIcon(int32 Horizontal, int32 Vertical) const
+{
+	if (!Vertical) return GetGamepadIconForKey(Horizontal < 0 ? EKeys::Gamepad_LeftStick_Left : EKeys::Gamepad_LeftStick_Right);
+	const FString Direction = FString(Vertical > 0 ? TEXT("Up") : TEXT("Down")) + (Horizontal < 0 ? TEXT("Left") : TEXT("Right"));
+	const FString Folder = CurrentDeviceType == EInputDeviceType::PS5 ? TEXT("PS") : TEXT("Xbox");
+	return LoadIconFromPath(IconRootPath + TEXT("/") + Folder + TEXT("/LS_") + Direction);
+}
+
 UTexture2D* UTAInputIconSubsystem::GetGamepadIconForKey(FKey Key) const
 {
 	if (!Key.IsGamepadKey())

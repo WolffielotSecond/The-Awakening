@@ -228,19 +228,22 @@ bool FTAHeldParkourTest::RunTest(const FString& Parameters)
 	Held.Update(true, false);
 	TestFalse(TEXT("Holding before marker waits"), Parkour->IsParkouring());
 	ATAParkourMarker* Marker = World->SpawnActor<ATAParkourMarker>();
-	Parkour->RegisterMarker(Marker);
+	FTAParkourInputTestFixture::Register(Parkour, Marker);
 	Held.Update(true, false);
 	TestTrue(TEXT("Entering while held starts parkour"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
+	Pawn->SetActorLocation(FVector::ZeroVector);
 	Held.Update(true, false);
 	TestFalse(TEXT("Same overlap does not loop"), Parkour->IsParkouring());
 	Held.Update(false, false); Held.Update(true, false);
 	TestTrue(TEXT("Release rearms same marker"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
-	Parkour->UnregisterMarker(Marker); Parkour->RegisterMarker(Marker);
+	Pawn->SetActorLocation(FVector::ZeroVector);
+	Parkour->UnregisterMarker(Marker); FTAParkourInputTestFixture::Register(Parkour, Marker);
 	Held.Update(true, false);
 	TestTrue(TEXT("Real exit and reentry rearms a held request"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
+	Pawn->SetActorLocation(FVector::ZeroVector);
 	Held.Update(false, false);
 	UTAFreezeComponent* Freeze = NewObject<UTAFreezeComponent>(Pawn);
 	Pawn->AddInstanceComponent(Freeze); Freeze->RegisterComponent();
@@ -251,9 +254,10 @@ bool FTAHeldParkourTest::RunTest(const FString& Parameters)
 	Registry->ReleaseFreeze(Marker); Held.Update(true, false);
 	TestTrue(TEXT("Still held request starts after thaw"), Parkour->IsParkouring());
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
+	Pawn->SetActorLocation(FVector::ZeroVector);
 	ATAParkourMarker* Next = World->SpawnActor<ATAParkourMarker>();
-	Next->MarkerType = ETAParkourMarkerType::DropDown;
-	Parkour->RegisterMarker(Next); Held.Update(false, true);
+	Next->bEnableUpper = false; Next->bEnableLower = true;
+	FTAParkourInputTestFixture::Register(Parkour, Next); Held.Update(false, true);
 	TestTrue(TEXT("Held drop starts at another marker"), Parkour->IsParkouring());
 	World->DestroyWorld(false);
 	return true;
@@ -283,6 +287,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 		FHitResult Sweep;
 	} Args;
 	Args.OtherActor = Pawn;
+    FTAParkourInputTestFixture::Register(Parkour, Marker);
 	{
 		// This isolated world has no initialized gameplay actors; allow its native overlap event.
 		TGuardValue<bool> AllowEvents(GAllowActorScriptExecutionInEditor, true);
@@ -320,6 +325,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	Parkour->TickComponent(.1f, LEVELTICK_All, nullptr);
 	TestTrue(TEXT("Flight keeps launch facing"), Pawn->GetActorForwardVector().Equals(FVector(0, 1, 0), .001f));
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);
+	Pawn->SetActorLocation(FVector::ZeroVector);
 	TestTrue(TEXT("Original movement rotation restored"), Move->bOrientRotationToMovement);
 	TestTrue(TEXT("Animation facing stays stable at endpoint"), Parkour->GetParkourFacing());
 	TestFalse(TEXT("Consumed marker unavailable to preview and execution"), Parkour->CanParkourToMarker(Marker));
@@ -329,7 +335,7 @@ bool FTAParkourFacingTest::RunTest(const FString& Parameters)
 	Marker->LandingSpline->SetLocationAtSplinePoint(0, FVector(-100, 0, -200), ESplineCoordinateSpace::Local);
 	Marker->LandingSpline->SetLocationAtSplinePoint(1, FVector(100, 0, -200), ESplineCoordinateSpace::Local);
 	Pawn->SetActorRotation(FRotator(0, -90, 0));
-	TestTrue(TEXT("Vertical route has no horizontal restriction"), Parkour->CanParkourToMarker(Marker));
+	TestFalse(TEXT("Vertical route has no horizontal side and is rejected"), Parkour->CanParkourToMarker(Marker));
 	World->DestroyWorld(false);
 	return true;
 }
@@ -377,7 +383,7 @@ bool FTAParkourMomentumTest::RunTest(const FString& Parameters)
 	Pawn->SetActorRotation(FRotator(0, 90, 0));
 	Pawn->GetCharacterMovement()->Velocity = FVector(0, 750, -200);
 	ATAParkourMarker* Marker = World->SpawnActor<ATAParkourMarker>();
-	Parkour->RegisterMarker(Marker); Held.Update(true, false);
+	FTAParkourInputTestFixture::Register(Parkour, Marker); Held.Update(true, false);
 	TestTrue(TEXT("Momentum test launches parkour"), Parkour->IsParkouring());
 	Held.Update(false, false);
 	Parkour->TickComponent(1.f, LEVELTICK_All, nullptr);

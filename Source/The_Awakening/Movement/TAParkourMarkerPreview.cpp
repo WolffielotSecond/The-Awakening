@@ -4,17 +4,18 @@
 
 void ATAParkourMarker::HideLandingAnchor()
 {
-	// The landing actor is only an anchor. Never reveal its sprite/arrow in game.
-	if (LandingTargetComponent)
+	for (bool bLower : {false, true})
 	{
-		LandingTargetComponent->SetHiddenInGame(true, false);
-		if (AActor* Child = LandingTargetComponent->GetChildActor()) Child->SetActorHiddenInGame(true);
+		if (auto* Target = GetLandingTargetComponent(bLower))
+		{
+			Target->SetHiddenInGame(true, false);
+			if (AActor* Child = Target->GetChildActor()) Child->SetActorHiddenInGame(true);
+		}
+		if (auto* Prompt = GetLandingPrompt(bLower)) Prompt->SetHiddenInGame(false);
 	}
-	// 提示锚点挂在落点下，但不继承上面的隐藏；它的显隐只由统一提示系统控制
-	if (PromptWidget) PromptWidget->SetHiddenInGame(false);
 }
-
 void ATAParkourMarker::SyncPromptType()
 {
-	if (PromptWidget) PromptWidget->PromptType = GetPromptType();
+	if (auto* Upper = GetLandingPrompt(false)) Upper->PromptType = ETAPromptType::ParkourJump;
+	if (auto* Lower = GetLandingPrompt(true)) Lower->PromptType = ETAPromptType::ParkourDrop;
 }

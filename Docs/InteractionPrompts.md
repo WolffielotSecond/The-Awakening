@@ -17,12 +17,14 @@
 | 类型 | 按键 | 选择 |
 |---|---|---|
 | 交互 | Interact | 与执行相同：Visibility 球形查询内、`CanInteract` 通过、离角色最近的一个。附近有可拾取物品时交互键交给拾取列表，交互提示也让出 |
-| 跨越 | ParkourJump | 进入范围、`CanPlayerParkourToMarker` 通过、离角色最近的跨台跳标记 |
-| 跳下 | ParkourDrop | 同上，高台跳下标记；与跨越分别处理，可以同时显示 |
+| Upper | ParkourJump（统一执行 Action） | 与执行共享 `SelectDirectionalMarker`，显示获胜 Marker 的 Upper 锚点 |
+| Lower | ParkourJump（统一执行 Action） | 同一获胜 Marker 的 Lower 锚点；双落点时两个提示始终同时显示 |
 
 普通提示不显示的情况：角色完全冻结（扫描完全冻结、小游戏）、没有对应输入权限（菜单、对话、死亡等）。活动 QTE 的当前目标使用专门候选保留原锚点，由特殊动作权限与挂起状态控制。
 
-**已知限制**：两个同类型跑酷标记同时重叠时，提示显示在最近的那个上，而执行仍按原规则选最后进入范围的那个，两者可能不一致（按设计保留原显示逻辑）。
+跑酷按输入水平侧筛选、Marker 原点距离排序，距离完全相同时用对象路径稳定排序。没有水平输入时预览最近有效 Marker；执行仍必须有水平输入。双落点 W/S 不改变 Marker 排序，也不切换提示。旧的“提示最近、执行最后注册”差异已消除。
+
+组合图标由现有锚点在 `SizeBox_Key` 内生成横排，保留原 WBP 的文字、图标高度和样式；普通交互继续使用单图标。键盘方向与执行键来自当前 IMC，手柄方向来自现有 Move Action。详细规则与迁移见 [DirectionalParkour.md](DirectionalParkour.md)。
 
 ## 给元素加提示
 

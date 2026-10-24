@@ -15,8 +15,8 @@ class USceneComponent;
 UENUM(BlueprintType)
 enum class ETAParkourMarkerType : uint8
 {
-	JumpToPoint UMETA(DisplayName = "跨台跳(空格)"),
-	DropDown    UMETA(DisplayName = "高台跳下(Ctrl)")
+	JumpToPoint UMETA(DisplayName = "Legacy Upper"),
+	DropDown    UMETA(DisplayName = "Legacy Lower")
 };
 
 UCLASS()
@@ -28,14 +28,59 @@ public:
 	ATAParkourMarker();
 
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PostLoad() override;
+	virtual void Serialize(FArchive& Ar) override;
+#if WITH_EDITOR
+	virtual void CheckForErrors() override;
+#endif
 
 protected:
+	bool bLoadedLegacyLanding = false;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	UPROPERTY()
 	TWeakObjectPtr<AActor> CurrentOverlappingActor;
 
 public:
+	// Keep all original subobject/property names: Blueprint and level overrides bind to them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Landings")
+	bool bEnableUpper = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Landings")
+	bool bEnableLower = false;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USplineComponent> AdditionalLandingSpline;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UChildActorComponent> AdditionalLandingTargetComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTAInteractionPromptAnchor> AdditionalPromptWidget;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Upper", meta = (ClampMin = "0"))
+	float UpperArcHeight = 120.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Upper", meta = (ClampMin = "0.05"))
+	float UpperJumpDuration = 0.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Lower", meta = (ClampMin = "0"))
+	float LowerArcHeight = 120.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour|Lower", meta = (ClampMin = "0.05"))
+	float LowerJumpDuration = 0.5f;
+	/** Original component data is retained in place; this read-only flag identifies its logical slot. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parkour|Legacy")
+	bool bLegacySplineIsLower = false;
+
+	bool IsLandingEnabled(bool bLower) const { return bLower ? bEnableLower : bEnableUpper; }
+	bool HasValidLanding(bool bLower) const;
+	UFUNCTION(BlueprintPure, Category = "Parkour|Landings")
+	USplineComponent* GetLandingSpline(bool bLower) const;
+	UFUNCTION(BlueprintPure, Category = "Parkour|Landings")
+	UChildActorComponent* GetLandingTargetComponent(bool bLower) const;
+	UFUNCTION(BlueprintPure, Category = "Parkour|Landings")
+	UTAInteractionPromptAnchor* GetLandingPrompt(bool bLower) const;
+	UFUNCTION(BlueprintPure, Category = "Parkour|Landings")
+	FVector GetLandingLocationForSlot(const FVector& PlayerWorldLocation, bool bLower) const;
+	float GetArcHeight(bool bLower) const { return bLower ? LowerArcHeight : UpperArcHeight; }
+	float GetJumpDuration(bool bLower) const { return bLower ? LowerJumpDuration : UpperJumpDuration; }
+	// Fixed gameplay horizontal axis is world Y, independently of the marker's depth axis.
+	int32 GetLandingSide(const FVector& PlayerLocation, float Tolerance = 5.f) const;
+	void UpdateLandingTargets(const FVector& PlayerLocation);
+	void InitializeLandingConfiguration();
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoxComponent> TriggerBox;
 
@@ -52,16 +97,16 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parkour|Legacy")
 	ETAParkourMarkerType MarkerType = ETAParkourMarkerType::JumpToPoint;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour")
 	TObjectPtr<AActor> LandingTarget;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour", meta = (ClampMin = "0"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parkour|Legacy", meta = (ClampMin = "0"))
 	float ArcHeight = 120.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Parkour", meta = (ClampMin = "0.05"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parkour|Legacy", meta = (ClampMin = "0.05"))
 	float JumpDuration = 0.5f;
 
 	/** true: X为深度轴，false: Y为深度轴 */
@@ -82,6 +127,8 @@ public:
 	}
 
 protected:
+	// New actors/Blueprint defaults are already directional. Only legacy archives reset this in PostLoad.
+	UPROPERTY() bool bDirectionalLandingConfigured = true;
 	UFUNCTION()
 	void OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);

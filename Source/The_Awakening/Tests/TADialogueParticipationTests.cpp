@@ -6,6 +6,7 @@
 #include "Story/ATAStoryTriggerActor.h"
 #include "Movement/TAParkourComponent.h"
 #include "Movement/TAParkourMarker.h"
+#include "Tests/TAParkourInputTestFixture.h"
 #include "Movement/TAMovementComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -33,7 +34,8 @@ bool FTADialogueParticipationTest::RunTest(const FString&)
 	Pawn->StopCurrentMovement();
 	TestTrue(TEXT("Explicit stop stops walk"), Move->Velocity.IsNearlyZero());
 	auto* Marker = World->SpawnActor<ATAParkourMarker>();
-	Parkour->RegisterMarker(Marker); Parkour->TryParkourJump();
+	FTAParkourInputTestFixture Held(Pawn, Parkour);
+	FTAParkourInputTestFixture::Register(Parkour, Marker); Held.Update(true, false);
 	TestTrue(TEXT("Active parkour established"), Parkour->IsParkouring());
 	TestFalse(TEXT("Active parkour cannot participate"), ITADialogueParticipant::Execute_CanParticipateInDialogue(Pawn));
 	TestFalse(TEXT("Story prompt eligibility denies active parkour"), ITAInteractable::Execute_CanInteract(Trigger, Pawn));

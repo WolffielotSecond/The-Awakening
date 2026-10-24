@@ -111,10 +111,10 @@ protected:
 
 	/** 跑酷输入 */
 	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* ParkourJumpAction;   // 空格
+	UInputAction* ParkourJumpAction;   // Unified execution; default Space / Xbox A, resolved through IMC.
 
 	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* ParkourDropAction;   // Ctrl
+	UInputAction* ParkourDropAction;   // Legacy serialized reference; no separate Drop binding or execution.
 
 	/** 切换背包输入 */
 	UPROPERTY(EditAnywhere, Category = "Input")

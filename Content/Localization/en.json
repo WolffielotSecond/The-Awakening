@@ -50,7 +50,7 @@
 	"Settings.Binding.IA_MoveLeft": "Move left",
 	"Settings.Binding.IA_MoveRight": "Move right",
 	"Settings.Binding.IA_ParkourDrop": "Parkour drop",
-	"Settings.Binding.IA_ParkourJump": "Parkour jump",
+	"Settings.Binding.IA_ParkourJump": "Parkour",
 	"Settings.Binding.IA_Pause": "Pause",
 	"Settings.Binding.IA_PuzzleConfirm": "Puzzle confirm",
 	"Settings.Binding.IA_PuzzlePan": "Puzzle pan",

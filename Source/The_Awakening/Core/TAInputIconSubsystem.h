@@ -54,6 +54,7 @@ public:
 	/** Query this widget's player's active IMC bindings, filtered to the current device. */
 	UTexture2D* GetIconForActionForPlayer(UInputAction* Action, ULocalPlayer* LocalPlayer) const;
 	TArray<FKey> GetPromptKeysForAction(UInputAction* Action, ULocalPlayer* LocalPlayer) const;
+	UTexture2D* GetStickDirectionIcon(int32 Horizontal, int32 Vertical) const;
 
 	/** 当前输入设备类型 */
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")

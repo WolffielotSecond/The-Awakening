@@ -36,6 +36,8 @@ public:
 
 	/** 显示并填入图标与文字。控件类为空时先套用默认提示控件。 */
 	void ShowPrompt(UTexture2D* KeyIcon, const FText& PromptText);
+	void ShowPromptChord(const TArray<UTexture2D*>& Icons, const TArray<FText>& KeyLabels, const FText& PromptText,
+		const FText& FirstIconSuffix = FText::GetEmpty());
 	void ShowQTE(UTASpecialActionComponent* Action);
 	void HidePrompt();
 	bool IsPromptShown() const { return bPromptShown; }
@@ -44,6 +46,9 @@ public:
 	static UTAInteractionPromptAnchor* FindAnchor(const AActor* Actor, ETAPromptType Type);
 
 private:
+	UPROPERTY(Transient) TObjectPtr<class UImage> ChordOriginalImage;
+	UPROPERTY(Transient) TObjectPtr<class USizeBox> ChordSizeBox;
+	void RestoreChord();
 	bool EnsurePromptWidget();
 	bool bPromptShown = false;
 	bool bQTEWidget = false;

@@ -109,32 +109,24 @@ void UTAPromptComponent::CollectParkourCandidates(TMap<ETAPromptType, FTAPromptC
 	{
 		return;
 	}
-	const FVector PawnLocation = Pawn->GetActorLocation();
-	// 跨越与跳下分别处理：各自取离角色最近、且与执行同一套条件（CanPlayerParkourToMarker）判定可跑酷的标记
-	for (ATAParkourMarker* Marker : Parkour->GetOverlappingMarkers())
+	bool Conflict = false;
+	const FVector2D Intent = Parkour->ReadDirectionalIntent(Conflict);
+	auto* Marker = Parkour->SelectDirectionalMarker(FMath::Sign(Intent.X));
+	if (!Marker) return;
+	Marker->UpdateLandingTargets(Pawn->GetActorLocation());
+	const int32 Side = Marker->GetLandingSide(Pawn->GetActorLocation(), Parkour->HorizontalTolerance);
+	const bool Dual = Marker->bEnableUpper && Marker->bEnableLower;
+	for (bool Lower : {false, true})
 	{
-		if (!IsValid(Marker) || !Parkour->CanPlayerParkourToMarker(Marker))
-		{
-			continue;
-		}
-		const ETAPromptType Type = Marker->GetPromptType();
-		UTAInteractionPromptAnchor* Anchor = Marker->GetPromptAnchor();
-		if (!Anchor)
-		{
-			continue;
-		}
-		const float DistanceSq = FVector::DistSquared(PawnLocation, Marker->GetActorLocation());
-		if (const FTAPromptCandidate* Existing = Best.Find(Type); Existing && Existing->DistanceSq <= DistanceSq)
-		{
-			continue;
-		}
+		if (!Marker->HasValidLanding(Lower)) continue;
 		FTAPromptCandidate Candidate;
-		Candidate.Type = Type;
+		Candidate.Type = Lower ? ETAPromptType::ParkourDrop : ETAPromptType::ParkourJump;
 		Candidate.Source = Marker;
-		Candidate.DistanceSq = DistanceSq;
-		Candidate.Action = Type == ETAPromptType::ParkourDrop ? ParkourDropAction : ParkourJumpAction;
-		Candidate.Anchor = Anchor;
-		Best.Add(Type, Candidate);
+		Candidate.Action = ParkourJumpAction;
+		Candidate.Anchor = Marker->GetLandingPrompt(Lower);
+		Candidate.HorizontalDirection = Side;
+		Candidate.VerticalDirection = Dual ? (Lower ? -1 : 1) : 0;
+		if (Candidate.Anchor.IsValid()) Best.Add(Candidate.Type, Candidate);
 	}
 }
 
@@ -153,7 +145,7 @@ void UTAPromptComponent::ApplyWinners(const TMap<ETAPromptType, FTAPromptCandida
 	{
 		const FTAPromptCandidate* Old = ActivePrompts.Find(Pair.Key);
 		// 只在新出现时刷新内容；同一目标持续显示不重复查图标和本地化
-		if (!Old || Old->Anchor != Pair.Value.Anchor || Old->Action != Pair.Value.Action || Old->TextOverride != Pair.Value.TextOverride)
+		if (!Old || Old->Anchor != Pair.Value.Anchor || Old->Action != Pair.Value.Action || Old->TextOverride != Pair.Value.TextOverride || Old->HorizontalDirection != Pair.Value.HorizontalDirection || Old->VerticalDirection != Pair.Value.VerticalDirection)
 		{
 			ShowCandidate(Pair.Value);
 		}
@@ -186,6 +178,40 @@ void UTAPromptComponent::ShowCandidate(const FTAPromptCandidate& Candidate)
 			// 读实际键位绑定，随输入设备变化
 			const APawn* Pawn = OwnerPawn.Get();
 			const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+			if (Candidate.HorizontalDirection)
+			{
+				auto* Parkour = Pawn ? Pawn->FindComponentByClass<UTAParkourComponent>() : nullptr;
+				auto* Local = PC ? PC->GetLocalPlayer() : nullptr;
+				TArray<UTexture2D*> Chord;
+				TArray<FText> Labels;
+				FText DirectionSuffix;
+				auto AddAction = [&](UInputAction* Action)
+				{
+					const auto Keys = Icons->GetPromptKeysForAction(Action, Local);
+					Chord.Add(Icons->GetIconForActionForPlayer(Action, Local));
+					Labels.Add(Keys.IsEmpty() ? FText::FromString(TEXT("?")) : Keys[0].GetDisplayName());
+				};
+				if (Parkour && Icons->GetCurrentDeviceType() == EInputDeviceType::KeyboardMouse)
+				{
+					if (Candidate.VerticalDirection) AddAction(Parkour->GetDirectionAction(0, Candidate.VerticalDirection));
+					AddAction(Parkour->GetDirectionAction(Candidate.HorizontalDirection));
+				}
+				else if (Parkour)
+				{
+					const auto Keys = Icons->GetPromptKeysForAction(Parkour->GetStickAction(), Local);
+					const bool LeftStick = Keys.Contains(EKeys::Gamepad_Left2D) || Keys.Contains(EKeys::Gamepad_LeftX);
+					Chord.Add(LeftStick ? Icons->GetStickDirectionIcon(Candidate.HorizontalDirection, Candidate.VerticalDirection) : Icons->GetIconForActionForPlayer(Parkour->GetStickAction(), Local));
+					Labels.Add(Keys.IsEmpty() ? FText::FromString(TEXT("?")) : Keys[0].GetDisplayName());
+					// Placeholder textures share LS artwork: an explicit arrow keeps diagonal direction readable.
+					const TCHAR* Arrow = Candidate.VerticalDirection > 0 ? (Candidate.HorizontalDirection > 0 ? TEXT("↗") : TEXT("↖")) :
+						Candidate.VerticalDirection < 0 ? (Candidate.HorizontalDirection > 0 ? TEXT("↘") : TEXT("↙")) :
+						(Candidate.HorizontalDirection > 0 ? TEXT("→") : TEXT("←"));
+					DirectionSuffix = FText::FromString(Arrow);
+				}
+				AddAction(Candidate.Action);
+				Anchor->ShowPromptChord(Chord, Labels, Text, DirectionSuffix);
+				return;
+			}
 			Icon = Icons->GetIconForActionForPlayer(Candidate.Action, PC ? PC->GetLocalPlayer() : nullptr);
 		}
 	}

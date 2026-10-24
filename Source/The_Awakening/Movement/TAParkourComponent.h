@@ -16,18 +16,31 @@ class THE_AWAKENING_API UTAParkourComponent : public UActorComponent
 
 public:
 	UTAParkourComponent();
+	void ConfigureDirectionActions(UInputAction* Forward, UInputAction* Backward, UInputAction* Left, UInputAction* Right, UInputAction* Stick);
+	UInputAction* GetDirectionAction(int32 Side, int32 Vertical = 0) const;
+	UInputAction* GetStickAction() const { return DirectionStick; }
+	FVector2D ReadDirectionalIntent(bool& bVerticalConflict) const;
+	/** Same winner for both prompts and execution; zero intent previews the nearest eligible marker. */
+	ATAParkourMarker* SelectDirectionalMarker(int32 Side) const;
+	bool SelectLowerLanding(ATAParkourMarker* Marker, float Vertical, bool bConflict, bool& bLower) const;
+	UPROPERTY(EditAnywhere, Category = "Parkour|Direction", meta = (ClampMin = "0", ClampMax = "1"))
+	float StickDeadZone = 0.2f;
+	UPROPERTY(EditAnywhere, Category = "Parkour|Direction", meta = (ClampMin = "0.01", ClampMax = "1"))
+	float DirectionThreshold = 0.35f;
+	UPROPERTY(EditAnywhere, Category = "Parkour|Direction", meta = (ClampMin = "0"))
+	float HorizontalTolerance = 5.f;
 
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	const TArray<TObjectPtr<ATAParkourMarker>>& GetOverlappingMarkers() const { return OverlappingMarkers; }
 
-	/** 尝试跨台跳（空格） */
+	/** Submit current directional intent (legacy Blueprint function name retained). */
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
 	void TryParkourJump();
 
-	/** 尝试高台跳下（Ctrl） */
-	UFUNCTION(BlueprintCallable, Category = "Parkour")
+	/** Compatibility alias for unified directional parkour; no independent Drop input. */
+	UFUNCTION(BlueprintCallable, Category = "Parkour", meta = (DeprecatedFunction, DeprecationMessage = "Use TryParkourJump with directional intent."))
 	void TryParkourDrop();
 
 	UFUNCTION(BlueprintCallable, Category = "Parkour")
@@ -72,9 +85,8 @@ protected:
 	void OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	ATAParkourMarker* FindCurrentMarkerOfType(ETAParkourMarkerType Type) const;
 
-	bool StartParkour(ATAParkourMarker* Marker, const TArray<FKey>& ConsumptionSources = {});
+	bool StartParkour(ATAParkourMarker* Marker, const TArray<FKey>& ConsumptionSources = {}, bool bLower = false);
 	void FinishParkour();
 	bool HasLanded() const;
 
@@ -82,6 +94,11 @@ protected:
 	static FVector EvalParabola(const FVector& Start, const FVector& End, float ArcHeight, float Alpha);
 
 protected:
+	UPROPERTY(Transient) TObjectPtr<UInputAction> DirectionForward;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> DirectionBackward;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> DirectionLeft;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> DirectionRight;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> DirectionStick;
 
 	UPROPERTY()
 	TArray<TObjectPtr<ATAParkourMarker>> OverlappingMarkers;

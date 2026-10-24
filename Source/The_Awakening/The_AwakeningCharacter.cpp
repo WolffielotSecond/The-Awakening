@@ -145,6 +145,8 @@ void AThe_AwakeningCharacter::BeginPlay()
 
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
+	if (ParkourComponent) ParkourComponent->ConfigureDirectionActions(MoveForwardAction, MoveBackwardAction, MoveLeftAction, MoveRightAction, MoveAction);
+
 	if (CameraBoom)
 	{
 		CameraBoom->SocketOffset = FVector(0.f, 0.f, CameraHeightOffset);

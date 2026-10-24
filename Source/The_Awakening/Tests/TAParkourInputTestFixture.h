@@ -10,10 +10,18 @@
 #include "Engine/Engine.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Character.h"
+#include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
 
 /** Scoped input setup for isolated parkour tests, with real resolved mappings. */
 struct FTAParkourInputTestFixture
 {
+	static void Register(UTAParkourComponent* Component, ATAParkourMarker* Marker)
+	{
+		auto* Pawn = CastChecked<ACharacter>(Component->GetOwner());
+		Marker->TriggerBox->BeginComponentOverlap(FOverlapInfo(Pawn->GetCapsuleComponent(), INDEX_NONE), false);
+		Component->RegisterMarker(Marker);
+	}
 	struct FMappingSubsystem : IEnhancedInputSubsystemInterface
 	{
 		UEnhancedPlayerInput* Input = nullptr;
@@ -24,6 +32,11 @@ struct FTAParkourInputTestFixture
 	AThe_AwakeningPlayerController* PC = nullptr;
 	UInputAction* Jump = nullptr;
 	UInputAction* Drop = nullptr;
+	UInputAction* Forward = nullptr;
+	UInputAction* Backward = nullptr;
+	UInputAction* Left = nullptr;
+	UInputAction* Right = nullptr;
+	UInputAction* Stick = nullptr;
 	UInputMappingContext* Context = nullptr;
 	UTAParkourComponent* Parkour = nullptr;
 	int32 User = 0;
@@ -43,8 +56,14 @@ struct FTAParkourInputTestFixture
 		Jump = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ParkourJump.IA_ParkourJump"));
 		Drop = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_ParkourDrop.IA_ParkourDrop"));
 		Context = NewObject<UInputMappingContext>(PC);
-		Context->MapKey(Jump, EKeys::SpaceBar); Context->MapKey(Jump, EKeys::Gamepad_FaceButton_Right);
-		Context->MapKey(Drop, EKeys::LeftControl); Context->MapKey(Drop, EKeys::Gamepad_FaceButton_Bottom);
+		Context->MapKey(Jump, EKeys::SpaceBar); Context->MapKey(Jump, EKeys::Gamepad_FaceButton_Bottom);
+		Forward = NewObject<UInputAction>(PC); Backward = NewObject<UInputAction>(PC);
+		Left = NewObject<UInputAction>(PC); Right = NewObject<UInputAction>(PC);
+		Stick = NewObject<UInputAction>(PC); Stick->ValueType = EInputActionValueType::Axis2D;
+		Context->MapKey(Forward, EKeys::W); Context->MapKey(Backward, EKeys::S);
+		Context->MapKey(Left, EKeys::A); Context->MapKey(Right, EKeys::D);
+		Context->MapKey(Stick, EKeys::Gamepad_Left2D);
+		Parkour->ConfigureDirectionActions(Forward, Backward, Left, Right, Stick);
 		FModifyContextOptions Options; Options.bForceImmediately = true;
 		Mappings.AddMappingContext(Context, 0, Options);
 	}
@@ -52,8 +71,8 @@ struct FTAParkourInputTestFixture
 	void Poll() { Parkour->UpdatePlayerHeldRequests(PC, Jump, Drop); }
 	void Update(bool bJump, bool bDrop)
 	{
-		Observe(EKeys::SpaceBar, bJump ? 1.f : 0.f);
-		Observe(EKeys::LeftControl, bDrop ? 1.f : 0.f);
+		Observe(EKeys::D, 1.f);
+		Observe(EKeys::SpaceBar, bJump || bDrop ? 1.f : 0.f);
 		Poll();
 	}
 };
