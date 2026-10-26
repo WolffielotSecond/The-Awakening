@@ -25,6 +25,7 @@ class UTASettingsMenuWidget;
 class UTAAdvancedDataWidget;
 class UTACommonDialogWidget;
 class UTAHealthHUDWidget;
+class UTALocationRevealWidget;
 struct FInputActionValue;
 struct FInputActionInstance;
 enum class ETriggerEvent : uint8;
@@ -71,6 +72,15 @@ class AThe_AwakeningPlayerController : public APlayerController
 
 public:
 	AThe_AwakeningPlayerController();
+ /** Passive HUD: call when the story decides the player has arrived/recovered control. */
+ UFUNCTION(BlueprintCallable, Category="UI|Location Reveal")
+ void ShowLocationReveal(FText ChapterText, FText LocationText, bool bForceReplay = false);
+ UPROPERTY(EditDefaultsOnly, Category="UI|Location Reveal")
+ TSoftClassPtr<UTALocationRevealWidget> LocationRevealWidgetClass = TSoftClassPtr<UTALocationRevealWidget>(FSoftObjectPath(TEXT("/Game/UI/LocationReveal/WBP_LocationReveal.WBP_LocationReveal_C")));
+ UPROPERTY(EditDefaultsOnly, Category="UI|Location Reveal")
+ int32 LocationRevealZOrder = 30;
+ UPROPERTY(Transient, BlueprintReadOnly, Category="UI|Location Reveal")
+ TObjectPtr<UTALocationRevealWidget> LocationRevealWidget;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="UI|Cursor")
 	FTACursorStyleSettings CursorStyle;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="HOVER PULSE SETTINGS")
@@ -222,6 +232,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
+ void DebugShowHospitalLocationReveal();
 	void HandlePauseAction(const FInputActionValue& Value);
 	void CreateHealthHUD();
 	UFUNCTION()

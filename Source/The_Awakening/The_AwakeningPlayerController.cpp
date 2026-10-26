@@ -35,7 +35,9 @@
 #include "Framework/Application/SlateUser.h"
 #include "Core/TACheatManager.h"
 #include "UI/TAHealthHUDWidget.h"
+#include "UI/TALocationRevealWidget.h"
 #include "Core/TATimeSubsystem.h"
+#include "Core/TALocalizeSubsystem.h"
 
 
 AThe_AwakeningPlayerController::AThe_AwakeningPlayerController()
@@ -315,6 +317,7 @@ void AThe_AwakeningPlayerController::CreateHealthHUD()
 
 void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+ if (LocationRevealWidget) { LocationRevealWidget->RemoveFromParent(); LocationRevealWidget=nullptr; }
  if (AdvancedDataWidgetInstance) { AdvancedDataWidgetInstance->RemoveFromParent(); AdvancedDataWidgetInstance=nullptr; }
 	if (HealthHUDWidgetInstance) { HealthHUDWidgetInstance->RemoveFromParent(); HealthHUDWidgetInstance = nullptr; }
  bClosePauseAfterSettings=false;
@@ -337,6 +340,21 @@ void AThe_AwakeningPlayerController::EndPlay(const EEndPlayReason::Type EndPlayR
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AThe_AwakeningPlayerController::ShowLocationReveal(FText ChapterText, FText LocationText, bool Force)
+{
+ if (!IsLocalPlayerController() || !GetLocalPlayer()) return;
+ if (!LocationRevealWidget)
+ {
+  UClass* Class=LocationRevealWidgetClass.LoadSynchronous();
+  LocationRevealWidget=CreateWidget<UTALocationRevealWidget>(this,Class ? Class : UTALocationRevealWidget::StaticClass());
+  if (!LocationRevealWidget) return;
+  LocationRevealWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+  if (!LocationRevealWidget->AddToPlayerScreen(LocationRevealZOrder))
+  { LocationRevealWidget->RemoveFromParent(); LocationRevealWidget=nullptr; return; }
+ }
+ LocationRevealWidget->ShowLocationReveal(ChapterText,LocationText,Force);
 }
 
 void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
@@ -537,6 +555,11 @@ FInputActionValue AThe_AwakeningPlayerController::ReadHeldAction(const UInputAct
 void AThe_AwakeningPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+#if !UE_BUILD_SHIPPING
+ if (InputComponent)
+  InputComponent->BindKey(EKeys::NumPadZero, IE_Pressed, this,
+   &AThe_AwakeningPlayerController::DebugShowHospitalLocationReveal);
+#endif
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
 		if (PauseAction)
@@ -586,6 +609,18 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 			}
 		}
 	}
+}
+
+void AThe_AwakeningPlayerController::DebugShowHospitalLocationReveal()
+{
+#if !UE_BUILD_SHIPPING
+ // Use the existing gameplay input path; do not fire while a menu captures bindings.
+ if (!OwnsPlayerInput() || !GetInputWinner().IsBase()) return;
+ if (auto* GI=GetGameInstance())
+  if (auto* Localization=GI->GetSubsystem<UTALocalizeSubsystem>())
+   ShowLocationReveal(Localization->GetText(TEXT("LocationReveal_Chapter1")),
+    Localization->GetText(TEXT("LocationReveal_Hospital")),true);
+#endif
 }
 
 void AThe_AwakeningPlayerController::NotifyApplicationActivationChanged(bool bIsActive)

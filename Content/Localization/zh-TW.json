@@ -1,4 +1,6 @@
 {
+	"LocationReveal_Chapter1": "第一章",
+	"LocationReveal_Hospital": "醫院",
 	"Settings.Game.ToggleSprint.Name": "點按切換疾跑",
 	"Settings.Game.ToggleSprint.Description": "開啟後點按疾跑鍵切換疾跑；關閉後按住疾跑鍵疾跑，鬆開取消。點按模式下鬆開移動輸入，水平速度低於疾跑速度後取消疾跑。變更在套用設定後生效。",
 	"Pickup_Previous": "上一件物品",

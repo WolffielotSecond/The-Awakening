@@ -33,7 +33,7 @@ public class The_Awakening : ModuleRules
 			"OnlineSubsystemUtils"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore", "RenderCore", "RHI", "DeveloperSettings" });
+        PrivateDependencyModuleNames.AddRange(new string[] { "ApplicationCore", "RenderCore", "RHI", "DeveloperSettings", "AkAudio" });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"The_Awakening"
