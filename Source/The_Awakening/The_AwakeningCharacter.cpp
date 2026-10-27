@@ -34,6 +34,9 @@
 #include "UI/Document/TADiaryWidget.h"
 #include "UI/Inventory/TAItemInspectWidget.h"
 #include "Inventory/TANearbyPickupComponent.h"
+#include "UI/Inventory/TAMiniInventoryWidget.h"
+#include "UI/Inventory/TAClothingSwapWidget.h"
+#include "Misc/PackageName.h"
 #include "Inventory/TAWorldItem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "InputAction.h"
@@ -647,6 +650,11 @@ void AThe_AwakeningCharacter::InitAbilityActorInfo()
 			{
 				HealthComponent->InitializeWithASC(ASC);
 			}
+			// 背包 BeginPlay 时 ASC 可能还没就绪：这里重新施加衣服的 GE 和专属能力 Tag
+			if (InventoryComponent)
+			{
+				InventoryComponent->RefreshClothingEffects();
+			}
 		}
 	}
 }
@@ -738,13 +746,19 @@ bool AThe_AwakeningCharacter::IsSafeToMoveToward(const FVector& WorldDirection) 
 
 	FHitResult Hit;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(EdgeCheck), false, this);
+	// 用胶囊体自己的碰撞通道和响应探测地面：只认真正挡住角色移动的东西。
+	// 原来用 Visibility，会打到拾取物 / 剧情触发器的交互球（它们对 Visibility 是 Block，供交互查询用），
+	// 球面侧边不可行走，被误判为边缘而禁止前进。
+	FCollisionResponseParams ResponseParams;
+	GetCapsuleComponent()->InitSweepCollisionParams(Params, ResponseParams);
 
 	const bool bHit = GetWorld()->LineTraceSingleByChannel(
 		Hit,
 		ProbeStart,
 		ProbeEnd,
-		ECC_Visibility,
-		Params);
+		GetCapsuleComponent()->GetCollisionObjectType(),
+		Params,
+		ResponseParams);
 
 	if (!bHit)
 	{
@@ -879,6 +893,60 @@ void AThe_AwakeningCharacter::NotifyItemPickedUp(UTAItemDefinition* Item)
 	}
 }
 
+UTAMiniInventoryWidget* AThe_AwakeningCharacter::GetMiniInventory()
+{
+	if (MiniInventoryInstance)
+	{
+		return MiniInventoryInstance;
+	}
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || !PC->IsLocalController())
+	{
+		return nullptr;
+	}
+	UClass* Class = MiniInventoryClass.Get();
+	if (!Class && FPackageName::DoesPackageExist(TEXT("/Game/UI/Inventory/WBP_MiniInventory")))
+	{
+		Class = LoadClass<UTAMiniInventoryWidget>(nullptr, TEXT("/Game/UI/Inventory/WBP_MiniInventory.WBP_MiniInventory_C"));
+	}
+	if (!Class)
+	{
+		Class = UTAMiniInventoryWidget::StaticClass();
+	}
+	MiniInventoryInstance = CreateWidget<UTAMiniInventoryWidget>(PC, Class);
+	if (MiniInventoryInstance)
+	{
+		// 与拾取提示同一层，在背包（50）之下
+		MiniInventoryInstance->AddToViewport(40);
+	}
+	return MiniInventoryInstance;
+}
+
+void AThe_AwakeningCharacter::NotifyInventoryPickupResult(const TArray<int32>& ChangedSlots, bool bInventoryFull)
+{
+	if (ChangedSlots.IsEmpty() && !bInventoryFull)
+	{
+		return;
+	}
+	if (UTAMiniInventoryWidget* Mini = GetMiniInventory())
+	{
+		Mini->ShowPickupResult(InventoryComponent, ChangedSlots, bInventoryFull);
+	}
+}
+
+void AThe_AwakeningCharacter::NotifyClothingSwapOpened(UTAClothingSwapWidget* Widget)
+{
+	ClothingSwapInstance = Widget;
+}
+
+void AThe_AwakeningCharacter::NotifyClothingSwapClosed(UTAClothingSwapWidget* Widget)
+{
+	if (ClothingSwapInstance.Get() == Widget)
+	{
+		ClothingSwapInstance.Reset();
+	}
+}
+
 void AThe_AwakeningCharacter::NotifyDocumentCollected(UTADocumentDefinition* Document)
 {
 	if (UTAPickupBannerWidget* Banner = GetPickupBanner())
@@ -931,6 +999,12 @@ void AThe_AwakeningCharacter::NotifyInventoryPanelClosed(UTAInventoryPanelWidget
 
 void AThe_AwakeningCharacter::CloseInventoryIfOpen()
 {
+	// 衣架换装界面同样是背包类界面：一起关闭（RemoveFromParent 内释放时停、无敌和输入请求）
+	if (UTAClothingSwapWidget* Swap = ClothingSwapInstance.Get())
+	{
+		Swap->Close();
+	}
+	ClothingSwapInstance.Reset();
 	if (InventoryPanelInstance)
 	{
 		// RemoveFromParent 内部会释放面板的输入请求并回调 NotifyInventoryPanelClosed 清空实例

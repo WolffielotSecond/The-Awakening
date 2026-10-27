@@ -23,8 +23,15 @@ class THE_AWAKENING_API UTAClothingPanelWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/**
+	 * 按衣服实例生成口袋格子。DisplayOverride：穿着的外套开启了 bOverrideInnerPocketDisplay 时传入，
+	 * 用它的 InnerPocketDisplayOverrides 改写本面板（内衬）各口袋的摆放位置，只影响显示。
+	 */
 	UFUNCTION(BlueprintCallable, Category = "ClothingUI")
-	void BuildFromClothing(const FTAClothingInstance& Instance, int32 FlatIndexStart = 0);
+	void BuildFromClothing(const FTAClothingInstance& Instance, int32 FlatIndexStart = 0, const UTAClothingDefinition* DisplayOverride = nullptr);
+
+	/** 生成的格子控件，按口袋顺序、口袋内格子顺序排列（与实例里的格子一一对应） */
+	const TArray<TObjectPtr<UUserWidget>>& GetGeneratedSlots() const { return GeneratedSlots; }
 
 	void SetInventoryComponent(UTAInventoryComponent* InInventory) { Inventory = InInventory; }
 
@@ -105,4 +112,7 @@ protected:
 
 	UPROPERTY()
 	int32 BuiltFlatStart = INDEX_NONE;
+
+	/** 只用于判断布局是否需要重建 */
+	TWeakObjectPtr<const UTAClothingDefinition> BuiltDisplayOverride;
 };

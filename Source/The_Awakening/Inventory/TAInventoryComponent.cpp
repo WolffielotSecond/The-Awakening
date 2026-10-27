@@ -10,6 +10,9 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "GameplayEffect.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTAInventory, Log, All);
 
@@ -26,7 +29,15 @@ void UTAInventoryComponent::BeginPlay()
 	StorySlots.SetNum(StorySlotCount);
 	InitDefaultClothing();
 	RebuildFlattenedSlots();
+	RefreshClothingEffects();
 	NotifyUpdated();
+}
+
+void UTAInventoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemoveClothingEffects(OuterEffects);
+	RemoveClothingEffects(InnerEffects);
+	Super::EndPlay(EndPlayReason);
 }
 
 void UTAInventoryComponent::GrantAcquisitionTags(const UTAItemDefinition* Item)
@@ -41,7 +52,7 @@ void UTAInventoryComponent::NotifyUpdated()
 	OnInventoryUpdated.Broadcast();
 }
 
-bool UTAInventoryComponent::BuildClothingInstance(UTAClothingDefinition* Def, FTAClothingInstance& OutInstance) const
+bool UTAInventoryComponent::BuildClothingInstance(UTAClothingDefinition* Def, FTAClothingInstance& OutInstance)
 {
 	OutInstance = FTAClothingInstance();
 	if (!Def)
@@ -56,7 +67,7 @@ bool UTAInventoryComponent::BuildClothingInstance(UTAClothingDefinition* Def, FT
 	{
 		FTAPocketRuntime Pocket;
 		Pocket.PocketId = PocketDef.PocketId.IsNone() ? TEXT("Main") : PocketDef.PocketId;
-		Pocket.Slots.SetNum(FMath::Max(0, PocketDef.SlotCount));
+		Pocket.Slots.SetNum(PocketDef.GetSlotCount());
 		OutInstance.Pockets.Add(MoveTemp(Pocket));
 	}
 
@@ -226,6 +237,13 @@ int32 UTAInventoryComponent::TryAddItemToClothing(FTAClothingInstance& Clothing,
 
 int32 UTAInventoryComponent::TryAddItem(UTAItemDefinition* ItemDef, int32 Count)
 {
+	TArray<int32> ChangedSlots;
+	return TryAddItem(ItemDef, Count, ChangedSlots);
+}
+
+int32 UTAInventoryComponent::TryAddItem(UTAItemDefinition* ItemDef, int32 Count, TArray<int32>& OutChangedSlots)
+{
+	OutChangedSlots.Reset();
 	if (!ItemDef || Count <= 0)
 	{
 		return 0;
@@ -234,6 +252,9 @@ int32 UTAInventoryComponent::TryAddItem(UTAItemDefinition* ItemDef, int32 Count)
 	{
 		return TryAddStoryItem(ItemDef);
 	}
+
+	// 记下加入前的格子，加入后逐格比较得到改动过的下标（迷你背包闪烁用）
+	const TArray<FTAInventorySlot> Before = FlattenedSlots;
 
 	// 先补满所有口袋里已有的同类堆叠，再按顺序放进第一个空格。
 	// 不再自动整理：已有物品的位置（玩家拖拽摆放、拆开的堆叠）保持不变
@@ -256,6 +277,14 @@ int32 UTAInventoryComponent::TryAddItem(UTAItemDefinition* ItemDef, int32 Count)
 	if (Added > 0)
 	{
 		RebuildFlattenedSlots();
+		for (int32 Index = 0; Index < FlattenedSlots.Num(); ++Index)
+		{
+			const FTAInventorySlot& Now = FlattenedSlots[Index];
+			if (!Before.IsValidIndex(Index) || Before[Index].ItemDef != Now.ItemDef || Before[Index].Count != Now.Count)
+			{
+				OutChangedSlots.Add(Index);
+			}
+		}
 		GrantAcquisitionTags(ItemDef);
 		NotifyUpdated();
 	}
@@ -528,34 +557,9 @@ bool UTAInventoryComponent::MoveItemBetweenSlots(int32 SourceSlotIndex, int32 Ta
 		TargetSlot = &TargetClothing->Pockets[TargetPocketIndex].Slots[TargetIndexInPocket];
 	}
 
-	if (!SourceSlot || !TargetSlot || SourceSlot->IsEmpty())
+	if (!SourceSlot || !TargetSlot || !MoveSlotContents(*SourceSlot, *TargetSlot))
 	{
 		return false;
-	}
-
-	if (TargetSlot->IsEmpty())
-	{
-		Swap(*SourceSlot, *TargetSlot);
-	}
-	else if (SourceSlot->ItemDef == TargetSlot->ItemDef && SourceSlot->ItemDef->bCanStack)
-	{
-		const int32 MaxStack = FMath::Max(1, SourceSlot->ItemDef->MaxStack);
-		const int32 TransferCount = FMath::Min(SourceSlot->Count, FMath::Max(0, MaxStack - TargetSlot->Count));
-		if (TransferCount <= 0)
-		{
-			return false;
-		}
-
-		TargetSlot->Count += TransferCount;
-		SourceSlot->Count -= TransferCount;
-		if (SourceSlot->Count <= 0)
-		{
-			*SourceSlot = FTAInventorySlot();
-		}
-	}
-	else
-	{
-		Swap(*SourceSlot, *TargetSlot);
 	}
 
 	RebuildFlattenedSlots();
@@ -563,25 +567,116 @@ bool UTAInventoryComponent::MoveItemBetweenSlots(int32 SourceSlotIndex, int32 Ta
 	return true;
 }
 
+bool UTAInventoryComponent::MoveSlotContents(FTAInventorySlot& Source, FTAInventorySlot& Target)
+{
+	if (&Source == &Target || Source.IsEmpty())
+	{
+		return false;
+	}
+
+	if (Target.IsEmpty())
+	{
+		Swap(Source, Target);
+	}
+	else if (Source.ItemDef == Target.ItemDef && Source.ItemDef->bCanStack)
+	{
+		const int32 MaxStack = FMath::Max(1, Source.ItemDef->MaxStack);
+		const int32 TransferCount = FMath::Min(Source.Count, FMath::Max(0, MaxStack - Target.Count));
+		if (TransferCount <= 0)
+		{
+			return false;
+		}
+
+		Target.Count += TransferCount;
+		Source.Count -= TransferCount;
+		if (Source.Count <= 0)
+		{
+			Source = FTAInventorySlot();
+		}
+	}
+	else
+	{
+		Swap(Source, Target);
+	}
+	return true;
+}
+
+bool UTAInventoryComponent::MoveItemWithExternal(int32 FlatIndex, FTAClothingInstance& External, int32 ExternalPocket, int32 ExternalSlot, bool bToExternal)
+{
+	FTAClothingInstance* Clothing = nullptr;
+	int32 PocketIndex = INDEX_NONE;
+	int32 SlotInPocket = INDEX_NONE;
+	if (IsStorySlotUIIndex(FlatIndex) || !ResolveFlatIndex(FlatIndex, Clothing, PocketIndex, SlotInPocket)
+		|| !External.Pockets.IsValidIndex(ExternalPocket) || !External.Pockets[ExternalPocket].Slots.IsValidIndex(ExternalSlot))
+	{
+		return false;
+	}
+	FTAInventorySlot& Own = Clothing->Pockets[PocketIndex].Slots[SlotInPocket];
+	FTAInventorySlot& Other = External.Pockets[ExternalPocket].Slots[ExternalSlot];
+	// 剧情物品只放剧情格，不能进外部口袋（交换回来也不行）
+	auto IsQuest = [](const FTAInventorySlot& Slot) { return !Slot.IsEmpty() && Slot.ItemDef->ItemType == ETAItemType::QuestItem; };
+	if (IsQuest(Own) || IsQuest(Other))
+	{
+		return false;
+	}
+	if (!(bToExternal ? MoveSlotContents(Own, Other) : MoveSlotContents(Other, Own)))
+	{
+		return false;
+	}
+	RebuildFlattenedSlots();
+	NotifyUpdated();
+	return true;
+}
+
 bool UTAInventoryComponent::EquipOuter(UTAClothingDefinition* OuterDef)
 {
-	if (!OuterDef || OuterDef->Layer != ETAClothingLayer::Outer)
+	FTAClothingInstance Instance;
+	if (!OuterDef || !BuildClothingInstance(OuterDef, Instance))
+	{
+		return false;
+	}
+	return EquipOuterInstance(Instance);
+}
+
+bool UTAInventoryComponent::EquipOuterInstance(const FTAClothingInstance& Instance)
+{
+	if (!Instance.IsValid() || Instance.Definition->Layer != ETAClothingLayer::Outer)
 	{
 		return false;
 	}
 	if (OuterClothing.IsValid())
 	{
-		// 已有外套：先卸再装（由 UI/玩法决定）；这里直接拒绝
+		// 已有外套：换衣服走 SwapOuter；这里直接拒绝
 		return false;
 	}
 
-	if (!BuildClothingInstance(OuterDef, OuterClothing))
+	FTAClothingInstance Normalized;
+	if (!NormalizeClothingInstance(Instance, Normalized))
 	{
 		return false;
 	}
+	ReplaceOuterClothing(Normalized, true);
+	return true;
+}
 
-	RebuildFlattenedSlots();
-	NotifyUpdated();
+bool UTAInventoryComponent::SwapOuter(FTAClothingInstance& InOut)
+{
+	if (!InOut.IsValid() && !OuterClothing.IsValid())
+	{
+		return false;
+	}
+	FTAClothingInstance Incoming;
+	if (InOut.IsValid())
+	{
+		if (InOut.Definition->Layer != ETAClothingLayer::Outer || !NormalizeClothingInstance(InOut, Incoming))
+		{
+			return false;
+		}
+	}
+
+	const FTAClothingInstance Outgoing = OuterClothing;
+	ReplaceOuterClothing(Incoming, true);
+	InOut = Outgoing;
 	return true;
 }
 
@@ -594,10 +689,124 @@ bool UTAInventoryComponent::UnequipOuter(FTAClothingInstance& OutInstance)
 	}
 
 	OutInstance = OuterClothing;
-	OuterClothing = FTAClothingInstance();
+	ReplaceOuterClothing(FTAClothingInstance(), true);
+	return true;
+}
+
+void UTAInventoryComponent::ReplaceOuterClothing(const FTAClothingInstance& NewOuter, bool bRecordUndo)
+{
+	if (bRecordUndo)
+	{
+		if (UTARollbackSubsystem* Rollback = UTARollbackSubsystem::Get(this); Rollback && Rollback->IsRecording())
+		{
+			Rollback->RecordUndo(TEXT("Inventory.OuterClothing"),
+				[WeakThis = TWeakObjectPtr<UTAInventoryComponent>(this), Previous = OuterClothing]
+				{
+					if (UTAInventoryComponent* Self = WeakThis.Get())
+					{
+						Self->ReplaceOuterClothing(Previous, false);
+					}
+				});
+		}
+	}
+
+	RemoveClothingEffects(OuterEffects);
+	OuterClothing = NewOuter;
+	ApplyClothingEffects(OuterClothing, OuterEffects);
 	RebuildFlattenedSlots();
 	NotifyUpdated();
+}
+
+bool UTAInventoryComponent::NormalizeClothingInstance(const FTAClothingInstance& Source, FTAClothingInstance& OutInstance)
+{
+	if (!Source.IsValid() || !BuildClothingInstance(Source.Definition, OutInstance))
+	{
+		OutInstance = FTAClothingInstance();
+		return false;
+	}
+	for (int32 PocketIndex = 0; PocketIndex < Source.Pockets.Num(); ++PocketIndex)
+	{
+		const TArray<FTAInventorySlot>& SourceSlots = Source.Pockets[PocketIndex].Slots;
+		for (int32 SlotIndex = 0; SlotIndex < SourceSlots.Num(); ++SlotIndex)
+		{
+			if (OutInstance.Pockets.IsValidIndex(PocketIndex) && OutInstance.Pockets[PocketIndex].Slots.IsValidIndex(SlotIndex))
+			{
+				OutInstance.Pockets[PocketIndex].Slots[SlotIndex] = SourceSlots[SlotIndex];
+			}
+			else if (!SourceSlots[SlotIndex].IsEmpty())
+			{
+				UE_LOG(LogTAInventory, Warning, TEXT("Clothing '%s': pocket layout changed, item '%s' in pocket %d slot %d dropped."),
+					*Source.Definition->GetName(), *GetNameSafe(SourceSlots[SlotIndex].ItemDef), PocketIndex, SlotIndex);
+			}
+		}
+	}
 	return true;
+}
+
+// ==================== 衣服效果（GAS） ====================
+
+UAbilitySystemComponent* UTAInventoryComponent::GetOwnerASC() const
+{
+	return UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner());
+}
+
+void UTAInventoryComponent::ApplyClothingEffects(const FTAClothingInstance& Clothing, FAppliedClothingEffects& OutApplied)
+{
+	RemoveClothingEffects(OutApplied);
+	UTAClothingDefinition* Def = Clothing.Definition;
+	UAbilitySystemComponent* ASC = GetOwnerASC();
+	if (!Def || !ASC)
+	{
+		// 没有 ASC（例如测试里的普通 Actor，或 ASC 尚未初始化）：跳过，等 RefreshClothingEffects 再施加
+		return;
+	}
+	OutApplied.ASC = ASC;
+	for (const TSubclassOf<UGameplayEffect>& EffectClass : Def->GrantedEffects)
+	{
+		if (!EffectClass)
+		{
+			continue;
+		}
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		Context.AddSourceObject(Def);
+		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(EffectClass, 1.f, Context);
+		if (Spec.IsValid())
+		{
+			// 瞬时 GE 返回的句柄无效，不记录：只在穿上时生效一次
+			const FActiveGameplayEffectHandle Handle = ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+			if (Handle.IsValid())
+			{
+				OutApplied.Handles.Add(Handle);
+			}
+		}
+	}
+	if (!Def->ExclusiveAbilityTags.IsEmpty())
+	{
+		ASC->AddLooseGameplayTags(Def->ExclusiveAbilityTags);
+		OutApplied.LooseTags = Def->ExclusiveAbilityTags;
+	}
+}
+
+void UTAInventoryComponent::RemoveClothingEffects(FAppliedClothingEffects& Applied)
+{
+	if (UAbilitySystemComponent* ASC = Applied.ASC.Get())
+	{
+		for (const FActiveGameplayEffectHandle& Handle : Applied.Handles)
+		{
+			ASC->RemoveActiveGameplayEffect(Handle);
+		}
+		if (!Applied.LooseTags.IsEmpty())
+		{
+			ASC->RemoveLooseGameplayTags(Applied.LooseTags);
+		}
+	}
+	Applied = FAppliedClothingEffects();
+}
+
+void UTAInventoryComponent::RefreshClothingEffects()
+{
+	ApplyClothingEffects(InnerClothing, InnerEffects);
+	ApplyClothingEffects(OuterClothing, OuterEffects);
 }
 
 FString UTAInventoryComponent::GetSortName(UTAItemDefinition* ItemDef) const
@@ -948,8 +1157,11 @@ void UTAInventoryComponent::RestoreSaveData(const FTAInventorySaveData& Data)
 			}
 		}
 	};
+	RemoveClothingEffects(OuterEffects);
+	RemoveClothingEffects(InnerEffects);
 	Restore(Data.Inner, InnerClothing, DefaultInnerClothing);
 	Restore(Data.Outer, OuterClothing, nullptr);
+	RefreshClothingEffects();
 
 	StorySlots.Reset();
 	StorySlots.SetNum(StorySlotCount);

@@ -179,7 +179,8 @@ bool ATAWorldItem::TryPickupAsCurrency(AActor* Interactor)
 		return false;
 	}
 
-	const int32 Amount = ItemDef->Value * Count;
+	// Value 是小数面值，钱包是整数：按总额四舍五入，避免逐个取整累积误差
+	const int32 Amount = FMath::RoundToInt(ItemDef->Value * Count);
 	PS->AddMoney(Amount);
 	Count = 0;
 	if (UTAInventoryComponent* Inventory = Interactor->FindComponentByClass<UTAInventoryComponent>())
@@ -196,7 +197,16 @@ bool ATAWorldItem::TryPickupAsInventory(AActor* Interactor, UTAInventoryComponen
 		return false;
 	}
 
-	const int32 Added = Inventory->TryAddItem(ItemDef, Count);
+	TArray<int32> ChangedSlots;
+	const int32 Added = Inventory->TryAddItem(ItemDef, Count, ChangedSlots);
+	// 迷你背包：放进去的格子闪烁；有物品放不下时提示背包已满。剧情物品不占口袋格，不显示
+	if (ItemDef->ItemType != ETAItemType::QuestItem)
+	{
+		if (AThe_AwakeningCharacter* Character = Cast<AThe_AwakeningCharacter>(Interactor))
+		{
+			Character->NotifyInventoryPickupResult(ChangedSlots, Added < Count);
+		}
+	}
 	if (Added <= 0)
 	{
 		return false;

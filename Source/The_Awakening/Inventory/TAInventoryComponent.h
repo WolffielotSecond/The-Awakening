@@ -4,10 +4,13 @@
 #include "Components/ActorComponent.h"
 #include "Inventory/TAItemTypes.h"
 #include "Inventory/TAClothingTypes.h"
+#include "ActiveGameplayEffectHandle.h"
+#include "GameplayTagContainer.h"
 #include "TAInventoryComponent.generated.h"
 
 class UTAItemDefinition;
 class UTAClothingDefinition;
+class UAbilitySystemComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryUpdated);
 
@@ -146,6 +149,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 TryAddItem(UTAItemDefinition* ItemDef, int32 Count = 1);
 
+	/** 同上，额外带出这次改动过的扁平格子下标（GetSlots() 的下标，按升序）。剧情物品不占口袋格，带出为空 */
+	int32 TryAddItem(UTAItemDefinition* ItemDef, int32 Count, TArray<int32>& OutChangedSlots);
+
 	/**
 	 * 剧情物品按 StorySlotIndex 入槽，每槽 1 个。槽里是 UpgradesFrom 指向的物品时直接替换。
 	 * 未绑定、槽被其他物品占用时拒绝并打 Warning；已经持有（含已持有其升级版）时返回 0。
@@ -219,13 +225,44 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool MoveItemBetweenSlots(int32 SourceSlotIndex, int32 TargetSlotIndex);
 
-	/** 装备外套（Layer 必须是 Outer） */
+	/**
+	 * 背包口袋格与外部衣服实例（例如衣架上的外套）的某一格之间移动整叠：目标空则移动，同类可堆叠则合并，否则交换。
+	 * bToExternal = true：从背包 FlatIndex 拖到外部格；false：从外部格拖回背包。剧情格不参与。
+	 */
+	bool MoveItemWithExternal(int32 FlatIndex, FTAClothingInstance& External, int32 ExternalPocket, int32 ExternalSlot, bool bToExternal);
+
+	/** 两个格子之间移动 / 合并 / 交换整叠（与 MoveItemBetweenSlots 同一规则）。源格为空或无可合并数量时返回 false */
+	static bool MoveSlotContents(FTAInventorySlot& Source, FTAInventorySlot& Target);
+
+	/** 装备外套（Layer 必须是 Outer），口袋为空。已穿外套时拒绝 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Clothing")
 	bool EquipOuter(UTAClothingDefinition* OuterDef);
+
+	/** 装备一件带物品的外套实例（例如从衣架上拿下的），口袋里的物品保留。已穿外套时拒绝，用 SwapOuter */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Clothing")
+	bool EquipOuterInstance(const FTAClothingInstance& Instance);
+
+	/**
+	 * 身上的外套与 InOut 互换，两边口袋里的物品都跟着衣服走。
+	 * InOut 为空：脱下外套放进 InOut；身上没有外套：穿上 InOut 并把 InOut 清空。两边都为空、InOut 不是外套时返回 false。
+	 * 回滚记录期间会记录撤销（只恢复身上的外套，InOut 的持有者自己记录）。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Clothing")
+	bool SwapOuter(UPARAM(ref) FTAClothingInstance& InOut);
 
 	/** 卸下外套；OutInstance 带出口袋里的物品，由外部生成世界物 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Clothing")
 	bool UnequipOuter(FTAClothingInstance& OutInstance);
+
+	/** 重新施加内衬和外套的 GE / 专属能力 Tag。拥有者的 ASC 初始化完成后调用（BeginPlay 时 ASC 可能还没准备好） */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Clothing")
+	void RefreshClothingEffects();
+
+	/** 按衣服定义生成空口袋（格子数按 Columns * Rows，旧资产按 SlotCount） */
+	static bool BuildClothingInstance(UTAClothingDefinition* Def, FTAClothingInstance& OutInstance);
+
+	/** 按衣服定义重建口袋，再按格子位置放回 Source 里的物品；布局变了时多出的物品丢弃并打 Warning */
+	static bool NormalizeClothingInstance(const FTAClothingInstance& Source, FTAClothingInstance& OutInstance);
 
 	/** 存档：按格子位置保存所有口袋、外套和剧情槽 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Save")
@@ -249,8 +286,23 @@ public:
 	}
 
 protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	void InitDefaultClothing();
-	bool BuildClothingInstance(UTAClothingDefinition* Def, FTAClothingInstance& OutInstance) const;
+
+	/** 换掉身上的外套：先移除旧外套的效果，再施加新外套的；bRecordUndo 时在回滚记录中写入恢复旧外套 */
+	void ReplaceOuterClothing(const FTAClothingInstance& NewOuter, bool bRecordUndo);
+
+	/** 一件衣服在 ASC 上施加的效果，脱下时按这里记录的移除，只移除自己加的 */
+	struct FAppliedClothingEffects
+	{
+		TWeakObjectPtr<UAbilitySystemComponent> ASC;
+		TArray<FActiveGameplayEffectHandle> Handles;
+		FGameplayTagContainer LooseTags;
+	};
+	UAbilitySystemComponent* GetOwnerASC() const;
+	void ApplyClothingEffects(const FTAClothingInstance& Clothing, FAppliedClothingEffects& OutApplied);
+	void RemoveClothingEffects(FAppliedClothingEffects& Applied);
 
 	/** 在指定衣服实例上尝试加入，返回实际加入数。bFillStacks：补已有同类堆叠；bFillEmpty：放进空格 */
 	int32 TryAddItemToClothing(FTAClothingInstance& Clothing, UTAItemDefinition* ItemDef, int32 Count, bool bFillStacks = true, bool bFillEmpty = true);
@@ -278,4 +330,7 @@ protected:
 	/** 缓存：内衬口袋 + 外套口袋 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TArray<FTAInventorySlot> FlattenedSlots;
+
+	FAppliedClothingEffects InnerEffects;
+	FAppliedClothingEffects OuterEffects;
 };

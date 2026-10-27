@@ -230,6 +230,11 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 		};
 
 	SpawnSlotInto(NamedSlot_OuterEquip, OuterEquipSlot);
+	if (OuterEquipSlot)
+	{
+		// 外套只能在衣架换装界面穿脱，背包里的外套格只显示
+		OuterEquipSlot->SetDragEnabled(false);
+	}
 
 	StorySlots.SetNum(4);
 	SpawnSlotInto(NamedSlot_Story0, StorySlots[0]);
@@ -758,14 +763,17 @@ void UTAInventoryPanelWidget::RefreshAll()
 		}
 	}
 
+	const UTAClothingDefinition* WornOuter = Inventory->HasOuterClothing() ? Inventory->GetOuterClothing().Definition.Get() : nullptr;
 	if (OuterEquipSlot)
 	{
-		OuterEquipSlot->SetEmpty(); // 后续可显示外套图标
+		OuterEquipSlot->SetEmpty();
+		OuterEquipSlot->SetClothingDisplay(const_cast<UTAClothingDefinition*>(WornOuter));
 	}
 
 	if (InnerClothingPanel)
 	{
-		InnerClothingPanel->BuildFromClothing(Inventory->GetInnerClothing(), 0);
+		// 穿着的外套可以改写内衬口袋的显示位置
+		InnerClothingPanel->BuildFromClothing(Inventory->GetInnerClothing(), 0, WornOuter);
 	}
 
 	if (OuterClothingPanel)

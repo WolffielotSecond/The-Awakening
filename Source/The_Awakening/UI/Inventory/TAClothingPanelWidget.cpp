@@ -68,6 +68,7 @@ void UTAClothingPanelWidget::ClearPanel()
 	CurrentDef = nullptr;
 	BuiltDef = nullptr;
 	BuiltFlatStart = INDEX_NONE;
+	BuiltDisplayOverride = nullptr;
 }
 
 void UTAClothingPanelWidget::SetClothingIcon(UTAClothingDefinition* Def)
@@ -167,25 +168,12 @@ void UTAClothingPanelWidget::CreateSlotsForPocket(
 
 	GeneratedGroups.Add(Grid);
 
-	const bool bTwoColumns = (PocketDef.SlotSide == ETAPocketSlotSide::Left
-		|| PocketDef.SlotSide == ETAPocketSlotSide::Right);
-	// Left/Right：两列（行优先，最后一行可 1 格）
-	// Top/Bottom：两行（列优先，最后一列可 1 格）
-
+	// 每个口袋按自己的 Columns x Rows 网格摆放；旧资产没有形状时沿用原来的两列 / 两行摆法
 	for (int32 i = 0; i < Num; ++i)
 	{
 		int32 Row = 0;
 		int32 Col = 0;
-		if (bTwoColumns)
-		{
-			Row = i / 2;
-			Col = i % 2;
-		}
-		else
-		{
-			Col = i / 2;
-			Row = i % 2;
-		}
+		PocketDef.GetCellPosition(i, Row, Col);
 
 		USizeBox* Cell = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 		Cell->SetWidthOverride(SlotSize);
@@ -228,7 +216,7 @@ void UTAClothingPanelWidget::HandleSlotUnhovered(UTAInventorySlotWidget* Hovered
 	OnInventorySlotUnhovered.Broadcast(HoveredSlot);
 }
 
-void UTAClothingPanelWidget::BuildFromClothing(const FTAClothingInstance& Instance, int32 FlatIndexStart)
+void UTAClothingPanelWidget::BuildFromClothing(const FTAClothingInstance& Instance, int32 FlatIndexStart, const UTAClothingDefinition* DisplayOverride)
 {
 	EnsureBindings();
 
@@ -250,6 +238,7 @@ void UTAClothingPanelWidget::BuildFromClothing(const FTAClothingInstance& Instan
 	const bool bSameLayout =
 		BuiltDef == Instance.Definition &&
 		BuiltFlatStart == FlatIndexStart &&
+		BuiltDisplayOverride.Get() == DisplayOverride &&
 		GeneratedSlots.Num() > 0 &&
 		GeneratedSlots.Num() == TotalRuntimeSlots;
 
@@ -279,6 +268,7 @@ void UTAClothingPanelWidget::BuildFromClothing(const FTAClothingInstance& Instan
 	ClearPanel();
 	BuiltDef = Instance.Definition;
 	BuiltFlatStart = FlatIndexStart;
+	BuiltDisplayOverride = DisplayOverride;
 	CurrentDef = Instance.Definition;
 	SetClothingIcon(CurrentDef);
 
@@ -298,6 +288,12 @@ void UTAClothingPanelWidget::BuildFromClothing(const FTAClothingInstance& Instan
 			PocketDef.SlotCount = Instance.Pockets[p].Slots.Num();
 			PocketDef.AnchorUV = FVector2D(0.5f, 0.5f);
 			PocketDef.SlotSide = ETAPocketSlotSide::Right;
+		}
+		if (DisplayOverride && DisplayOverride->bOverrideInnerPocketDisplay && DisplayOverride->InnerPocketDisplayOverrides.IsValidIndex(p))
+		{
+			const FTAPocketDisplayOverride& Override = DisplayOverride->InnerPocketDisplayOverrides[p];
+			PocketDef.AnchorUV = Override.AnchorUV;
+			PocketDef.SlotSide = Override.SlotSide;
 		}
 		CreateSlotsForPocket(Instance.Pockets[p], PocketDef, FlatIndex);
 	}

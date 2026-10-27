@@ -37,9 +37,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item", meta = (EditCondition = "bCanStack", ClampMin = "1"))
 	int32 MaxStack = 1;
 
-	/** 卖出/商店参考价 */
+	/** 卖出/商店参考价；货币物品为单个面值。允许小数，入账时按总额四舍五入为整数细胞 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
-	int32 Value = 0;
+	float Value = 0.f;
 
 	/** 是否可卖出（商店逻辑后接） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")

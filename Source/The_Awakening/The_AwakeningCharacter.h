@@ -26,6 +26,8 @@ class UTACharacterActionComponent;
 class UTASpecialActionComponent;
 class UTAInventoryPanelWidget;
 class UTAPickupBannerWidget;
+class UTAMiniInventoryWidget;
+class UTAClothingSwapWidget;
 class UTAItemDefinition;
 class UTADocumentDefinition;
 struct FTAPickupBannerEntry;
@@ -234,6 +236,18 @@ protected:
 
 	UTAPickupBannerWidget* GetPickupBanner();
 
+	/** 拾取后角色旁边的迷你背包。为空时用 /Game/UI/Inventory/WBP_MiniInventory，再没有时用 C++ 临时布局 */
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UTAMiniInventoryWidget> MiniInventoryClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTAMiniInventoryWidget> MiniInventoryInstance;
+
+	UTAMiniInventoryWidget* GetMiniInventory();
+
+	/** 打开中的衣架换装界面；死亡、读档时和背包一起关闭 */
+	TWeakObjectPtr<UTAClothingSwapWidget> ClothingSwapInstance;
+
 	/** 拾取提示显示期间打开背包：按条目类型直接进入检视 / 日记本 / 文本预览 */
 	void OpenPickupQuickView(const FTAPickupBannerEntry& Entry);
 
@@ -273,6 +287,10 @@ public:
 	void CloseInventoryIfOpen();
 	/** 物品拾取进背包、文本收集进日记本后调用：屏幕右侧弹出拾取提示 */
 	void NotifyItemPickedUp(UTAItemDefinition* Item);
+	/** 普通物品拾取尝试后调用：角色旁显示迷你背包，闪烁改动的格子；bInventoryFull 时提示背包已满 */
+	void NotifyInventoryPickupResult(const TArray<int32>& ChangedSlots, bool bInventoryFull);
+	void NotifyClothingSwapOpened(UTAClothingSwapWidget* Widget);
+	void NotifyClothingSwapClosed(UTAClothingSwapWidget* Widget);
 	void NotifyDocumentCollected(UTADocumentDefinition* Document);
 	/** 复活传送后调用：镜头偏移归零，SpringArm 跳过一次 Camera Lag。 */
 	void ResetCameraForRespawn();

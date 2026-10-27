@@ -2,6 +2,7 @@
 #include "Inventory/TAItemSettings.h"
 #include "UI/Inventory/TAInventoryPanelWidget.h"
 #include "Inventory/TAItemDefinition.h"
+#include "Inventory/TAClothingDefinition.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -47,7 +48,7 @@ void UTAInventorySlotWidget::NativeOnDragDetected(
 {
 	if (!AllowsPlayerDrag()) return;
 	Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
-	if (IsEmpty() || IsStorySlot() || !Inventory)
+	if (IsEmpty() || IsStorySlot() || (!Inventory && !ExternalDropHandler))
 	{
 		return;
 	}
@@ -65,6 +66,7 @@ void UTAInventorySlotWidget::NativeOnDragDetected(
 		if (UTAInventorySlotWidget* DragVisual = CreateWidget<UTAInventorySlotWidget>(PC, GetClass()))
 		{
 			DragVisual->SetSlotData(CachedSlot, FlatIndex);
+			DragVisual->SetClothingDisplay(DisplayClothing);
 			DragVisual->SetInventoryComponent(Inventory);
 			DragOperation->DefaultDragVisual = DragVisual;
 		}
@@ -92,6 +94,10 @@ bool UTAInventorySlotWidget::NativeOnDrop(
 	UTAInventorySlotWidget* SourceSlot = InOperation ? Cast<UTAInventorySlotWidget>(InOperation->Payload) : nullptr;
 	if (SourceSlot) SourceSlot->SetDraggingVisual(false); // cleanup is never permission-gated
 	if (!AllowsPlayerDrag() || !SourceSlot || !SourceSlot->AllowsPlayerDrag()) return false;
+	if (ExternalDropHandler)
+	{
+		return SourceSlot != this && ExternalDropHandler(SourceSlot, this);
+	}
 	if (!SourceSlot || SourceSlot == this || !Inventory || SourceSlot->Inventory != Inventory)
 	{
 		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
@@ -114,7 +120,31 @@ bool UTAInventorySlotWidget::IsStorySlot() const
 
 bool UTAInventorySlotWidget::AllowsPlayerDrag() const
 {
+	if (!bDragEnabled)
+	{
+		return false;
+	}
+	if (ExternalDragPermission)
+	{
+		return ExternalDragPermission();
+	}
 	return InputOwner.IsValid() && InputOwner->AllowsPlayerInput(ETAInputCapability::ToggleDrag);
+}
+
+void UTAInventorySlotWidget::SetExternalDragHandlers(TFunction<bool()> InPermission, TFunction<bool(UTAInventorySlotWidget*, UTAInventorySlotWidget*)> InDropHandler)
+{
+	ExternalDragPermission = MoveTemp(InPermission);
+	ExternalDropHandler = MoveTemp(InDropHandler);
+}
+
+void UTAInventorySlotWidget::SetClothingDisplay(UTAClothingDefinition* InClothing)
+{
+	if (DisplayClothing == InClothing)
+	{
+		return;
+	}
+	DisplayClothing = InClothing;
+	RefreshVisuals();
 }
 
 void UTAInventorySlotWidget::SetSlotData(const FTAInventorySlot& SlotData, int32 InFlatIndex)
@@ -159,7 +189,8 @@ void UTAInventorySlotWidget::SetDraggingVisual(bool bDragging)
 
 bool UTAInventorySlotWidget::IsEmpty() const
 {
-	return CachedSlot.IsEmpty();
+	// 外套格显示衣服时不算空：可以悬停、拖拽（权限另判）
+	return CachedSlot.IsEmpty() && !DisplayClothing;
 }
 
 UTAItemDefinition* UTAInventorySlotWidget::GetItemDef() const
@@ -171,7 +202,14 @@ void UTAInventorySlotWidget::RefreshVisuals()
 {
 	const bool bHasItem = !CachedSlot.IsEmpty() && CachedSlot.ItemDef;
 
-	if (Image_item)
+	if (Image_item && !bHasItem && DisplayClothing)
+	{
+		// 外套格：显示衣服图，没有时用默认图标
+		UTexture2D* Icon = UTAItemSettings::ResolveIcon(DisplayClothing->Icon.IsNull() ? nullptr : DisplayClothing->Icon.LoadSynchronous());
+		Image_item->SetBrushFromTexture(Icon);
+		Image_item->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	}
+	else if (Image_item)
 	{
 		if (bHasItem)
 		{

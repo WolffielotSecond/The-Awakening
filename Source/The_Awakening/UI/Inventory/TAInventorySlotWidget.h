@@ -13,6 +13,7 @@ class UTAItemDefinition;
 class UTAInventoryComponent;
 class UDragDropOperation;
 class UTAInventoryPanelWidget;
+class UTAClothingDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTAInventorySlotHovered, class UTAInventorySlotWidget*, Slot, UTAItemDefinition*, ItemDef);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTAInventorySlotUnhovered, class UTAInventorySlotWidget*, Slot);
@@ -40,6 +41,16 @@ public:
 
 	void SetInventoryComponent(UTAInventoryComponent* InInventory) { Inventory = InInventory; }
 	void SetInputOwner(UTAInventoryPanelWidget* InOwner);
+
+	/** 外套格：显示衣服图标（不是物品）。传 nullptr 清空 */
+	void SetClothingDisplay(UTAClothingDefinition* InClothing);
+	UTAClothingDefinition* GetClothingDisplay() const { return DisplayClothing; }
+
+	/** false：只显示，不能拖出也不接受拖入（例如背包里的外套格） */
+	void SetDragEnabled(bool bEnabled) { bDragEnabled = bEnabled; }
+
+	/** 非背包界面（衣架换装）接管格子：拖拽权限由它判断，放下时交给它处理，不走背包的 MoveItemBetweenSlots */
+	void SetExternalDragHandlers(TFunction<bool()> InPermission, TFunction<bool(UTAInventorySlotWidget* Source, UTAInventorySlotWidget* Target)> InDropHandler);
 	void SetDraggingVisual(bool bDragging);
 	const FGeometry& GetIconGeometry() const;
 	UWidget* GetIconWidget() const;
@@ -91,6 +102,13 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTAInventoryComponent> Inventory;
+
+	UPROPERTY()
+	TObjectPtr<UTAClothingDefinition> DisplayClothing;
+
+	bool bDragEnabled = true;
+	TFunction<bool()> ExternalDragPermission;
+	TFunction<bool(UTAInventorySlotWidget*, UTAInventorySlotWidget*)> ExternalDropHandler;
 
 	bool bIsDragging = false;
 
