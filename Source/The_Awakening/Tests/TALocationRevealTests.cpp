@@ -30,9 +30,11 @@ bool FTALocationRevealTest::RunTest(const FString&)
  Widget->AdvancePresentation(1.75f);
  TestEqual(TEXT("Erasing after hold"),Widget->GetRevealPhase(),ETALocationRevealPhase::Erasing);
  Widget->AdvancePresentation(1);
- TestEqual(TEXT("Only baseline fades"),Widget->GetRevealPhase(),ETALocationRevealPhase::FadingLine);
- Widget->AdvancePresentation(.125f);
- TestTrue(TEXT("Actual opacity fades"),FMath::IsNearlyEqual(Widget->GetRenderOpacity(),.5f));
+ TestEqual(TEXT("ECG continues moving beyond the right edge"),Widget->GetRevealPhase(),ETALocationRevealPhase::FadingLine);
+ Widget->AdvancePresentation(Widget->PhaseDuration()*.5f);
+ TestTrue(TEXT("Normal exit does not fade"),FMath::IsNearlyEqual(Widget->GetRenderOpacity(),1.f));
+ // External opacity changes must still be respected by interruption fading.
+ Widget->SetRenderOpacity(.5f);
  Widget->ShowLocationReveal(Chapter,B);
  Widget->AdvancePresentation(.1f);
  TestTrue(TEXT("Interrupted from actual .5 opacity"),FMath::IsNearlyEqual(Widget->GetRenderOpacity(),.25f));

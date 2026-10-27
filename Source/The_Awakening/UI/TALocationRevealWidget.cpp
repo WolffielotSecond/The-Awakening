@@ -120,7 +120,9 @@ float UTALocationRevealWidget::PhaseDuration() const
  case ETALocationRevealPhase::Revealing: return FMath::Max(.001f,RevealDuration);
  case ETALocationRevealPhase::Holding: return FMath::Max(0.f,HoldDuration);
  case ETALocationRevealPhase::Erasing: return FMath::Max(.001f,EraseDuration);
- case ETALocationRevealPhase::FadingLine: return FMath::Max(.001f,LineFadeDuration);
+ // Legacy enum name: continue off the right edge at the erasure sweep's speed.
+ case ETALocationRevealPhase::FadingLine:
+  return FMath::Max(.001f,(PulseWidth*.5f+TraceGlowRadius+LineThickness)*FMath::Max(.001f,EraseDuration)/FMath::Max(1.f,float(DesignSize.X)));
  case ETALocationRevealPhase::Interrupting: return FMath::Max(.001f,InterruptFadeDuration);
  default: return 0;
  }
@@ -155,7 +157,6 @@ void UTALocationRevealWidget::AdvancePresentation(float Delta)
   { Clock.bOutPosted=true; PostCue(false,Version); }
   if (Phase==ETALocationRevealPhase::Interrupting)
    SetRenderOpacity(FMath::Lerp(Clock.FadeStartOpacity,0.f,Progress()));
-  else if (Phase==ETALocationRevealPhase::FadingLine) SetRenderOpacity(1-Progress());
   if (Clock.Elapsed < Duration) break;
   Clock.Elapsed = 0;
   switch (Phase)
@@ -202,9 +203,16 @@ int32 UTALocationRevealWidget::NativePaint(const FPaintArgs& Args, const FGeomet
  const float P=Interrupt ? FrozenProgress : Progress();
  const bool Reveal=VisualPhase==ETALocationRevealPhase::Revealing;
  const bool Erase=VisualPhase==ETALocationRevealPhase::Erasing;
- const float Sweep=(Reveal || Erase) ? P*DesignSize.X : DesignSize.X;
- Out.PushClip(FSlateClippingZone(Region));
+ const bool ExitPulse=VisualPhase==ETALocationRevealPhase::FadingLine;
+ const float ExitDistance=PulseWidth*.5f+TraceGlowRadius+LineThickness;
+ const float Sweep=(Reveal || Erase) ? P*DesignSize.X : DesignSize.X+(ExitPulse ? P*ExitDistance : 0.f);
  const float Y=DesignSize.Y-8;
+ // Leave room below the baseline for the QRS S trough and its glow.
+ const float TraceBottom=FMath::Max(float(DesignSize.Y),Y+PulseHeight*.32f+TraceGlowRadius+LineThickness);
+ // Match the entrance's right clipping edge: QRS keeps moving behind it until
+ // the entire waveform and glow are outside. No end hold or normal exit fade.
+ const FGeometry TraceBounds=G.MakeChild(FVector2D(DesignSize.X,TraceBottom),FSlateLayoutTransform(Scale,Origin));
+ Out.PushClip(FSlateClippingZone(TraceBounds));
  const FLinearColor Ink=TraceColor*Style.GetColorAndOpacityTint();
  auto Line=[&](TArray<FVector2D> Points)
  {
@@ -216,15 +224,30 @@ int32 UTALocationRevealWidget::NativePaint(const FPaintArgs& Args, const FGeomet
    }
   FSlateDrawElement::MakeLines(Out,Layer+2,Region.ToPaintGeometry(),Points,ESlateDrawEffect::None,Ink,true,LineThickness);
  };
- const bool Pulse=(Reveal && P>0 && P<.996f) || Erase;
+ const bool Pulse=(Reveal && P>0 && P<.996f) || Erase || ExitPulse;
  if (Pulse)
  {
   const float Start=Sweep-PulseWidth*.5f, End=Sweep+PulseWidth*.5f;
-  if (Start>0) Line({FVector2D(0,Y),FVector2D(Start,Y)});
-  // Exact exported SVG: M0 64 H17 L24 61 L31 69 L40 5 L49 69 L57 64 H80.
-  static const FVector2D Points[]={{0,64},{17,64},{24,61},{31,69},{40,5},{49,69},{57,64},{80,64}};
+  if (Reveal && Start>0) Line({FVector2D(0,Y),FVector2D(Start,Y)});
+  // Trace the user's boxed QRS reference only: small rounded Q dip, tall sharp
+  // R peak, deeper S trough, then a smooth recovery. Height is peak-to-trough;
+  // the reference divides it approximately 68% above / 32% below the baseline.
   TArray<FVector2D> Trace;
-  for (const auto& V:Points) Trace.Add(FVector2D(Start+V.X*PulseWidth/80,Y+(V.Y-64)*PulseHeight/72));
+  auto AddPoint=[&](FVector2D V) { Trace.Add(FVector2D(Start+V.X*PulseWidth,Y+V.Y*PulseHeight)); };
+  auto Curve=[&](FVector2D A,FVector2D B,FVector2D C,FVector2D D)
+  {
+   for (int32 Step=1;Step<=10;++Step)
+   {
+    const float T=Step/10.f, U=1-T;
+    AddPoint(U*U*U*A+3*U*U*T*B+3*U*T*T*C+T*T*T*D);
+   }
+  };
+  AddPoint({0,0}); AddPoint({.12,0});
+  Curve({.12,0},{.22,0},{.205,.165},{.265,.165});
+  Curve({.265,.165},{.32,.165},{.36,-.30},{.45,-.68});
+  AddPoint({.615,.32});
+  Curve({.615,.32},{.67,.12},{.68,0},{.81,0});
+  AddPoint({1,0});
   Line(Trace);
   if (Erase && End<DesignSize.X) Line({FVector2D(End,Y),FVector2D(DesignSize.X,Y)});
  }

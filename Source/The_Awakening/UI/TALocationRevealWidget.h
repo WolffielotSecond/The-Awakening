@@ -39,6 +39,7 @@ public:
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Timing", meta=(ClampMin="0.001")) float RevealDuration = 1;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Timing", meta=(ClampMin="0")) float HoldDuration = 1.75f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Timing", meta=(ClampMin="0.001")) float EraseDuration = 1;
+ /** Legacy saved setting, unused: normal exit now continues offscreen at EraseDuration's speed. */
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Timing", meta=(ClampMin="0.001")) float LineFadeDuration = .25f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Timing", meta=(ClampMin="0.001")) float InterruptFadeDuration = .2f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Layout") FVector2D ScreenMargin = FVector2D(.06, .14);
@@ -56,11 +57,12 @@ public:
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") FLinearColor TextColor;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") FLinearColor TraceColor;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float ChapterOpacity = .72f;
- UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float LineThickness = .85f;
+ UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float LineThickness = 2.5f;
  /** Multi-stroke approximation of the exported 3.2px drop-shadow; no UI material needed. */
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float TraceGlowRadius = 3.2f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float TraceGlowOpacity = .22f;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float PulseWidth = 80;
+ /** Total QRS R-peak to S-trough height; approximately 68% above / 32% below baseline. */
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Appearance") float PulseHeight = 72;
  /** Seconds from phase start. Null soft references are deliberately silent. */
  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Location Reveal|Audio") TSoftObjectPtr<UAkAudioEvent> InEvent;

@@ -557,7 +557,7 @@ void AThe_AwakeningPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 #if !UE_BUILD_SHIPPING
  if (InputComponent)
-  InputComponent->BindKey(EKeys::NumPadZero, IE_Pressed, this,
+  InputComponent->BindKey(EKeys::Zero, IE_Pressed, this,
    &AThe_AwakeningPlayerController::DebugShowHospitalLocationReveal);
 #endif
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))

@@ -6,7 +6,7 @@
 `The_AwakeningPlayerController` → `Show Location Reveal`。
 
 输入：`ChapterText`、`LocationText`（均为 FText）、`bForceReplay`（默认 false）。
-非 Shipping 构建中，游戏操作状态下按小键盘 0（Num Lock 开启）可强制重播医院提示。
+非 Shipping 构建中，游戏操作状态下按主键盘数字 0 可强制重播医院提示（不绑定小键盘 0）。
 通过现有 JSON 本地化读取：英文 CHAPTER 1 / HOSPITAL，简体 第一章 / 医院，繁体 第一章 / 醫院。
 菜单捕获输入时不触发；切换语言后再次按键会使用当前语言。
 例如传入 `CHAPTER 01` 和 `HOSPITAL`；Widget 不含写死的章节或地区。
@@ -29,7 +29,7 @@
 | RevealDuration | 1 秒 | 4 秒循环的 0–25% |
 | HoldDuration | 1.75 秒 | 25–68.75% |
 | EraseDuration | 1 秒 | 68.75–93.75% |
-| LineFadeDuration | 0.25 秒 | 循环末尾 |
+| LineFadeDuration | 旧值 0.25 秒 | 仅兼容旧资产保留，不再控制正常退场 |
 | InterruptFadeDuration | 0.2 秒 | 本任务新增规则 |
 | ScreenMargin | 左 6%，底部 14% | 导出 CSS |
 | DesignSize | 720×124 | 1920×1080 参考空间 |
@@ -38,8 +38,8 @@
 | ChapterOpacity | .72 | CSS |
 | TextColor | sRGB #e8e5dc | CSS |
 | TraceColor | sRGB #d7e0db，alpha .62 | CSS |
-| LineThickness | .85 | SVG |
-| PulseWidth / Height | 80 / 72 | SVG viewBox |
+| LineThickness | 2.5 | 按后续反馈加粗主线（原 SVG 为 .85） |
+| PulseWidth / Height | 80 / 72 | QRS 波形宽度 / R 峰至 S 谷总高度；约 68% 在基线上方、32% 在下方 |
 | InEventOffset / OutEventOffset | .02 / 0 秒 | 各自扫描阶段的起点偏移 |
 
 打开 `WBP_LocationReveal` → Class Defaults → Location Reveal，可调整以上参数，以及
@@ -57,6 +57,10 @@ CSS line-height 1 / .92 的补偿，不应直接当作 CSS top=14 / 35.2。
 导出 CSS 声明 600/700 且没有 @font-face 加载本地 TTF，因此录像中浏览器实际回退字体无法仅凭导出文件确认。
 按用户指定，以提供的 Google Sans Medium 为 UE 字体。
 心电图光晕用多层抗锯齿描边近似 CSS drop-shadow；浏览器的微弱 24px text-shadow 没有进行高斯模糊的逐像素复刻。
+心电图按最新红框 QRS 参考改为「水平线 → 小 Q 下探 → 高尖 R 峰 → 较深 S 下谷 → 平滑回到水平线」。
+以参考图比例近似：R 峰在基线上方 .68 × PulseHeight，S 谷在下方 .32 × PulseHeight，Q 下探为 .165 × PulseHeight。
+Q 下探与 S 恢复段使用采样三次贝塞尔曲线，R 峰和 R→S 段保持尖锐；仅采用红框 QRS，不加入框外 P/T 波。
+ECG 的绘制裁剪区域向下扩展，确保 S 下谷完整可见。
 建议最终在真实游戏背景中确认文字大小、位置、间距与光晕强度。
 
 ## 架构和中断
@@ -69,6 +73,10 @@ UMG TextBlock 负责字体 shaping/字距和 FText；必要的 NativePaint 仅�
 没有每帧 Actor 搜索，没有 UI Material 或 Editor-only 运行时依赖。
 
 状态：Hidden → Revealing → Holding → Erasing → FadingLine → Hidden。
+按后续反馈，Erasing 时不绘制波峰左侧的长水平线，只保留 QRS 和右侧尚未擦掉的线。
+文字完全擦除后，QRS 继续以擦除阶段相同速度向右移出裁剪边界，不停顿、不渐隐，也不会恢复整条水平线。
+末端使用与入场相同的右侧裁剪边界，直到整个 QRS 和光晕都移出后进入 Hidden。
+FadingLine 枚举名为蓝图兼容保留，现表示最后一小段移出；时长按波形半宽、光晕及擦除速度计算。
 新请求使 RequestVersion 递增，PlayingVersion 保留旧版本，立即取消旧版本未触发的音效。
 活跃画面的 Phase / Progress 被冻结，进入 Interrupting，从当前 GetRenderOpacity()
 线性淡出到 0。完全淡出后，最新待播请求开始新的完整流程。
@@ -129,7 +137,7 @@ Wwise 中创建 Event、生成 Windows SoundBanks、在 UE 生成对应 AkAudioE
 
 - 正常完成四阶段；Reveal / Holding / Erase 中断。
 - 中断期间连续请求保留最新；重复触发和强制重播。
-- 尾线 .5 RenderOpacity 时中断从 .5 开始，半程为 .25。
+- 正常末端移出不降低 RenderOpacity；外部设为 .5 时中断仍从 .5 开始，半程为 .25。
 - 请求版本使旧 cue 无效，重启清理 cue 标记；销毁取消待播工作。
 - 空引用及不存在的 Wwise 资产软路径均正常完成。
 - 真实项目 PlayerController 的 Ownership 不发生任何转换，Slate 不接受焦点和命中。
