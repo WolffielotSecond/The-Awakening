@@ -121,7 +121,7 @@ bool FTALocationRevealFontTest::RunTest(const FString&)
 {
  auto* Font=LoadObject<UFont>(nullptr,TEXT("/Game/Fonts/TA_GlobalFont.TA_GlobalFont"));
  if (!TestNotNull(TEXT("Global composite"),Font)) return false;
- const FTypefaceEntry* Found=Font->CompositeFont.DefaultTypeface.Fonts.FindByPredicate([](const auto& E){return E.Name==TEXT("GoogleSansMedium");});
+ const FTypefaceEntry* Found=Font->GetInternalCompositeFont().DefaultTypeface.Fonts.FindByPredicate([](const auto& E){return E.Name==TEXT("GoogleSansMedium");});
  if (!TestNotNull(TEXT("Named style is in existing composite"),Found)) return false;
  TestEqual(TEXT("Imported Google face"),GetPathNameSafe(Found->Font.GetFontFaceAsset()),FString(TEXT("/Game/Fonts/GoogleSans/GoogleSans_Medium.GoogleSans_Medium")));
  return true;

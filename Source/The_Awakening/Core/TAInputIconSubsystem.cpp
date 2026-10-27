@@ -8,7 +8,6 @@
 #include "GameFramework/InputDeviceSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Core/TALocalizeSubsystem.h"
-#include "GenericPlatform/GenericApplicationMessageHandler.h"
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTAInputIcon, Log, All);
@@ -88,6 +87,11 @@ void UTAInputIconSubsystem::ApplyDeviceType(EInputDeviceType NewType)
 
 void UTAInputIconSubsystem::NotifyInputKey(const FKey& Key)
 {
+	NotifyInputKeyFromDevice(Key, INPUTDEVICEID_NONE);
+}
+
+void UTAInputIconSubsystem::NotifyInputKeyFromDevice(const FKey& Key, FInputDeviceId Device)
+{
 	if (!Key.IsValid())
 	{
 		return;
@@ -97,27 +101,22 @@ void UTAInputIconSubsystem::NotifyInputKey(const FKey& Key)
 		ApplyDeviceType(EInputDeviceType::KeyboardMouse);
 		return;
 	}
+	// A known XInput slot lets Steam Input identify this exact pad; otherwise fall back to the input device.
+	const int32 Slot = XInputSlotSource ? XInputSlotSource(Key) : BrandResolver.FindXInputSlotForKey(Key);
+	const FTAGamepadSource Source = Slot != INDEX_NONE ? FTAGamepadSource{Slot, INPUTDEVICEID_NONE} : FTAGamepadSource{INDEX_NONE, Device};
 	// Switching from keyboard/mouse to a gamepad always checks which pad it is.
-	UpdateGamepadBrand(GetCurrentXInputSlot(), CurrentDeviceType == EInputDeviceType::KeyboardMouse);
+	UpdateGamepadBrand(Source, CurrentDeviceType == EInputDeviceType::KeyboardMouse);
 	ApplyDeviceType(GetGamepadDeviceType());
 }
 
-int32 UTAInputIconSubsystem::GetCurrentXInputSlot()
+void UTAInputIconSubsystem::UpdateGamepadBrand(const FTAGamepadSource& Source, bool bForceProbe)
 {
-	// XInput dispatches each pad inside a device scope whose handle is the XInput user index.
-	static const FName XInputInterfaceName(TEXT("XInputInterface"));
-	const FInputDeviceScope* Scope = FInputDeviceScope::GetCurrent();
-	return Scope && Scope->InputDeviceName == XInputInterfaceName ? Scope->HardwareDeviceHandle : INDEX_NONE;
-}
-
-void UTAInputIconSubsystem::UpdateGamepadBrand(int32 XInputSlot, bool bForceProbe)
-{
-	if (XInputSlot != LastGamepadSlot)
+	if (!(Source == LastGamepadSource))
 	{
-		LastGamepadSlot = XInputSlot;
+		LastGamepadSource = Source;
 		bForceProbe = true;
 	}
-	if (const ETAGamepadBrand* Cached = GamepadBrandCache.Find(XInputSlot))
+	if (const ETAGamepadBrand* Cached = GamepadBrandCache.Find(Source))
 	{
 		DetectedGamepadBrand = *Cached;
 		return;
@@ -128,10 +127,11 @@ void UTAInputIconSubsystem::UpdateGamepadBrand(int32 XInputSlot, bool bForceProb
 		return;
 	}
 	LastBrandProbeTime = Now;
-	DetectedGamepadBrand = BrandProbe ? BrandProbe(XInputSlot) : BrandResolver.Resolve(XInputSlot);
+	// Without a slot the resolver checks every connected pad.
+	DetectedGamepadBrand = BrandProbe ? BrandProbe(Source) : BrandResolver.Resolve(Source.XInputSlot);
 	if (DetectedGamepadBrand != ETAGamepadBrand::Unknown)
 	{
-		GamepadBrandCache.Add(XInputSlot, DetectedGamepadBrand);
+		GamepadBrandCache.Add(Source, DetectedGamepadBrand);
 	}
 }
 
@@ -156,11 +156,12 @@ void UTAInputIconSubsystem::SetGamepadIconStyle(ETAGamepadIconStyle NewStyle)
 void UTAInputIconSubsystem::InvalidateGamepadBrands()
 {
 	GamepadBrandCache.Reset();
-	LastGamepadSlot = INDEX_NONE;
+	LastGamepadSource = FTAGamepadSource();
 	LastBrandProbeTime = -1.0;
+	BrandResolver.ResetXInputSlots();
 }
 
-void UTAInputIconSubsystem::SetGamepadBrandProbe(TFunction<ETAGamepadBrand(int32)> Probe)
+void UTAInputIconSubsystem::SetGamepadBrandProbe(TFunction<ETAGamepadBrand(const FTAGamepadSource&)> Probe)
 {
 	BrandProbe = MoveTemp(Probe);
 	InvalidateGamepadBrands();
@@ -452,7 +453,7 @@ void UTAInputIconSubsystem::RefreshCurrentDeviceForUser(FPlatformUserId UserId)
 	switch (Hardware.PrimaryDeviceType)
 	{
 	case EHardwareDevicePrimaryType::Gamepad:
-		UpdateGamepadBrand(INDEX_NONE, true);
+		UpdateGamepadBrand(FTAGamepadSource(), true);
 		ApplyDeviceType(GetGamepadDeviceType());
 		break;
 	case EHardwareDevicePrimaryType::KeyboardAndMouse:

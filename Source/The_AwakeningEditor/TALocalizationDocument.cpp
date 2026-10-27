@@ -105,10 +105,11 @@ bool FTALocalizationDocument::Load(const FString& InDirectory, FString& OutError
 			{
 				OutError = FString::Printf(TEXT("%s 的 %s 不是文本，未载入以避免丢失数据。"), *File, *Pair.Key); return false;
 			}
-			int32* Existing = RowIndices.Find(Pair.Key);
+			const FString Key(Pair.Key.ToView());
+			int32* Existing = RowIndices.Find(Key);
 			int32 RowIndex;
 			if (Existing) { RowIndex = *Existing; }
-			else { RowIndex = Loaded.Rows.AddDefaulted(); Loaded.Rows[RowIndex].Key = Pair.Key; RowIndices.Add(Pair.Key, RowIndex); }
+			else { RowIndex = Loaded.Rows.AddDefaulted(); Loaded.Rows[RowIndex].Key = Key; RowIndices.Add(Key, RowIndex); }
 			Loaded.Rows[RowIndex].Texts.Add(Language, Value);
 		}
 	}

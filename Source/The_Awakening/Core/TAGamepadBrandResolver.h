@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
 
 class FSteamClientInstanceHandler;
 
@@ -24,7 +25,15 @@ public:
 
 	/** XInputSlot is the XInput user index (0-3); INDEX_NONE queries every connected pad. */
 	ETAGamepadBrand Resolve(int32 XInputSlot);
-	/** Releases the Steam Input API and the Steam client handle acquired by Resolve. */
+	/**
+	 * UE 5.8 no longer reports which XInput slot sent an input, so the slot is read back from XInput:
+	 * the pad whose current state holds Key, otherwise the only pad whose packet number changed.
+	 * Returns INDEX_NONE when ambiguous, off Windows, or for non-XInput pads (DualSense without Steam Input).
+	 */
+	int32 FindXInputSlotForKey(const FKey& Key);
+	/** Disconnected slots are skipped for a while; call when devices connect or disconnect to query them again. */
+	void ResetXInputSlots();
+	/** Releases the Steam Input API, the Steam client handle and the XInput library acquired by this resolver. */
 	void Shutdown();
 
 	/** Maps ESteamInputType values. Switch and other families use Xbox prompts. */
@@ -39,4 +48,13 @@ private:
 	TSharedPtr<FSteamClientInstanceHandler> SteamClient;
 	bool bSteamInputInitialized = false;
 	bool bSteamUnavailable = false;
+
+	static constexpr int32 MaxXInputSlots = 4;
+	void* XInputModule = nullptr;
+	void* XInputGetStateFn = nullptr;
+	bool bXInputUnavailable = false;
+	uint32 LastPacketNumbers[MaxXInputSlots] = {};
+	bool bHasPacketNumber[MaxXInputSlots] = {};
+	/** Querying a disconnected slot is slow; such slots are rechecked only after this time. */
+	double SlotRecheckTime[MaxXInputSlots] = {};
 };

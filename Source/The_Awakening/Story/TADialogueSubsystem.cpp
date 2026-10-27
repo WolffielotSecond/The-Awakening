@@ -246,7 +246,7 @@ namespace
 		{
 			for (const auto& Pair : (*ParamsObj)->Values)
 			{
-				Out.Params.Add(Pair.Key, UTADialogueSubsystem::JsonScalarToString(Pair.Value));
+				Out.Params.Add(FString(Pair.Key.ToView()), UTADialogueSubsystem::JsonScalarToString(Pair.Value));
 			}
 		}
 		return true;

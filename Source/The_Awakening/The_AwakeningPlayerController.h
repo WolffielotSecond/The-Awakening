@@ -98,7 +98,7 @@ public:
 	FTAInputRouter::FHandle AcquireInputRequest(const FTAInputRequest& Request);
 	void ReleaseInputRequest(FTAInputRouter::FHandle Handle);
 	FTAInputRouter::FWinner GetInputWinner() const;
-	void NotifyRawInputKey(const FKey& Key);
+	void NotifyRawInputKey(const FKey& Key, FInputDeviceId Device = INPUTDEVICEID_NONE);
 	/** Observe held inputs before UI consumes them, separately from gameplay permission. */
 	void RecordHeldInput(FKey Key, float Value, int32 UserIndex);
 	FInputActionValue ReadHeldAction(const UInputAction* Action);
@@ -244,7 +244,8 @@ private:
 	static bool IsSyntheticClickPathWithinPlayerSurface(const FWidgetPath& Path, const TSharedPtr<SViewport>& Surface);
 	TAInputOwnershipAdapter::EState GetPlayerInputOwnershipState() const;
 	// The processor supplies the adapter classification; no synthetic zero on a focus gap.
-	bool ObserveAnalogInput(FKey Key, float Value, int32 UserIndex, TAInputOwnershipAdapter::EState State);
+	bool ObserveAnalogInput(FKey Key, float Value, int32 UserIndex, TAInputOwnershipAdapter::EState State,
+		FInputDeviceId Device = INPUTDEVICEID_NONE);
 	// Pure consumer interpretation of Held axes; no second physical-axis state.
 	FVector2D ReadCursorStick(FKey PairedAxisKey) const;
 	FVector2D GetCursorInputAxis();

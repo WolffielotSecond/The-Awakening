@@ -5,7 +5,6 @@
 #include "Settings/TASettingsTypes.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
-#include "GenericPlatform/GenericApplicationMessageHandler.h"
 #include "UObject/Package.h"
 
 namespace { template<typename E> int32 I(E Value) { return static_cast<int32>(Value); } }
@@ -34,9 +33,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAGamepadBrandDetectionTest,"TheAwakening.Inpu
 bool FTAGamepadBrandDetectionTest::RunTest(const FString&)
 {
  auto* Icons=NewObject<UTAInputIconSubsystem>(NewObject<UGameInstance>());
- double Now=10; int32 Calls=0; int32 LastSlot=-2; ETAGamepadBrand Next=ETAGamepadBrand::PlayStation;
+ double Now=10; int32 Calls=0; int32 Slot=INDEX_NONE; FTAGamepadSource LastSource; ETAGamepadBrand Next=ETAGamepadBrand::PlayStation;
  Icons->SetTimeSourceForTests([&Now]{return Now;});
- Icons->SetGamepadBrandProbe([&](int32 Slot){++Calls; LastSlot=Slot; return Next;});
+ Icons->SetXInputSlotSourceForTests([&Slot](const FKey&){return Slot;});
+ Icons->SetGamepadBrandProbe([&](const FTAGamepadSource& Source){++Calls; LastSource=Source; return Next;});
  const FKey Pad=EKeys::Gamepad_FaceButton_Bottom;
 
  Icons->NotifyInputKey(EKeys::Q);
@@ -58,14 +58,19 @@ bool FTAGamepadBrandDetectionTest::RunTest(const FString&)
  TestEqual(TEXT("Retry after interval"),Calls,3);
  TestEqual(TEXT("Late Steam result is applied"),I(Icons->GetCurrentDeviceType()),I(EInputDeviceType::PS5));
 
- {
-  FInputDeviceScope Scope(nullptr,TEXT("XInputInterface"),2,TEXT("XInputController"));
-  Next=ETAGamepadBrand::Xbox;
-  Icons->NotifyInputKey(Pad);
- }
- TestEqual(TEXT("Another XInput slot is checked immediately"),Calls,4);
- TestEqual(TEXT("Probe receives the XInput slot"),LastSlot,2);
+ const FInputDeviceId SecondPad=FInputDeviceId::CreateFromInternalId(2);
+ Next=ETAGamepadBrand::Xbox;
+ Icons->NotifyInputKeyFromDevice(Pad,SecondPad);
+ TestEqual(TEXT("Another input device is checked immediately"),Calls,4);
+ TestTrue(TEXT("Without a slot the probe receives the input device"),LastSource.Device==SecondPad && LastSource.XInputSlot==INDEX_NONE);
  TestEqual(TEXT("Second pad is Xbox"),I(Icons->GetCurrentDeviceType()),I(EInputDeviceType::Xbox));
+
+ Slot=2; Next=ETAGamepadBrand::PlayStation;
+ Icons->NotifyInputKeyFromDevice(Pad,SecondPad);
+ TestEqual(TEXT("Another XInput slot is checked immediately"),Calls,5);
+ TestEqual(TEXT("Probe receives the XInput slot"),LastSource.XInputSlot,2);
+ TestEqual(TEXT("Pad in slot 2 is DualSense"),I(Icons->GetCurrentDeviceType()),I(EInputDeviceType::PS5));
+ Slot=INDEX_NONE;
 
  Icons->SetGamepadIconStyle(ETAGamepadIconStyle::DualSense);
  TestEqual(TEXT("DualSense style overrides detection"),I(Icons->GetCurrentDeviceType()),I(EInputDeviceType::PS5));

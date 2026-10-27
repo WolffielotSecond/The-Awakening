@@ -65,7 +65,7 @@ bool UTALocalizeSubsystem::LoadLanguageFile(const FString& LanguageCode)
 		FString Value;
 		if (Pair.Value->TryGetString(Value))
 		{
-			TextMap.Add(Pair.Key, Value);
+			TextMap.Add(FString(Pair.Key.ToView()), Value);
 		}
 	}
 

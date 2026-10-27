@@ -47,12 +47,13 @@ int32 UTALocationRevealSetupCommandlet::Main(const FString& Params)
   for (auto& Entry:Typeface.Fonts) if (Entry.Name==Name) { Entry.Font=Data; return; }
   FTypefaceEntry Entry; Entry.Name=Name; Entry.Font=Data; Typeface.Fonts.Add(Entry);
  };
- Add(Global->CompositeFont.DefaultTypeface,FFontData(Face));
+ FCompositeFont& Composite=Global->GetMutableInternalCompositeFont();
+ Add(Composite.DefaultTypeface,FFontData(Face));
  // Existing culture/character-range routing remains authoritative for CJK. Give the new
  // named style an alias in each fallback so a missing Latin face cannot replace CJK.
- for (auto& Sub:Global->CompositeFont.SubTypefaces)
+ for (auto& Sub:Composite.SubTypefaces)
   if (!Sub.Typeface.Fonts.IsEmpty()) { const FFontData Data=Sub.Typeface.Fonts[0].Font; Add(Sub.Typeface,Data); }
- Global->CompositeFont.MakeDirty();
+ Composite.MakeDirty();
  if (!Save(Global)) return 4;
  const FString BPPath=TEXT("/Game/UI/LocationReveal/WBP_LocationReveal");
  if (!FPackageName::DoesPackageExist(BPPath))

@@ -21,6 +21,16 @@ enum class EInputDeviceType : uint8
 	Switch
 };
 
+/** 发出输入的手柄：优先用 XInput 槽位（可交给 Steam Input 精确识别），读不到槽位时用输入设备 ID。 */
+struct FTAGamepadSource
+{
+	int32 XInputSlot = INDEX_NONE;
+	FInputDeviceId Device = INPUTDEVICEID_NONE;
+
+	bool operator==(const FTAGamepadSource& Other) const { return XInputSlot == Other.XInputSlot && Device == Other.Device; }
+	friend uint32 GetTypeHash(const FTAGamepadSource& Source) { return HashCombine(::GetTypeHash(Source.XInputSlot), GetTypeHash(Source.Device)); }
+};
+
 /** 设置“控制器样式”：自动按检测到的手柄切换，或强制使用一套手柄图标。 */
 UENUM(BlueprintType)
 enum class ETAGamepadIconStyle : uint8
@@ -66,6 +76,8 @@ public:
 	/** 根据实际按下的按键自动更新设备类型 */
 	UFUNCTION(BlueprintCallable, Category = "InputIcon")
 	void NotifyInputKey(const FKey& Key);
+	/** 同上，并按按键事件所属的输入设备区分手柄（换手柄时重新识别品牌）。 */
+	void NotifyInputKeyFromDevice(const FKey& Key, FInputDeviceId Device);
 
 	/** 从引擎记录的最近输入硬件同步当前设备类型 */
 	void RefreshCurrentDeviceForUser(FPlatformUserId UserId);
@@ -80,7 +92,9 @@ public:
 	void InvalidateGamepadBrands();
 
 	/** 替换品牌识别（自动化测试用）；传空函数恢复默认识别器。 */
-	void SetGamepadBrandProbe(TFunction<ETAGamepadBrand(int32)> Probe);
+	void SetGamepadBrandProbe(TFunction<ETAGamepadBrand(const FTAGamepadSource&)> Probe);
+	/** 替换 XInput 槽位来源（自动化测试用）；传空函数恢复读取真实 XInput 状态。 */
+	void SetXInputSlotSourceForTests(TFunction<int32(const FKey&)> Source) { XInputSlotSource = MoveTemp(Source); }
 	void SetTimeSourceForTests(TFunction<double()> Source) { TimeSource = MoveTemp(Source); }
 
 
@@ -98,11 +112,10 @@ protected:
 	UTexture2D* LoadIconFromPath(const FString& Path) const;
 	UTexture2D* LoadIconForDevice(FKey Key, EInputDeviceType Device) const;
 	EInputDeviceType GetGamepadDeviceType() const;
-	/** 解析当前手柄槽位的品牌：命中缓存直接返回；否则识别，识别不出时按间隔补查。 */
-	void UpdateGamepadBrand(int32 XInputSlot, bool bForceProbe);
+	/** 解析当前手柄的品牌：命中缓存直接返回；否则识别，识别不出时按间隔补查。 */
+	void UpdateGamepadBrand(const FTAGamepadSource& Source, bool bForceProbe);
 	void ApplyDeviceType(EInputDeviceType NewType);
 	void HandleInputDeviceConnectionChange(EInputDeviceConnectionState State, FPlatformUserId User, FInputDeviceId Device);
-	static int32 GetCurrentXInputSlot();
 	FString KeyToAssetName(FKey Key) const;
 	FString XboxAssetName(const FString& Logical) const;
 	FString PSAssetName(const FString& Logical) const;
@@ -127,11 +140,12 @@ protected:
 
 	ETAGamepadIconStyle GamepadIconStyle = ETAGamepadIconStyle::Auto;
 	ETAGamepadBrand DetectedGamepadBrand = ETAGamepadBrand::Unknown;
-	TMap<int32, ETAGamepadBrand> GamepadBrandCache;
-	int32 LastGamepadSlot = INDEX_NONE;
+	TMap<FTAGamepadSource, ETAGamepadBrand> GamepadBrandCache;
+	FTAGamepadSource LastGamepadSource;
 	double LastBrandProbeTime = -1.0;
 	FTAGamepadBrandResolver BrandResolver;
-	TFunction<ETAGamepadBrand(int32)> BrandProbe;
+	TFunction<ETAGamepadBrand(const FTAGamepadSource&)> BrandProbe;
+	TFunction<int32(const FKey&)> XInputSlotSource;
 	TFunction<double()> TimeSource;
 	FDelegateHandle DeviceConnectionHandle;
 

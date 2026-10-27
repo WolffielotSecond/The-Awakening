@@ -11,6 +11,7 @@ THIRD_PARTY_INCLUDES_END
 #if PLATFORM_WINDOWS
 #include "Windows/AllowWindowsPlatformTypes.h"
 #include <Windows.h>
+#include <Xinput.h>
 #include "Windows/HideWindowsPlatformTypes.h"
 #endif
 
@@ -58,6 +59,112 @@ void FTAGamepadBrandResolver::Shutdown()
 #endif
 	bSteamInputInitialized = false;
 	SteamClient.Reset();
+	if (XInputModule)
+	{
+		FPlatformProcess::FreeDllHandle(XInputModule);
+		XInputModule = nullptr;
+		XInputGetStateFn = nullptr;
+	}
+	bXInputUnavailable = false;
+	ResetXInputSlots();
+}
+
+void FTAGamepadBrandResolver::ResetXInputSlots()
+{
+	for (int32 Slot = 0; Slot < MaxXInputSlots; ++Slot)
+	{
+		bHasPacketNumber[Slot] = false;
+		SlotRecheckTime[Slot] = 0.0;
+	}
+}
+
+#if PLATFORM_WINDOWS
+namespace TAGamepadBrand
+{
+	constexpr double DisconnectedSlotRecheckInterval = 2.0;
+
+	bool IsHeld(const XINPUT_GAMEPAD& Pad, const FKey& Key)
+	{
+		struct FButton { const FKey& Key; WORD Mask; };
+		const FButton Buttons[] = {
+			{EKeys::Gamepad_FaceButton_Bottom, XINPUT_GAMEPAD_A}, {EKeys::Gamepad_FaceButton_Right, XINPUT_GAMEPAD_B},
+			{EKeys::Gamepad_FaceButton_Left, XINPUT_GAMEPAD_X}, {EKeys::Gamepad_FaceButton_Top, XINPUT_GAMEPAD_Y},
+			{EKeys::Gamepad_DPad_Up, XINPUT_GAMEPAD_DPAD_UP}, {EKeys::Gamepad_DPad_Down, XINPUT_GAMEPAD_DPAD_DOWN},
+			{EKeys::Gamepad_DPad_Left, XINPUT_GAMEPAD_DPAD_LEFT}, {EKeys::Gamepad_DPad_Right, XINPUT_GAMEPAD_DPAD_RIGHT},
+			{EKeys::Gamepad_Special_Right, XINPUT_GAMEPAD_START}, {EKeys::Gamepad_Special_Left, XINPUT_GAMEPAD_BACK},
+			{EKeys::Gamepad_LeftThumbstick, XINPUT_GAMEPAD_LEFT_THUMB}, {EKeys::Gamepad_RightThumbstick, XINPUT_GAMEPAD_RIGHT_THUMB},
+			{EKeys::Gamepad_LeftShoulder, XINPUT_GAMEPAD_LEFT_SHOULDER}, {EKeys::Gamepad_RightShoulder, XINPUT_GAMEPAD_RIGHT_SHOULDER},
+		};
+		for (const FButton& Button : Buttons)
+		{
+			if (Key == Button.Key) return (Pad.wButtons & Button.Mask) != 0;
+		}
+		if (Key == EKeys::Gamepad_LeftTrigger || Key == EKeys::Gamepad_LeftTriggerAxis) return Pad.bLeftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
+		if (Key == EKeys::Gamepad_RightTrigger || Key == EKeys::Gamepad_RightTriggerAxis) return Pad.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
+		auto Beyond = [](SHORT X, SHORT Y, int32 DeadZone) { return FMath::Abs(int32(X)) > DeadZone || FMath::Abs(int32(Y)) > DeadZone; };
+		if (Key == EKeys::Gamepad_LeftX || Key == EKeys::Gamepad_LeftY || Key == EKeys::Gamepad_Left2D ||
+			Key == EKeys::Gamepad_LeftStick_Up || Key == EKeys::Gamepad_LeftStick_Down ||
+			Key == EKeys::Gamepad_LeftStick_Left || Key == EKeys::Gamepad_LeftStick_Right)
+		{
+			return Beyond(Pad.sThumbLX, Pad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+		}
+		if (Key == EKeys::Gamepad_RightX || Key == EKeys::Gamepad_RightY || Key == EKeys::Gamepad_Right2D ||
+			Key == EKeys::Gamepad_RightStick_Up || Key == EKeys::Gamepad_RightStick_Down ||
+			Key == EKeys::Gamepad_RightStick_Left || Key == EKeys::Gamepad_RightStick_Right)
+		{
+			return Beyond(Pad.sThumbRX, Pad.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+		}
+		return false;
+	}
+}
+#endif
+
+int32 FTAGamepadBrandResolver::FindXInputSlotForKey(const FKey& Key)
+{
+#if PLATFORM_WINDOWS
+	using FXInputGetState = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+	if (!XInputGetStateFn)
+	{
+		if (bXInputUnavailable) return INDEX_NONE;
+		XInputModule = FPlatformProcess::GetDllHandle(TEXT("xinput1_4.dll"));
+		XInputGetStateFn = XInputModule ? FPlatformProcess::GetDllExport(XInputModule, TEXT("XInputGetState")) : nullptr;
+		if (!XInputGetStateFn)
+		{
+			bXInputUnavailable = true;
+			UE_LOG(LogTAGamepadBrand, Log, TEXT("XInput is unavailable; gamepad slots cannot be identified."));
+			return INDEX_NONE;
+		}
+	}
+	const FXInputGetState GetState = reinterpret_cast<FXInputGetState>(XInputGetStateFn);
+	const double Now = FPlatformTime::Seconds();
+	int32 HeldSlot = INDEX_NONE, HeldCount = 0, HeldChangedSlot = INDEX_NONE, HeldChangedCount = 0;
+	int32 ChangedSlot = INDEX_NONE, ChangedCount = 0;
+	for (int32 Slot = 0; Slot < MaxXInputSlots; ++Slot)
+	{
+		if (Now < SlotRecheckTime[Slot]) continue;
+		XINPUT_STATE State = {};
+		if (GetState(Slot, &State) != ERROR_SUCCESS)
+		{
+			bHasPacketNumber[Slot] = false;
+			SlotRecheckTime[Slot] = Now + TAGamepadBrand::DisconnectedSlotRecheckInterval;
+			continue;
+		}
+		const bool bChanged = !bHasPacketNumber[Slot] || State.dwPacketNumber != LastPacketNumbers[Slot];
+		LastPacketNumbers[Slot] = State.dwPacketNumber;
+		bHasPacketNumber[Slot] = true;
+		if (bChanged) { ChangedSlot = Slot; ++ChangedCount; }
+		if (TAGamepadBrand::IsHeld(State.Gamepad, Key))
+		{
+			HeldSlot = Slot; ++HeldCount;
+			if (bChanged) { HeldChangedSlot = Slot; ++HeldChangedCount; }
+		}
+	}
+	if (HeldCount == 1) return HeldSlot;
+	if (HeldCount > 1) return HeldChangedCount == 1 ? HeldChangedSlot : INDEX_NONE;
+	return ChangedCount == 1 ? ChangedSlot : INDEX_NONE;
+#else
+	return INDEX_NONE;
+#endif
 }
 
 ETAGamepadBrand FTAGamepadBrandResolver::FromSteamInputType(int32 SteamInputType)

@@ -95,14 +95,14 @@ bool FTAScopedNavigationTest::RunTest(const FString&)
 
 	int32 Clicks = 0;
 	Target->SetOnClicked(FOnClicked::CreateLambda([&Clicks]() { ++Clicks; return FReply::Handled(); }));
-	for (const FKey Input : {EKeys::Enter, EKeys::SpaceBar, EKeys::Virtual_Accept})
+	for (const FKey Input : {EKeys::Enter, EKeys::SpaceBar, EKeys::Virtual_Gamepad_Accept.GetVirtualKey()})
 	{
 		const FKeyEvent Accept(Input, FModifierKeysState(), 0, false, 0, 0);
 		Target->OnKeyDown(FGeometry(), Accept);
 		Target->OnKeyUp(FGeometry(), Accept);
 	}
 	TestEqual(TEXT("Enter, Space and virtual Accept still click"), Clicks, 3);
-	for (const FKey Input : {EKeys::Escape, EKeys::Virtual_Back})
+	for (const FKey Input : {EKeys::Escape, EKeys::Virtual_Gamepad_Back.GetVirtualKey()})
 		TestTrue(TEXT("Back action classification unchanged"), Slate.GetNavigationActionFromKey(
 			FKeyEvent(Input, FModifierKeysState(), 0, false, 0, 0)) == EUINavigationAction::Back);
 	TestTrue(TEXT("Direct receiver/presentation focus is not navigation"), Slate.SetUserFocus(0, Source, EFocusCause::SetDirectly));

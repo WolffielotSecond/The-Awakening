@@ -82,7 +82,7 @@ bool FTAInputDeviceDetector::HandleKeyDownEvent(FSlateApplication& SoftApp, cons
 			DeadZoneAcceptedPresses.Add(Key);
 			bRepeat = false;
 		}
-		Owner->NotifyRawInputKey(Key);
+		Owner->NotifyRawInputKey(Key, InKeyEvent.GetInputDeviceId());
 		Owner->RecordHeldInput(Key, 1.f, InKeyEvent.GetUserIndex());
 		if (Owner->ShouldForwardEnhancedUIKey(Key))
 		{
@@ -142,7 +142,7 @@ bool FTAInputDeviceDetector::HandleAnalogInputEvent(FSlateApplication& SoftApp, 
 		return true;
 	}
 	if (!Owner->ObserveAnalogInput(Key, InAnalogInputEvent.GetAnalogValue(), InAnalogInputEvent.GetUserIndex(),
-		Owner->GetPlayerInputOwnershipState())) return false;
+		Owner->GetPlayerInputOwnershipState(), InAnalogInputEvent.GetInputDeviceId())) return false;
 	if ((!Owner->AllowsInput(ETAInputCapability::Cursor) && !Owner->AllowsInput(ETAInputCapability::Pan)) || !Key.IsGamepadKey())
 	{
 		return false;
@@ -181,7 +181,7 @@ bool FTAInputDeviceDetector::HandleMouseButtonDownEvent(FSlateApplication& SoftA
 	}
 	if (Owner)
 	{
-		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton());
+		Owner->NotifyRawInputKey(MouseEvent.GetEffectingButton(), MouseEvent.GetInputDeviceId());
 		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton) Owner->NotifyCursorButton(true);
 		Owner->RecordHeldInput(MouseEvent.GetEffectingButton(), 1.f, MouseEvent.GetUserIndex());
 		if (Owner->ShouldForwardEnhancedUIKey(MouseEvent.GetEffectingButton()))
@@ -357,7 +357,7 @@ void AThe_AwakeningPlayerController::ShowLocationReveal(FText ChapterText, FText
  LocationRevealWidget->ShowLocationReveal(ChapterText,LocationText,Force);
 }
 
-void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
+void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key, FInputDeviceId Device)
 {
 	if (bSimulatingSyntheticLeftMouseClick && Key == EKeys::LeftMouseButton)
 	{
@@ -367,7 +367,7 @@ void AThe_AwakeningPlayerController::NotifyRawInputKey(const FKey& Key)
 	{
 		if (UTAInputIconSubsystem* IconSys = GI->GetSubsystem<UTAInputIconSubsystem>())
 		{
-			IconSys->NotifyInputKey(Key);
+			IconSys->NotifyInputKeyFromDevice(Key, Device);
 		}
 	}
 }
@@ -638,14 +638,14 @@ TAInputOwnershipAdapter::EState AThe_AwakeningPlayerController::GetPlayerInputOw
 }
 
 bool AThe_AwakeningPlayerController::ObserveAnalogInput(FKey Key, float Value, int32 UserIndex,
-	TAInputOwnershipAdapter::EState State)
+	TAInputOwnershipAdapter::EState State, FInputDeviceId Device)
 {
 	ObservePlayerInputOwnership(State);
 	if (State != TAInputOwnershipAdapter::EState::Owned) return false;
 	bool bIgnored = false;
 	const float Filtered = GamepadDeadZone.Filter(Key, Value, bIgnored);
 	// Drift inside the inner dead zone never switches the active input device.
-	if (!bIgnored) NotifyRawInputKey(Key);
+	if (!bIgnored) NotifyRawInputKey(Key, Device);
 	RecordHeldInput(Key, Filtered, UserIndex);
 	// A radial dead zone changes both axes; Slate only reports the axis that moved.
 	const FKey OtherAxis = FTAGamepadDeadZone::GetOtherStickAxis(Key);
@@ -792,7 +792,7 @@ bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		// Enhanced Input receives the dead-zone filtered value; mapping modifiers no longer add their own.
 		bool bIgnored = false;
 		Args.AmountDepressed = GamepadDeadZone.Filter(Args.Key, Params.AmountDepressed, bIgnored);
-		if (!bIgnored) NotifyRawInputKey(Args.Key);
+		if (!bIgnored) NotifyRawInputKey(Args.Key, Args.InputDevice);
 		const bool bResult = Super::InputKey(Args);
 		const FKey OtherAxis = FTAGamepadDeadZone::GetOtherStickAxis(Args.Key);
 		if (OtherAxis.IsValid())
@@ -819,7 +819,7 @@ bool AThe_AwakeningPlayerController::InputKey(const FInputKeyEventArgs& Params)
 	}
 	if (Args.Key.IsValid())
 	{
-		NotifyRawInputKey(Args.Key);
+		NotifyRawInputKey(Args.Key, Args.InputDevice);
 	}
 	return Super::InputKey(Args);
 }

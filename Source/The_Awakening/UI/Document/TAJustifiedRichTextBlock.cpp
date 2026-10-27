@@ -1,6 +1,7 @@
 #include "UI/Document/TAJustifiedRichTextBlock.h"
 #include "UI/Document/TAJustifiedTextLayout.h"
 #include "Framework/Text/ILayoutBlock.h"
+#include "Framework/Text/SlateAsyncFontLoadingTypes.h"
 #include "Framework/Text/RichTextLayoutMarshaller.h"
 #include "Styling/SlateStyle.h"
 #include "Widgets/Text/SRichTextBlock.h"
@@ -65,6 +66,15 @@ void FTAJustifiedTextLayout::EndLayout()
 		TextLayoutSize.WrappedWidth = FMath::Max(TextLayoutSize.WrappedWidth, TextLayoutSize.DrawWidth);
 	}
 	FSlateTextLayout::EndLayout();
+}
+
+void FTAJustifiedTextLayout::HandleAllFontFacesFinishLoading()
+{
+	// Mirrors FSlateTextLayout::HandleAllFontFacesFinishLoading.
+	if (const TSharedPtr<FSlateTextLayoutPendingFontFacesLoadingMetaData> MetaData = GetChildren()->GetOwner().GetMetaData<FSlateTextLayoutPendingFontFacesLoadingMetaData>())
+	{
+		MetaData->OnAllFontFacesFinishLoading.ExecuteIfBound();
+	}
 }
 
 TSharedRef<SWidget> UTAJustifiedRichTextBlock::RebuildWidget()
