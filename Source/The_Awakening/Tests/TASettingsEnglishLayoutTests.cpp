@@ -38,7 +38,7 @@ bool FTASettingsEnglishLayoutTest::RunTest(const FString&)
  auto* Local=NewObject<ULocalPlayer>(GEngine); Local->PlayerController=PC; PC->Player=Local; World->AddController(PC);
  for (const TCHAR* Name:{TEXT("WBP_SettingChoice"),TEXT("WBP_SettingSlider"),TEXT("WBP_SettingToggle"),TEXT("WBP_SettingSubmenu")})
  {
-  const FString Path=FString::Printf(TEXT("/Game/UI/Setting/%s.%s_C"),Name,Name);
+  const FString Path=FString::Printf(TEXT("/Game/UI/Settings/%s.%s_C"),Name,Name);
   auto* Class=LoadClass<UTASettingRowWidget>(nullptr,*Path);
   auto* Row=Class?CreateWidget<UTASettingRowWidget>(PC,Class):nullptr;
   if (!TestNotNull(Name,Row)) return false;
@@ -81,7 +81,7 @@ bool FTASettingsEnglishLayoutTest::RunTest(const FString&)
    for (const auto& Control:Controls) TestTrue(TEXT("Chinese control alignment restored"),Control.Key->GetVerticalAlignment()==Control.Value);
   }
  }
- auto* PageClass=LoadClass<UTASettingsPageWidget>(nullptr,TEXT("/Game/UI/Setting/WBP_SettingsPage.WBP_SettingsPage_C"));
+ auto* PageClass=LoadClass<UTASettingsPageWidget>(nullptr,TEXT("/Game/UI/Settings/WBP_SettingsPage.WBP_SettingsPage_C"));
  auto* Page=PageClass?CreateWidget<UTASettingsPageWidget>(PC,PageClass):nullptr;
  if (!TestNotNull(TEXT("Real page template"),Page)) return false;
  auto* Label=Cast<UTextBlock>(Page->GetWidgetFromName(TEXT("Text_Name")));
@@ -96,7 +96,7 @@ bool FTASettingsEnglishLayoutTest::RunTest(const FString&)
  TestTrue(TEXT("Page font unchanged"),Label->GetFont()==PageFont);
  Page->Configure(PageDefinition,FText::GetEmpty(),false,false);
  TestTrue(TEXT("Chinese page layout restored"),Content->GetPadding()==PagePadding && Content->GetHorizontalAlignment()==PageAlignment && Label->GetAutoWrapText()==PageWrap);
- auto* MenuClass=LoadClass<UTASettingsMenuWidget>(nullptr,TEXT("/Game/UI/Setting/WBP_SettingsMenu.WBP_SettingsMenu_C"));
+ auto* MenuClass=LoadClass<UTASettingsMenuWidget>(nullptr,TEXT("/Game/UI/Settings/WBP_SettingsMenu.WBP_SettingsMenu_C"));
  auto* Menu=MenuClass?CreateWidget<UTASettingsMenuWidget>(PC,MenuClass):nullptr;
  if (!TestNotNull(TEXT("Real settings menu template"),Menu)) return false;
  Menu->InitializeResetHoldVisual();
@@ -165,7 +165,7 @@ bool FTAEnglishUIBoundsTest::RunTest(const FString&)
  auto* PC=PCClass?World->SpawnActor<AThe_AwakeningPlayerController>(PCClass):nullptr;
  if (!TestNotNull(TEXT("Player controller"),PC)) return false;
  auto* Local=NewObject<ULocalPlayer>(GEngine); Local->PlayerController=PC; PC->Player=Local; World->AddController(PC);
- auto* RowClass=LoadClass<UTASettingRowWidget>(nullptr,TEXT("/Game/UI/Setting/WBP_SettingSlider.WBP_SettingSlider_C"));
+ auto* RowClass=LoadClass<UTASettingRowWidget>(nullptr,TEXT("/Game/UI/Settings/WBP_SettingSlider.WBP_SettingSlider_C"));
  auto* Row=RowClass?CreateWidget<UTASettingRowWidget>(PC,RowClass):nullptr;
  if (!TestNotNull(TEXT("Real slider row"),Row)) return false;
  auto* Name=Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Name")));

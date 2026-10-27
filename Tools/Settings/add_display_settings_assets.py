@@ -4,7 +4,7 @@ from pathlib import Path
 import unreal
 
 library = unreal.EditorAssetLibrary
-asset = library.load_asset('/Game/Setting/DA_Settings')
+asset = library.load_asset('/Game/Settings/DA_Settings')
 assert asset
 draft = unreal.new_object(unreal.TASettingsDefinitionAsset)
 draft.call_method('PopulateDefaultDefinitions')

@@ -100,7 +100,7 @@
 
 默认文本（`DA_Document_Sample01`、`DA_Document_Sample02`）已统一为 67 文档的 `SK_A4_Paper_With_Fold`、`DA_PaperPresentation` 及四种展示变换。它们在书中保持折叠，取出后展开，支持旋转并折叠归位；场景和拾取预览也复用同一套纸张。各自的 ID、标题、正文、扫描介绍、图标和正文插图保留。纸面初始使用 6767676767 的默认正反材质；之后用每份 Document DataAsset 的 `Paper Front Material` / `Paper Back Material` 独立更换，不必复制模型，也不必修改共享网格材质。转译显示各文本自己的内容。未使用 Document_Extract / Document_Insert。
 
-`-run=TAPaperSetup -UnifyDefaults` 可重复同步默认示例和使用空模型/棍母兜底模型的文本；变更前备份至 `Saved/DocumentPresentationBackups/<时间>/Game/...`，独立定制模型不变。加 `-Verify` 只检查、不保存。新增文本可复制现有默认示例并修改 ID 与本地化字段，保留共享 Presentation；需要独立外观时再替换模型和贴图。
+`-run=TAPaperSetup -UnifyDefaults` 可重复同步默认示例和使用空模型/兜底材质（M_MissingMaterialFallback）的文本；变更前备份至 `Saved/DocumentPresentationBackups/<时间>/Game/...`，独立定制模型不变。加 `-Verify` 只检查、不保存。新增文本可复制现有默认示例并修改 ID 与本地化字段，保留共享 Presentation；需要独立外观时再替换模型和贴图。
 
 评估入口：PIE → 背包 → 日记本 →「查看内容」。没有日记本时用 `TAGiveDiary`，收集至少两份文档后测试前后翻页。`-run=TADocumentUI -RebuildDiaryOnly` 仅备份并重建日记布局。
 
@@ -175,7 +175,7 @@
 | `UnifiedScanDescriptionTextId` | 统一介绍的本地化 ID，默认 `Doc_Scan_Unified` |
 | `ReaderWidgetClass` | 文本预览界面类 |
 
-项目设置 → Game → **The Awakening Items**（`UTAItemSettings`）：物品、文本、衣服没设置图标时的默认图标（`/Game/DeubgItem/棍母`），模型材质丢失时的兜底材质（`棍母_Mat`）。运行时兜底，不改资产。
+项目设置 → Game → **The Awakening Items**（`UTAItemSettings`）：物品、文本、衣服没设置图标时的默认图标（`/Game/UI/Common/T_DefaultItemIcon`），模型材质丢失时的兜底材质（`/Game/Materials/Common/M_MissingMaterialFallback`）。运行时兜底，不改资产。
 
 ## 输入
 

@@ -7,8 +7,8 @@
 UTAItemSettings::UTAItemSettings()
 {
 	// 默认值写在这里（资源名含中文，避免依赖 ini 的编码）；项目设置里改过的值会覆盖它们
-	DefaultItemIcon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/DeubgItem/棍母.棍母")));
-	MissingMaterialFallback = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/DeubgItem/棍母_Mat.棍母_Mat")));
+	DefaultItemIcon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/UI/Common/T_DefaultItemIcon.T_DefaultItemIcon")));
+	MissingMaterialFallback = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Materials/Common/M_MissingMaterialFallback.M_MissingMaterialFallback")));
 }
 
 UTexture2D* UTAItemSettings::ResolveIcon(UTexture2D* Icon)

@@ -73,7 +73,7 @@ UTAQTESetupCommandlet::UTAQTESetupCommandlet()
 int32 UTAQTESetupCommandlet::Main(const FString&)
 {
  bool bOk = Material(TEXT("/Game/UI/QTE/M_QTERing"),false) && Material(TEXT("/Game/UI/QTE/M_QTEKeyFlip"),true);
- const FString Root=TEXT("/Game/DeubgItem/QTE/");
+ const FString Root=TEXT("/Game/Gameplay/QTE/");
  TArray<UInputAction*> Primary;
  for (const TCHAR* Name : {TEXT("IA_QTE_E"),TEXT("IA_QTE_MouseLeft"),TEXT("IA_QTE_MouseRight"),TEXT("IA_QTE_F"),TEXT("IA_QTE_Q")})
  { auto* A=Asset<UInputAction>(Root+Name); if (!A) return 1; A->ValueType=EInputActionValueType::Boolean; if(!SaveQTEAsset(A)) return 1; Primary.Add(A); }
@@ -117,12 +117,12 @@ int32 UTAQTESetupCommandlet::Main(const FString&)
    bOk &= SaveQTEAsset(Existing);
   }
  }
- const FString BPPath=TEXT("/Game/DeubgItem/TA_Debug_QTE_Tester");
+ const FString BPPath=TEXT("/Game/Gameplay/QTE/Debug/TA_Debug_QTE_Tester");
  if(!FPackageName::DoesPackageExist(BPPath))
  {
   auto* BP=FKismetEditorUtilities::CreateBlueprint(ATADebugQTETester::StaticClass(),CreatePackage(*BPPath),TEXT("TA_Debug_QTE_Tester"),BPTYPE_Normal,UBlueprint::StaticClass(),UBlueprintGeneratedClass::StaticClass());
   FAssetRegistryModule::AssetCreated(BP); bOk &= SaveQTEAsset(BP);
  }
- UE_LOG(LogTemp,Display,TEXT("QTE setup %s: /Game/DeubgItem/TA_Debug_QTE_Tester; use TASpawnQTE in PIE."),bOk?TEXT("OK"):TEXT("FAILED"));
+ UE_LOG(LogTemp,Display,TEXT("QTE setup %s: /Game/Gameplay/QTE/Debug/TA_Debug_QTE_Tester; use TASpawnQTE in PIE."),bOk?TEXT("OK"):TEXT("FAILED"));
  return bOk?0:1;
 }

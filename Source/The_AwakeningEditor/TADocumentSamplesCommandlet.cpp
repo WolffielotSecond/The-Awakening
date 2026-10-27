@@ -51,7 +51,7 @@ UTADocumentSamplesCommandlet::UTADocumentSamplesCommandlet()
 int32 UTADocumentSamplesCommandlet::Main(const FString& Params)
 {
 	bool bOk = true;
-	CreateAsset<UTAItemDefinition>(TEXT("/Game/Document/DA_Item_Diary"), [](UTAItemDefinition& Item)
+	CreateAsset<UTAItemDefinition>(TEXT("/Game/Data/Items/DA_Item_Diary"), [](UTAItemDefinition& Item)
 	{
 		// 物品名称字段存放本地化 ID，与现有物品一致
 		Item.DisplayName = FText::AsCultureInvariant(TEXT("Item_Diary_Name"));
@@ -111,7 +111,7 @@ int32 UTADocumentSamplesCommandlet::Main(const FString& Params)
 	{
 		if (!Doc->InlineImages.Contains(TEXT("photo")))
 		{
-			UTexture2D* Photo = LoadObject<UTexture2D>(nullptr, TEXT("/Game/DeubgItem/5751a89d24597722aa0e8db0-512.5751a89d24597722aa0e8db0-512"));
+			UTexture2D* Photo = LoadObject<UTexture2D>(nullptr, TEXT("/Game/_Dev/5751a89d24597722aa0e8db0-512.5751a89d24597722aa0e8db0-512"));
 			if (Photo)
 			{
 				Doc->InlineImages.Add(TEXT("photo"), Photo);
@@ -128,7 +128,7 @@ int32 UTADocumentSamplesCommandlet::Main(const FString& Params)
 	}
 	// 日记本做成地上可拾取的物品：基础世界物品，物品设为 DA_Item_Diary（没有模型时显示占位方块）
 	const TCHAR* DiaryPickupPath = TEXT("/Game/Document/BP_WorldItem_Diary");
-	UTAItemDefinition* Diary = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Document/DA_Item_Diary.DA_Item_Diary"));
+	UTAItemDefinition* Diary = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Data/Items/DA_Item_Diary.DA_Item_Diary"));
 	if (!LoadObject<UBlueprint>(nullptr, TEXT("/Game/Document/BP_WorldItem_Diary.BP_WorldItem_Diary")) && Diary)
 	{
 		UPackage* Package = CreatePackage(DiaryPickupPath);
@@ -162,8 +162,8 @@ int32 UTADocumentSamplesCommandlet::Main(const FString& Params)
 		bOk &= UPackage::SavePackage(Item->GetOutermost(), Item, *Filename, Args);
 		UE_LOG(LogTADocumentSamples, Display, TEXT("%s now drops as %s."), *Item->GetName(), *WorldClass->GetName());
 	};
-	LinkWorldItem(TEXT("/Game/DeubgItem/DA_Item_Herb.DA_Item_Herb"), TEXT("/Game/DeubgItem/BP_WorldItem_Herb.BP_WorldItem_Herb_C"));
-	LinkWorldItem(TEXT("/Game/DeubgItem/DA_Item_Keycard.DA_Item_Keycard"), TEXT("/Game/DeubgItem/BP_WorldItem_Keycard.BP_WorldItem_Keycard_C"));
-	LinkWorldItem(TEXT("/Game/DeubgItem/DA_Money.DA_Money"), TEXT("/Game/DeubgItem/BP_WorldItem_Money.BP_WorldItem_Money_C"));
+	LinkWorldItem(TEXT("/Game/Data/Items/DA_Item_Herb.DA_Item_Herb"), TEXT("/Game/_Dev/BP_WorldItem_Herb.BP_WorldItem_Herb_C"));
+	LinkWorldItem(TEXT("/Game/Data/Items/DA_Item_Keycard.DA_Item_Keycard"), TEXT("/Game/_Dev/BP_WorldItem_Keycard.BP_WorldItem_Keycard_C"));
+	LinkWorldItem(TEXT("/Game/Data/Items/DA_Money.DA_Money"), TEXT("/Game/_Dev/BP_WorldItem_Money.BP_WorldItem_Money_C"));
 	return bOk ? 0 : 1;
 }

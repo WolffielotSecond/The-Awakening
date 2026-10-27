@@ -14,7 +14,7 @@ library = unreal.EditorAssetLibrary
 def create_data_asset(name, cls):
     factory = unreal.DataAssetFactory()
     factory.set_editor_property("data_asset_class", cls)
-    return tools.create_asset(name, "/Game/Setting", cls, factory)
+    return tools.create_asset(name, "/Game/Settings", cls, factory)
 
 
 def text_block(text_id):
@@ -31,11 +31,11 @@ def image_block(texture):
     return block
 
 
-settings_path = "/Game/Setting/DA_Settings"
+settings_path = "/Game/Settings/DA_Settings"
 if library.does_asset_exist(settings_path):
     raise RuntimeError("DA_Settings already exists; refusing to replace editable definitions.")
 
-pages = library.load_asset("/Game/Setting/DA_SettingsPages")
+pages = library.load_asset("/Game/Settings/DA_SettingsPages")
 if not pages:
     pages = create_data_asset("DA_SettingsPages", unreal.TASettingsPageDefinitionAsset)
     pages.call_method("PopulateDefaultPages")
@@ -70,18 +70,18 @@ for definition in definitions:
 tasks = []
 for name in ("T_SettingsWide", "T_SettingsTall"):
     task = unreal.AssetImportTask()
-    task.set_editor_property("filename", str(ROOT / "Content/Setting/TestImages" / (name + ".png")))
-    task.set_editor_property("destination_path", "/Game/Setting/TestImages")
+    task.set_editor_property("filename", str(ROOT / "Content/Settings/TestImages" / (name + ".png")))
+    task.set_editor_property("destination_path", "/Game/Settings/TestImages")
     task.set_editor_property("destination_name", name)
     task.set_editor_property("automated", True)
     task.set_editor_property("replace_existing", False)
     task.set_editor_property("save", True)
-    if not library.does_asset_exist("/Game/Setting/TestImages/" + name):
+    if not library.does_asset_exist("/Game/Settings/TestImages/" + name):
         tasks.append(task)
 if tasks:
     tools.import_asset_tasks(tasks)
-wide = library.load_asset("/Game/Setting/TestImages/T_SettingsWide")
-tall = library.load_asset("/Game/Setting/TestImages/T_SettingsTall")
+wide = library.load_asset("/Game/Settings/TestImages/T_SettingsWide")
+tall = library.load_asset("/Game/Settings/TestImages/T_SettingsTall")
 assert wide and tall
 for texture in (wide, tall):
     texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_EDITOR_ICON)

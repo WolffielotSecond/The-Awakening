@@ -60,7 +60,7 @@
 
 组件基础设置：
 
-- Action Template 初次保留 `/Game/DeubgItem/QTE/DA_Debug_QTE_Pipe`；提供 IMC、交互 IA 候选池、对齐、距离及可选 CompletionEvent。候选池来自模板首个 Press / Mash 阶段。
+- Action Template 初次保留 `/Game/Gameplay/QTE/DA_Debug_QTE_Pipe`；提供 IMC、交互 IA 候选池、对齐、距离及可选 CompletionEvent。候选池来自模板首个 Press / Mash 阶段。
 - Direction Actions 保留四项顺序：上 `IA_MoveForward`、下 `IA_MoveBackward`、左 `IA_MoveLeft`、右 `IA_MoveRight`。
 - Key Flip Duration 默认 0.2 秒；Exit Input Buffer Seconds 默认 0.2 秒。
 - 在自定义 OnInteract 中启动 QTE 时，InteractionBehavior 的 Execute Configured Behavior 保持关闭。
@@ -147,7 +147,7 @@ Generate QTE 的 `On Finished` 可选绑定另一个签名：`bSucceeded: Boolea
 
 ## 9. 快速测试与源码
 
-现有调试物体：`/Game/DeubgItem/TA_Debug_QTE_Tester`，可拖入关卡；PIE 控制台 `TASpawnQTE` 可在玩家前生成测试物体。原目录拼写为 DeubgItem。
+现有调试物体：`/Game/Gameplay/QTE/Debug/TA_Debug_QTE_Tester`，可拖入关卡；PIE 控制台 `TASpawnQTE` 可在玩家前生成测试物体。
 
 C++ 子类继承 `ATAInteractableActor`，重写 `OnInteract_Implementation(AActor*)`；需要自定义可选中状态时重写 `CanInteract_Implementation` 并结合父类结果。QTE 调用与 Blueprint 使用同一个 `UTAQTESequenceComponent`。
 

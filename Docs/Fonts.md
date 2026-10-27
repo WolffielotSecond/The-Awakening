@@ -75,7 +75,7 @@ Affected blueprints:
 - UI/Minigame: WBP_TestPuzzle
 - UI/Pause: WBP_PauseMenuOption
 - UI/Scan: WBP_ScanInfo
-- UI/Setting: WBP_SettingChoice, WBP_SettingSlider, WBP_SettingSubmenu,
+- UI/Settings: WBP_SettingChoice, WBP_SettingSlider, WBP_SettingSubmenu,
   WBP_SettingToggle, WBP_SettingsDescriptionBlock, WBP_SettingsMenu,
   WBP_SettingsPage, WBP_SettingsSection
 - UI: WBP_ActionPrompt, WBP_InteractPrompt

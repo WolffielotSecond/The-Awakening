@@ -11,8 +11,8 @@
 完成项目编译并重启 Unreal 编辑器，确认可以找到本文列出的 C++ 父类。建议使用以下目录；后面的路径示例按此填写：
 
 ```text
-Content/Setting/        数据资产，对应 /Game/Setting
-Content/UI/Setting/     设置界面 WBP，对应 /Game/UI/Setting
+Content/Settings/        数据资产，对应 /Game/Settings
+Content/UI/Settings/     设置界面 WBP，对应 /Game/UI/Settings
 ```
 
 需要创建 5 个数据资产、12 个 WBP。按下表顺序创建，后面的步骤会引用前面的资产：
@@ -20,22 +20,22 @@ Content/UI/Setting/     设置界面 WBP，对应 /Game/UI/Setting
 | 顺序 | 资产 | 类型／父类 | 建议目录 |
 | --- | --- | --- | --- |
 | 1 | DA_SettingsPages | TASettingsPageDefinitionAsset | Setting |
-| 2 | WBP_SettingsPage | TASettingsPageWidget | UI/Setting |
-| 3 | WBP_SettingsSection | TASettingsSectionWidget | UI/Setting |
-| 4 | WBP_SettingToggle | TAToggleSettingRowWidget | UI/Setting |
-| 5 | WBP_SettingChoice | TAChoiceSettingRowWidget | UI/Setting |
-| 6 | v | TASliderSettingRowWidget | UI/Setting |
-| 7 | WBP_SettingSubmenu | TASubmenuSettingRowWidget | UI/Setting |
+| 2 | WBP_SettingsPage | TASettingsPageWidget | UI/Settings |
+| 3 | WBP_SettingsSection | TASettingsSectionWidget | UI/Settings |
+| 4 | WBP_SettingToggle | TAToggleSettingRowWidget | UI/Settings |
+| 5 | WBP_SettingChoice | TAChoiceSettingRowWidget | UI/Settings |
+| 6 | v | TASliderSettingRowWidget | UI/Settings |
+| 7 | WBP_SettingSubmenu | TASubmenuSettingRowWidget | UI/Settings |
 | 8 | DA_MenuBrightness | TASettingsMenuDefinitionAsset | Setting |
 | 9 | DA_MenuKeyboardBindings | TASettingsMenuDefinitionAsset | Setting |
 | 10 | DA_MenuControllerBindings | TASettingsMenuDefinitionAsset | Setting |
-| 11 | WBP_SettingsBrightness | TABrightnessMenuWidget | UI/Setting |
-| 12 | WBP_SettingsKeyboardBindings | TAKeyBindingsMenuWidget | UI/Setting |
-| 13 | WBP_SettingsControllerBindings | TAKeyBindingsMenuWidget | UI/Setting |
-| 13a | WBP_SettingsDescriptionBlock | TASettingsDescriptionBlockWidget | UI/Setting |
-| 14 | WBP_SettingsMenu | TASettingsMenuWidget | UI/Setting |
+| 11 | WBP_SettingsBrightness | TABrightnessMenuWidget | UI/Settings |
+| 12 | WBP_SettingsKeyboardBindings | TAKeyBindingsMenuWidget | UI/Settings |
+| 13 | WBP_SettingsControllerBindings | TAKeyBindingsMenuWidget | UI/Settings |
+| 13a | WBP_SettingsDescriptionBlock | TASettingsDescriptionBlockWidget | UI/Settings |
+| 14 | WBP_SettingsMenu | TASettingsMenuWidget | UI/Settings |
 | 15 | DA_Settings | TASettingsDefinitionAsset | Setting |
-| 16 | WBP_AdvancedData | TAAdvancedDataWidget | UI/Setting |
+| 16 | WBP_AdvancedData | TAAdvancedDataWidget | UI/Settings |
 
 统一按键提示使用项目已有的 `/Game/UI/WBP_ActionPrompt`，无需新建提示系统。
 
@@ -47,7 +47,7 @@ Content/UI/Setting/     设置界面 WBP，对应 /Game/UI/Setting
 
 ## 2. 创建页面与子标题数据
 
-在 `/Game/Setting` 创建 `DA_SettingsPages`，类型为 `TASettingsPageDefinitionAsset`。
+在 `/Game/Settings` 创建 `DA_SettingsPages`，类型为 `TASettingsPageDefinitionAsset`。
 
 打开资产，在 Details 中点击 **Populate Default Pages**，生成五个普通页面及子标题。该按钮用于首次生成数据，之后在数组中编辑内容即可。
 
@@ -172,7 +172,7 @@ C++ 根据收藏状态切换图片；点击星星直接切换收藏，不触发�
 
 ## 6. 创建三个二级菜单定义资产
 
-在 `/Game/Setting` 创建以下三个 Data Asset，类型均为 `TASettingsMenuDefinitionAsset`：
+在 `/Game/Settings` 创建以下三个 Data Asset，类型均为 `TASettingsMenuDefinitionAsset`：
 
 | 资产 | MenuId | TitleTextId | MenuKind |
 | --- | --- | --- | --- |
@@ -338,7 +338,7 @@ DescriptionBlocks 为空时，图文区自动使用原有 DescriptionTextId 生�
 
 ## 10. 创建完整设置定义资产
 
-在 `/Game/Setting` 创建 `DA_Settings`，类型为 `TASettingsDefinitionAsset`。
+在 `/Game/Settings` 创建 `DA_Settings`，类型为 `TASettingsDefinitionAsset`。
 
 1. 设置 **PageDefinitionAsset = DA_SettingsPages**。
 2. 点击 **Populate Default Definitions**，生成当前支持的设置、默认参数和归属。
@@ -398,7 +398,7 @@ Populate Default Definitions 会重置 Definitions 及其目标 WBP 引用。首
 
 ```ini
 [TheAwakening.PlayerSettings]
-DefinitionAsset=/Game/Setting/DA_Settings.DA_Settings
+DefinitionAsset=/Game/Settings/DA_Settings.DA_Settings
 ```
 
 如果资产放在不同目录，请替换成实际对象路径。这里是数据资产对象路径，不是 Windows 文件路径，也不是 WBP 的 _C 类路径。
@@ -466,8 +466,8 @@ SaveFormatVersion=1
 DA_Settings 通过配置字符串加载。到 Project Settings → Packaging → Additional Asset Directories to Cook，添加：
 
 ```text
-/Game/Setting
-/Game/UI/Setting
+/Game/Settings
+/Game/UI/Settings
 ```
 
 若采用其他目录，填写实际目录。这样数据资产和设置 WBP 会进入打包内容。
@@ -544,7 +544,7 @@ Choice 默认候选数组：
 
 ## 20. 当前已创建的测试设置（暂不使用二级菜单）
 
-`/Game/Setting/DA_Settings` 已创建，初始 12 项测试设置已增量加入 4 项显示设置；启动配置已指向它，玩家控制器 BP_ThirdPersonPlayerController 的 SettingsMenuWidgetClass 已指定 WBP_SettingsMenu。
+`/Game/Settings/DA_Settings` 已创建，初始 12 项测试设置已增量加入 4 项显示设置；启动配置已指向它，玩家控制器 BP_ThirdPersonPlayerController 的 SettingsMenuWidgetClass 已指定 WBP_SettingsMenu。
 
 | 页面 | 测试设置 |
 | --- | --- |
@@ -555,7 +555,7 @@ Choice 默认候选数组：
 
 声音页保持空页，收藏页由系统生成，没有添加二级菜单入口。这批数据用于验证普通设置行、显示参数联动、收藏和三栏说明。
 
-鼠标与键盘的相机灵敏度说明包含“文字 → 16:9 横图 → 补充文字 → 9:16 竖图”；控制器的相机灵敏度说明包含竖图。两张测试纹理位于 `/Game/Setting/TestImages`，用于检查图片是否始终占满右栏宽度且保持比例。
+鼠标与键盘的相机灵敏度说明包含“文字 → 16:9 横图 → 补充文字 → 9:16 竖图”；控制器的相机灵敏度说明包含竖图。两张测试纹理位于 `/Game/Settings/TestImages`，用于检查图片是否始终占满右栏宽度且保持比例。
 
 重新打开编辑器后运行 PIE，从暂停菜单打开设置。首次进入收藏页可能为空，请先点击其他页面。依次检查：
 
@@ -626,7 +626,7 @@ RS 操作先修改受范围约束的目标偏移，再使用 FInterpTo 平滑趋
 
 ## 22. 显示屏、显示模式、宽高比与分辨率
 
-四项均使用现有 WBP_SettingChoice，已加入 `/Game/Setting/DA_Settings` 的显示／画面子标题，无需新增设置行蓝图。
+四项均使用现有 WBP_SettingChoice，已加入 `/Game/Settings/DA_Settings` 的显示／画面子标题，无需新增设置行蓝图。
 
 | SettingId | 名称 | ChoiceProviderId／候选 | ApplyPolicy |
 | --- | --- | --- | --- |

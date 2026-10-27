@@ -18,7 +18,7 @@ Controller page, section `Settings.Section.Controller.DeadZone`, eight sliders i
 preview order: left trigger, left stick, right stick, right trigger, each min then max
 (`Controller.<Input>DeadZoneMin|Max`). They use `bStepByPhysicalValue`, so every
 adjustment moves exactly 1%. The rows exist in `FTASettingsCatalog::Build` and in
-`/Game/Setting/DA_Settings` (the asset replaces the catalog at runtime); the section is
+`/Game/Settings/DA_Settings` (the asset replaces the catalog at runtime); the section is
 also in `DA_SettingsPages`.
 
 ## Ingress (single source of truth)

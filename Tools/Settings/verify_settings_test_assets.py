@@ -2,7 +2,7 @@
 import unreal
 
 library = unreal.EditorAssetLibrary
-asset = library.load_asset("/Game/Setting/DA_Settings")
+asset = library.load_asset("/Game/Settings/DA_Settings")
 assert asset
 definitions = asset.get_editor_property("definitions")
 assert len(definitions) == 12
@@ -12,7 +12,7 @@ for d in definitions:
     assert len(d.get_editor_property("description_blocks")) >= 1
 unreal.log("SETTINGS_SAVED_CATALOG_VERIFIED: 12 settings, no submenus")
 
-menu_class = library.load_blueprint_class("/Game/UI/Setting/WBP_SettingsMenu")
+menu_class = library.load_blueprint_class("/Game/UI/Settings/WBP_SettingsMenu")
 assert menu_class
 menu = unreal.get_default_object(menu_class)
 for name in ("page_widget_class", "section_widget_class", "description_block_widget_class", "action_prompt_widget_class"):

@@ -30,7 +30,7 @@ pc = unreal.get_default_object(pc_class)
 assert pc.get_editor_property("settings_input_mapping_context") == context
 unreal.log("SETTINGS_IMC_VERIFIED: paused settings actions including ResetPage; keyboard has no item navigation or confirm")
 
-menu_class = library.load_blueprint_class("/Game/UI/Setting/WBP_SettingsMenu")
+menu_class = library.load_blueprint_class("/Game/UI/Settings/WBP_SettingsMenu")
 menu = unreal.get_default_object(menu_class)
 assert len(menu.get_editor_property("row_widget_classes")) == 4
 assert menu.get_editor_property("description_block_widget_class")

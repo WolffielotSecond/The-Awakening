@@ -290,7 +290,7 @@ bool FTASettingsMenuInputTest::RunTest(const FString&)
  auto* PC=PCClass?World->SpawnActor<AThe_AwakeningPlayerController>(PCClass):nullptr;
  if (!TestNotNull(TEXT("Real player controller"),PC)) return false;
  auto* Local=NewObject<ULocalPlayer>(GEngine); Local->PlayerController=PC; PC->Player=Local; World->AddController(PC);
- auto* Class=LoadClass<UTASettingsMenuWidget>(nullptr,TEXT("/Game/UI/Setting/WBP_SettingsMenu.WBP_SettingsMenu_C"));
+ auto* Class=LoadClass<UTASettingsMenuWidget>(nullptr,TEXT("/Game/UI/Settings/WBP_SettingsMenu.WBP_SettingsMenu_C"));
  auto* Menu=Class?CreateWidget<UTASettingsMenuWidget>(PC,Class):nullptr;
  if (!TestNotNull(TEXT("Real settings menu template"),Menu)) return false;
  Menu->InitializeMenu(PC,nullptr);
@@ -862,7 +862,7 @@ bool FTASettingsDialogTest::RunTest(const FString&)
 {
  TArray<FString> CookDirectories;
  GConfig->GetArray(TEXT("/Script/UnrealEd.ProjectPackagingSettings"),TEXT("DirectoriesToAlwaysCook"),CookDirectories,GGameIni);
- for (const TCHAR* Root:{TEXT("/Game/Setting"),TEXT("/Game/Input"),TEXT("/Game/UI")})
+ for (const TCHAR* Root:{TEXT("/Game/Settings"),TEXT("/Game/Input"),TEXT("/Game/UI")})
   TestTrue(FString::Printf(TEXT("Runtime settings resource root %s is cooked"),Root),
    CookDirectories.Contains(FString::Printf(TEXT("(Path=\"%s\")"),Root)));
  FTACommonDialogDefinition D;

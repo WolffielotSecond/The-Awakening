@@ -4,18 +4,18 @@
 
 ## 直接使用
 
-内容浏览器打开项目现有调试目录 `Content/DeubgItem/`，把 **TA_Debug_QTE_Tester** 拖入关卡。进入 PIE 后靠近并使用原交互键交互。也可以在 PIE 控制台执行 `TASpawnQTE`，在玩家前方生成一个测试物体。
+内容浏览器打开目录 `Content/Gameplay/QTE/Debug/`，把 **TA_Debug_QTE_Tester** 拖入关卡。进入 PIE 后靠近并使用原交互键交互。也可以在 PIE 控制台执行 `TASpawnQTE`，在玩家前方生成一个测试物体。
 
 每次交互启动一次独立 QTE。成功后物体标签显示 `QTE SUCCESS`，可再次交互重复测试；取消后可重试。`bLastSucceeded`、`SuccessfulRuns` 和 `OnTestEnded` 可在 Blueprint 中查看或绑定。
 
 ## 打包依赖
 
 默认 `Action Template` 是原生组件构造函数中通过软路径设置的
-`/Game/DeubgItem/QTE/DA_Debug_QTE_Pipe`。关卡中的原生 `TADebugQTETester` Actor 即使被 Cook，
+`/Game/Gameplay/QTE/DA_Debug_QTE_Pipe`。关卡中的原生 `TADebugQTETester` Actor 即使被 Cook，
 也不保证该默认路径会自动带入动作模板；缺少模板时，交互被调用但 QTE 无法启动。
 2026-10-24 排查时，Windows Cook 中存在测试器 Actor，缺少该模板、`IMC_QTE` 及专用交互 IA。
 
-`DefaultGame.ini` 已将 `/Game/DeubgItem/QTE` 加入 `DirectoriesToAlwaysCook`，包含两个模板、专用 IMC 和五个交互 IA。
+`DefaultGame.ini` 已将 `/Game/Gameplay/QTE` 加入 `DirectoriesToAlwaysCook`，包含两个模板、专用 IMC 和五个交互 IA。
 四个方向 IA 继续由已有 `/Game/Input` 范围覆盖，圆环与按键材质由 `/Game/UI` 覆盖；无需修改现有交互检测或另建按键流程。
 模板或方向资源加载失败会记录具体软路径；启动失败不持有运行状态或新增 QTE IMC，可再次尝试交互。
 修正配置后必须重新打包，已有导出包不会自动更新。
@@ -95,10 +95,10 @@ Blueprint 连线：
 
 ## 输入和显示资产
 
-- Blueprint：`/Game/DeubgItem/TA_Debug_QTE_Tester`
-- 默认动作：`/Game/DeubgItem/QTE/DA_Debug_QTE_Pipe`
-- 两阶段都随机：在组件 Steps 的第二项设 Direction = Random。底层动作资产示例仍有 `/Game/DeubgItem/QTE/DA_Debug_QTE_Random`。
-- 专用映射：`/Game/DeubgItem/QTE/IMC_QTE`
+- Blueprint：`/Game/Gameplay/QTE/Debug/TA_Debug_QTE_Tester`
+- 默认动作：`/Game/Gameplay/QTE/DA_Debug_QTE_Pipe`
+- 两阶段都随机：在组件 Steps 的第二项设 Direction = Random。底层动作资产示例仍有 `/Game/Gameplay/QTE/DA_Debug_QTE_Random`。
+- 专用映射：`/Game/Gameplay/QTE/IMC_QTE`
 - 交互按键池：5 个独立 Boolean IA，分别表示一个候选输入，避免选中左键却让右键 / E / F / Q 同时生效。
 - 方向复用已有 IA_MoveForward / Backward / Left / Right，每个方向的 WASD 与箭头别名映射到相同 IA。固定右方向使用已有 IA_MoveRight，没有另外实现物理按键监听。
 - 图标通过原 InputIconSubsystem 查询当前 IA 的实际映射，继续使用 `Textures/Keys` 资源；键盘优先显示单字符按键，保留箭头别名的执行能力。

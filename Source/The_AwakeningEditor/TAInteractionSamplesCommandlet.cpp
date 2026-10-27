@@ -98,7 +98,7 @@ int32 UTAInteractionSamplesCommandlet::Main(const FString&)
  bOk &= MakeActor(TEXT("BP_PoolEntrance"), [](UTAInteractionBehaviorComponent* C) { C->EventId = TEXT("Prologue.Pool"); });
  bOk &= MakeActor(TEXT("BP_PipeEntrance"), [&](UTAInteractionBehaviorComponent* C) { C->SpecialAction = Pipe; });
  // The original diary stays in its existing story slot and document flow; only add the acquisition tag.
- if (auto* Diary = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Document/DA_Item_Diary.DA_Item_Diary")))
+ if (auto* Diary = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Data/Items/DA_Item_Diary.DA_Item_Diary")))
  {
   if (!Diary->GrantedStoryTags.HasTagExact(TAGameplayTags::Story_Prologue_Diary))
   { Diary->GrantedStoryTags.AddTag(TAGameplayTags::Story_Prologue_Diary); bOk &= Save(Diary); }

@@ -41,7 +41,7 @@ no slot, querying every connected pad.
 `UTAInputIconSubsystem::SetGamepadIconStyle`. Xbox/DualSense override detection;
 keyboard/mouse prompts are never affected. Changes broadcast `OnInputPromptsChanged`.
 
-The runtime list comes from `/Game/Setting/DA_Settings`, which replaces the C++
+The runtime list comes from `/Game/Settings/DA_Settings`, which replaces the C++
 catalog entirely, so the row exists in both `FTASettingsCatalog::Build` and the
 asset. Do not run `PopulateDefaultDefinitions` on the asset: it resets every row.
 

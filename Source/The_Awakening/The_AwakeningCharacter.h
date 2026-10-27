@@ -227,7 +227,7 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTAInventoryPanelWidget> InventoryPanelInstance;
 
-	/** 拾取后屏幕右侧的提示。为空时用 /Game/UI/PickUp/WBP_PickupBanner */
+	/** 拾取后屏幕右侧的提示。为空时用 /Game/UI/Pickup/WBP_PickupBanner */
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UTAPickupBannerWidget> PickupBannerClass;
 

@@ -869,7 +869,7 @@ UTAPickupBannerWidget* AThe_AwakeningCharacter::GetPickupBanner()
 	{
 		return nullptr;
 	}
-	UClass* Class = PickupBannerClass ? PickupBannerClass.Get() : LoadClass<UTAPickupBannerWidget>(nullptr, TEXT("/Game/UI/PickUp/WBP_PickupBanner.WBP_PickupBanner_C"));
+	UClass* Class = PickupBannerClass ? PickupBannerClass.Get() : LoadClass<UTAPickupBannerWidget>(nullptr, TEXT("/Game/UI/Pickup/WBP_PickupBanner.WBP_PickupBanner_C"));
 	if (!Class)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("WBP_PickupBanner missing; run -run=TADocumentUI."));

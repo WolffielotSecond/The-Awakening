@@ -118,7 +118,7 @@ Prompt 仍由 UTAPromptComponent 驱动。动作活动时同一 Interact 分组�
 ### 钢管与最终分支
 
 1. 放置 BP_PipeEntrance。经 TAQTESetup 更新的 DA_PipeAction 保留四阶段：GrabPipe 动画、随机交互 IA 连按（每次 +15%、每秒 -5%、有效间隔 0.1 秒）、现有 IA_MoveRight 单次点按、DetachPipe 动画。也可在自己的交互 Actor 添加 QTESequence，使用 StartQTE 或 GenerateQTE 配置简化 Press / Mash 组合。
-2. 更新后的示例使用 /Game/DeubgItem/QTE/IMC_QTE：交互候选为 E / 左键 / 右键 / F / Q 的独立 IA 与手柄 X / Y；固定右方向为 D / 右箭头 / 手柄方向键右。物理键只出现在 IMC 资产配置，运行时只接受当前阶段选中的 IA。
+2. 更新后的示例使用 /Game/Gameplay/QTE/IMC_QTE：交互候选为 E / 左键 / 右键 / F / Q 的独立 IA 与手柄 X / Y；固定右方向为 D / 右箭头 / 手柄方向键右。物理键只出现在 IMC 资产配置，运行时只接受当前阶段选中的 IA。
 3. 根据场景调整 RelativeAlignment（示例目标局部 X=-80）、模型碰撞和距离。动画未配置时使用现有表现动作回退，可先验证输入。
 4. Director.Events 加入 DA_PipeAcquiredEvent。在 `ExecuteEvent(Chapter1.PipeAcquired)` 中通过原 Inventory.TryAddItem 发放临时武器，检查实际加入数量，成功才 Finish(Completed)，失败 Finish(Failed) 并恢复目标表现。这里不提交攻击分支。
 5. 另一个真正攻击 / 命中怪物的业务触发 DA_AttackEvent；吊机机关触发 DA_CraneEvent。二者共用 `Chapter1.MonsterOutcome` 互斥组；实际制伏完成后各自 Finish(Completed)，再提交 Morality 与最终结果。
@@ -159,7 +159,7 @@ Prompt 仍由 UTAPromptComponent 驱动。动作活动时同一 Interact 分组�
 
 见 [QTEDebugTester.md](QTEDebugTester.md)。现已提供可放置的 TA_Debug_QTE_Tester、带衰减及可调点击冷却的连按、单次点按、随机 IA 池、圆环、呼吸缩放和透视翻转；暂停菜单现在挂起并恢复 QTE，活动 QTE 拒绝存档。钢管示例方向阶段已改为复用 IA_MoveRight，支持 D / 右箭头 / 手柄方向键右；最终剧情事件时机保持不变。
 
-打包注意：原生 QTESequence 的默认模板为运行时软路径，`/Game/DeubgItem/QTE` 必须参与 Cook。
+打包注意：原生 QTESequence 的默认模板为运行时软路径，`/Game/Gameplay/QTE` 必须参与 Cook。
 2026-10-24 已补入 `DirectoriesToAlwaysCook` 并验证模板、IMC 和 IA 实际进入 Windows 产物；缺失资源不再静默返回，详情及验证记录见上述调试文档。
 
 

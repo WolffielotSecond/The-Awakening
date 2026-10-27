@@ -752,7 +752,7 @@ int32 UTADocumentUICommandlet::Main(const FString& Params)
 		[](UWidgetTree* Tree) { BuildItemInspectLayout(Tree); }, FParse::Param(*Params, TEXT("RebuildInspect")), bOk);
 
 	// 拾取提示
-	EnsureWidgetBlueprint(TEXT("/Game/UI/PickUp/WBP_PickupBanner"), UTAPickupBannerWidget::StaticClass(),
+	EnsureWidgetBlueprint(TEXT("/Game/UI/Pickup/WBP_PickupBanner"), UTAPickupBannerWidget::StaticClass(),
 		[](UWidgetTree* Tree) { BuildPickupBannerLayout(Tree); }, FParse::Param(*Params, TEXT("RebuildBanner")), bOk);
 	return bOk ? 0 : 1;
 }

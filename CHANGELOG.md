@@ -51,7 +51,7 @@
 - 示例数据：日记本物品 DA_Item_Diary（剧情槽 0）与示例文本 DA_Document_Sample01（长文）/ 02（含插图）及三种语言文本；编辑器命令行 -run=TADocumentSamples 生成。
 - 调试命令 TAGiveDiary、TADocList、TADocReset。
 - 预览台默认透明背景：以 SceneColorHDR 捕获，新增 UI 显示材质 M_UI_PreviewStage（GetDisplayMaterial 返回已绑定的材质实例）；编辑器命令行 -run=TAPreviewMaterial 生成该材质。
-- 项目设置 The Awakening Items：物品（含文本、衣服）没有图标时显示默认图标（DeubgItem/棍母）；世界物品和 3D 预览台上的模型丢失材质（槽位为空或引擎默认材质）时换成兜底材质（DeubgItem/棍母_Mat）。运行时兜底，不修改物品资产。
+- 项目设置 The Awakening Items：物品（含文本、衣服）没有图标时显示默认图标（UI/Common/T_DefaultItemIcon）；世界物品和 3D 预览台上的模型丢失材质（槽位为空或引擎默认材质）时换成兜底材质（Materials/Common/M_MissingMaterialFallback）。运行时兜底，不修改物品资产。
 - 文本扫描介绍统一为“一张写满了字的纸。”（项目设置 The Awakening Documents 的 bUseUnifiedScanDescription，可关闭改回各自的介绍）。
 - 新增文本 DA_Document_67（模型 SK_A4_Paper_With_Fold，三种语言的标题与正文）。
 - 拾取提示 TAPickupBannerWidget（WBP_PickupBanner）：物品进背包、文本收集后屏幕右侧滑入（0.5 秒）、停留、滑出（0.5 秒），共 5 秒，真实时间不受扫描时停影响；上方顺时针旋转的 3D 模型（每秒 180°），中间名称，下方“[背包键] 查看详细”；文本先显示标题 1.85 秒，淡出淡入 0.3 秒后显示正文前 20 字 + “...”（跳过图片标记）1.85 秒；显示中再拾取时当前条立即滑出、下一条滑入。钱不弹提示。

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import unreal
 
-asset = unreal.EditorAssetLibrary.load_asset('/Game/Setting/DA_Settings')
+asset = unreal.EditorAssetLibrary.load_asset('/Game/Settings/DA_Settings')
 assert asset
 draft = unreal.new_object(unreal.TASettingsDefinitionAsset)
 draft.call_method('PopulateDefaultDefinitions')

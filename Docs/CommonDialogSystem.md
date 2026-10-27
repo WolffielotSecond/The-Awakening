@@ -61,7 +61,7 @@ Overlay（铺满屏幕）
 
 主控制器会自动使用上述路径的 `WBP_CommonDialog`。如果需要替换模板，可在控制器蓝图 Class Defaults 中设置 `Common Dialog Widget Class`。`Common Dialog Input Mapping Context` 可指定弹窗 IMC；为空时加载默认 `IMC_CommonDialog`。
 
-打包版本还需要收录通过运行时路径加载的资源。`Config/DefaultGame.ini` 的 `DirectoriesToAlwaysCook` 已包含 `/Game/Setting`、`/Game/Input` 和 `/Game/UI`，确保设置数据、弹窗蓝图、弹窗 IMC 与按键动作进入 Build。修改这些配置或 C++ 后需重新打包；已有 Build 不会自动更新。输入模式同步带有重入保护，缺失可选 IMC 时也不会重复触发提示刷新。
+打包版本还需要收录通过运行时路径加载的资源。`Config/DefaultGame.ini` 的 `DirectoriesToAlwaysCook` 已包含 `/Game/Settings`、`/Game/Input` 和 `/Game/UI`，确保设置数据、弹窗蓝图、弹窗 IMC 与按键动作进入 Build。修改这些配置或 C++ 后需重新打包；已有 Build 不会自动更新。输入模式同步带有重入保护，缺失可选 IMC 时也不会重复触发提示刷新。
 
 ## 四、给设置菜单加应用按钮
 

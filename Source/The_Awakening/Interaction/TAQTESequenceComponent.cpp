@@ -7,7 +7,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogTAQTESequence, Log, All);
 UTAQTESequenceComponent::UTAQTESequenceComponent()
 {
  PrimaryComponentTick.bCanEverTick = false;
- ActionTemplate = TSoftObjectPtr<UTASpecialActionDefinition>(FSoftObjectPath(TEXT("/Game/DeubgItem/QTE/DA_Debug_QTE_Pipe.DA_Debug_QTE_Pipe")));
+ ActionTemplate = TSoftObjectPtr<UTASpecialActionDefinition>(FSoftObjectPath(TEXT("/Game/Gameplay/QTE/DA_Debug_QTE_Pipe.DA_Debug_QTE_Pipe")));
  for (const TCHAR* Name : {TEXT("IA_MoveForward"), TEXT("IA_MoveBackward"), TEXT("IA_MoveLeft"), TEXT("IA_MoveRight")})
   DirectionActions.Add(TSoftObjectPtr<UInputAction>(FSoftObjectPath(FString(TEXT("/Game/Input/Actions/")) + Name + TEXT(".") + Name)));
  Steps.AddDefaulted();

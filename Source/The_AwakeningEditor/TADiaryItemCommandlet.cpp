@@ -35,7 +35,7 @@ UTADiaryItemCommandlet::UTADiaryItemCommandlet()
 int32 UTADiaryItemCommandlet::Main(const FString& Params)
 {
 	const bool bVerify = FParse::Param(*Params, TEXT("Verify"));
-	auto* Item = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Document/DA_Item_Diary.DA_Item_Diary"));
+	auto* Item = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Data/Items/DA_Item_Diary.DA_Item_Diary"));
 	auto* Blueprint = LoadObject<UBlueprint>(nullptr, TEXT("/Game/Document/BP_WorldItem_Diary.BP_WorldItem_Diary"));
 	auto* Body = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Models/Diary/SK_Journal_Body.SK_Journal_Body"));
 	auto* Open = LoadObject<UAnimSequence>(nullptr, TEXT("/Game/Models/Diary/Book_Open.Book_Open"));

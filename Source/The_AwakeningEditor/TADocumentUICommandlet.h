@@ -10,7 +10,7 @@
  * - /Game/Input/Actions/UI/IA_ItemActions、IA_DiaryPreviousPage、IA_DiaryNextPage（Boolean）：只建动作，按键在 IMC_UI 中自行配置
  * - /Game/UI/Inventory/WBP_ItemActionMenu、WBP_ItemActionOption：物品交互菜单
  * - /Game/UI/Document/WBP_Diary：日记本
- * - /Game/UI/PickUp/WBP_PickupBanner：拾取提示（-RebuildBanner 重建）
+ * - /Game/UI/Pickup/WBP_PickupBanner：拾取提示（-RebuildBanner 重建）
  * - /Game/UI/Inventory/WBP_ItemInspect：物品检视（-RebuildInspect 重建）
  * - /Game/Input/Actions/UI/IA_QuantityDecrease、IA_QuantityIncrease（Boolean，按键自行配置）与 /Game/UI/Inventory/WBP_QuantityDialog：数量小窗口（-RebuildQuantity 重建）
  * 用法：UnrealEditor-Cmd The_Awakening.uproject -run=TADocumentUI [-Rebuild] [-RebuildMenu] [-RebuildDiary]

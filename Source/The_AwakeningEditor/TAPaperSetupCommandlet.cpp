@@ -50,7 +50,7 @@ namespace
 		{
 			if (Mesh->GetPathName().StartsWith(TEXT("/Engine/BasicShapes/")) || Mesh->GetName().Contains(TEXT("棍母"))) return true;
 			for (const FStaticMaterial& Material : Mesh->GetStaticMaterials())
-				if (Material.MaterialInterface && Material.MaterialInterface->GetName().Contains(TEXT("棍母"))) return true;
+				if (Material.MaterialInterface && Material.MaterialInterface->GetName().Contains(TEXT("M_MissingMaterialFallback"))) return true;
 		}
 		return false;
 	}

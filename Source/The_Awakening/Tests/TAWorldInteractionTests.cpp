@@ -281,7 +281,7 @@ bool FTAInteractionSamplesTest::RunTest(const FString&)
  TestEqual(TEXT("Pipe has animation, mash, direction, animation"), Action->Stages.Num(), 4);
  auto* Move = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_MoveRight.IA_MoveRight"));
  TestTrue(TEXT("Direction reuses existing right movement IA"), Action->Stages.IsValidIndex(2) && Action->Stages[2].Action == Move);
- auto* Diary = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Document/DA_Item_Diary.DA_Item_Diary"));
+ auto* Diary = LoadObject<UTAItemDefinition>(nullptr, TEXT("/Game/Data/Items/DA_Item_Diary.DA_Item_Diary"));
  TestTrue(TEXT("Original diary grants acquisition state"), Diary && Diary->GrantedStoryTags.HasTagExact(TAGameplayTags::Story_Prologue_Diary));
  TAWorldInteractionTests::FFixture F;
  auto* Actor = F.World->SpawnActor<AActor>();
@@ -299,7 +299,7 @@ bool FTAQTEPipeTest::RunTest(const FString&)
 {
  TArray<FString> CookDirectories;
  GConfig->GetArray(TEXT("/Script/UnrealEd.ProjectPackagingSettings"),TEXT("DirectoriesToAlwaysCook"),CookDirectories,GGameIni);
- TestTrue(TEXT("Native QTE template has an explicit cook root"),CookDirectories.Contains(TEXT("(Path=\"/Game/DeubgItem/QTE\")")));
+ TestTrue(TEXT("Native QTE template has an explicit cook root"),CookDirectories.Contains(TEXT("(Path=\"/Game/Gameplay/QTE\")")));
  TAWorldInteractionTests::FFixture F;
  auto* PCClass=LoadClass<AThe_AwakeningPlayerController>(nullptr,TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
  auto* PawnClass=LoadClass<AThe_AwakeningCharacter>(nullptr,TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter_C"));
@@ -603,7 +603,7 @@ bool FTAQTEPipeTest::RunTest(const FString&)
   Action->RandomSeed=Seed; Target->OnInteract_Implementation(Pawn); Choices.Add(Action->GetPromptAction()); Action->Cancel();
  }
  TestTrue(TEXT("Random runs can select different interaction actions"),Choices.Num()>1);
- UInputAction* QAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/DeubgItem/QTE/IA_QTE_Q.IA_QTE_Q"));
+ UInputAction* QAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/Gameplay/QTE/IA_QTE_Q.IA_QTE_Q"));
  TestTrue(TEXT("Q action is in the random pool"),QAction && Definition->Stages[0].ActionOptions.Contains(QAction) && Choices.Contains(QAction));
  for(int32 Seed=0;Seed<100;++Seed)
  {
