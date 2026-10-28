@@ -13,6 +13,7 @@
 - [移动与持续跑酷输入](MovementAndParkour.md)
 - [双执行键双落点跑酷](DirectionalParkour.md)
 - [角色自动对焦](CameraAutoFocus.md)
+- [房间显隐、动态镜头与墙体切除：实现规划](RoomVisibilityAndCameraPlan.md)
 
 ## 交互、剧情与 QTE
 - [通用交互、世界剧情事件与特殊动作](WorldInteractionSystem.md)
