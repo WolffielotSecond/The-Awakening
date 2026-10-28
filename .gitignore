@@ -98,3 +98,4 @@ shadertoolsconfig.json
 *.code-workspace
 .claude/worktrees/
 .claude/settings.local.json
+.codex/config.toml
