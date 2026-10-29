@@ -48,3 +48,13 @@
 
 ## 工程与版本
 - [版本号管理](VersionManagement.md)
+
+## 策划、报告与指南
+- [游戏总览（策划文案）](Design/GameOverview.md)
+- [升级到 UE 5.8 步骤](Guides/UpgradeUE58.md)
+- [Vertical Slice（序章）内容清单](Reports/VerticalSliceContentList.md)
+- [项目文件结构检查与优化建议](Reports/ProjectStructureReview.md)
+- [资产整理第一批：执行清单](Reports/AssetBatch1Plan.md)
+- [背包系统：现有代码 vs 新版设计文档](Reports/InventoryVsDesignDoc.md)
+- [背包系统改动清单](Reports/InventoryChangeList.md)
+- [背包改动实现结果](Reports/InventoryImplementationResult.md)
