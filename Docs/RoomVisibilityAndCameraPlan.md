@@ -10,7 +10,7 @@
 - `ATARoomRegion` 新增 `DetailActors`（实例上用吸管选家具）与 `BlackoutMaterial`（BP 默认 `/Game/Camera/RoomView/Materials/MI_RoomBlackout`）。黑场方式是把这些 Actor 上所有网格的材质换成黑场材质，退出黑场时恢复原材质；不隐藏、不改碰撞 / Tick / 交互。切换是瞬时的，没有渐变。
 - `ATARoomPortal`（关卡里放 `/Game/Blueprints/RoomView/BP_RoomPortal`）：门口的 Box，填 RoomA / RoomB。玩家脚下位置在 Box 内且其中一侧是当前房间时，两侧房间都正常显示；已在预览时用放大 `ExitMarginCm` 的范围判断离开。
 - 可见集合 = 当前房间 + 当前门口两侧；玩家不在任何区域时所有房间正常显示。
-- `M_RoomBlackout`：Unlit，Emissive = Tint × Lerp(ShadeMin, 1, saturate(dot(顶点法线, 固定方向)))，用固定方向的假光照保留立体感，不受房间灯光影响。
+- `M_RoomBlackout`：Unlit，Emissive = Tint × Lerp(ShadeMin, 1, saturate(dot(顶点法线, 固定方向)))，用固定方向的假光照保留立体感，不受房间灯光影响。World Position Offset = (WorldPosition − CameraPosition) × DepthPushScale（默认 10），把顶点沿相机射线推远，屏幕投影不变但深度落在其他物体之后，使黑场轮廓画在最底层：未开放房间不会遮挡当前走廊。ShadowReplace 让阴影 Pass 不做偏移。（MCP 的 connect_to_output 无法连接 PixelDepthOffset，因此用 WPO 实现。）
 - 尚未处理：被黑场房间内的灯光、粒子、Decal 不会变暗；交互 / 拾取 / 扫描过滤在阶段 D。
 - `Source/The_Awakening/Camera/TARoomCameraProfile.h`：`UTARoomCameraProfile`（DataAsset），字段为 ArmLengthCm、HeightOffsetCm、LookLeft/Right/Up/DownCm、BlendSeconds。
 - `Source/The_Awakening/Camera/TARoomRegion.h/.cpp`：可放置 `ATARoomRegion`（RoomId、Priority、CameraProfile；实例上可加 Box 组件拼接不规则区域，Box 无碰撞）与轻量登记表 `UTARoomRegistrySubsystem`。
