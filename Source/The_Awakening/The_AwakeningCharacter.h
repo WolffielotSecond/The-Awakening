@@ -23,6 +23,7 @@ class UTAFreezeComponent;
 class UTAHealthComponent;
 class UTARespawnSubsystem;
 class UTACharacterActionComponent;
+class UTARoomViewComponent;
 class UTASpecialActionComponent;
 class UTAInventoryPanelWidget;
 class UTAPickupBannerWidget;
@@ -146,6 +147,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UTASpecialActionComponent> SpecialActionComponent;
 
+	/** 按所在区域切换镜头距离与观察范围；唯一写入 CameraBoom 长度 / 偏移的地方 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTARoomViewComponent> RoomViewComponent;
+
 	/** 相机跟随距离 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraDistance = 600.f;
@@ -154,15 +159,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraMoveSensitivity = 5.f;
 
-	/** 当前相机位置偏移 */
-	FVector CurrentCameraOffset = FVector::ZeroVector;
-
 	/** 相机位置偏移限制 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraOffsetLimitX = 200.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraOffsetLimitZ = 150.f;
+
+	/** 没有房间区域时，从其他区域切回默认镜头的过渡秒数 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.0"))
+	float CameraDefaultBlendSeconds = 0.6f;
 
 	/** 相机俯仰角度 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")

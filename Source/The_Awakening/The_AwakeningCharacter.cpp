@@ -4,6 +4,7 @@
 #include "Core/TAPlayerState.h"
 #include "Core/TAFreezeComponent.h"
 #include "Core/TAFreezeExemptSpringArm.h"
+#include "Camera/TARoomViewComponent.h"
 #include "AbilitySystemComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Settings/TASettingsSubsystem.h"
@@ -140,6 +141,7 @@ AThe_AwakeningCharacter::AThe_AwakeningCharacter(const FObjectInitializer& Objec
 	HealthComponent = CreateDefaultSubobject<UTAHealthComponent>(TEXT("HealthComponent"));
 	SpecialActionComponent = CreateDefaultSubobject<UTASpecialActionComponent>(TEXT("SpecialActionComponent"));
 	CharacterActionComponent = CreateDefaultSubobject<UTACharacterActionComponent>(TEXT("CharacterActionComponent"));
+	RoomViewComponent = CreateDefaultSubobject<UTARoomViewComponent>(TEXT("RoomViewComponent"));
 }
 
 void AThe_AwakeningCharacter::BeginPlay()
@@ -158,6 +160,17 @@ void AThe_AwakeningCharacter::BeginPlay()
 	if (FollowCamera)
 	{
 		FollowCamera->SetRelativeRotation(FRotator(CameraPitchAngle, 0.f, 0.f));
+	}
+	if (RoomViewComponent)
+	{
+		// 蓝图上的镜头参数作为没有房间区域时的默认值
+		FTARoomCameraSettings Fallback;
+		Fallback.ArmLengthCm = CameraDistance;
+		Fallback.HeightOffsetCm = CameraHeightOffset;
+		Fallback.LookLeftCm = Fallback.LookRightCm = CameraOffsetLimitX;
+		Fallback.LookUpCm = Fallback.LookDownCm = CameraOffsetLimitZ;
+		Fallback.BlendSeconds = CameraDefaultBlendSeconds;
+		RoomViewComponent->Initialize(CameraBoom, FollowCamera, Fallback);
 	}
 
 	if (PromptComponent)
@@ -550,71 +563,10 @@ void AThe_AwakeningCharacter::DoLook(float Yaw, float Pitch)
 	float FinalYaw = bInvertCameraX ? -Yaw : Yaw;
 	float FinalPitch = bInvertCameraY ? Pitch : -Pitch;
 
-	const float SoftStartRatio = 0.2f;
-
-	auto ApplyStrongSoftLimit = [SoftStartRatio](float Current, float Delta, float Limit) -> float
-		{
-			if (Limit <= KINDA_SMALL_NUMBER || FMath::IsNearlyZero(Delta))
-			{
-				return 0.f;
-			}
-
-			const bool bMovingOutward = (Current * Delta) > 0.f;
-
-			if (!bMovingOutward)
-			{
-				return Delta;
-			}
-
-			const float AbsCurrent = FMath::Abs(Current);
-			const float Ratio = AbsCurrent / Limit;
-
-			if (Ratio < SoftStartRatio)
-			{
-				const float Next = Current + Delta;
-				if (FMath::Abs(Next) <= Limit * SoftStartRatio)
-				{
-					return Delta;
-				}
-			}
-
-			const float Remaining = FMath::Max(0.f, Limit - AbsCurrent);
-
-			float T = 0.f;
-			if (Ratio >= SoftStartRatio)
-			{
-				T = (Ratio - SoftStartRatio) / FMath::Max(1.f - SoftStartRatio, KINDA_SMALL_NUMBER);
-				T = FMath::Clamp(T, 0.f, 1.f);
-			}
-			const float Ease = 1.f - (T * T * T);
-
-			const float MaxStep = Remaining * FMath::Lerp(0.35f, 0.03f, T);
-
-			float ClampedDelta = Delta * Ease;
-			if (FMath::Abs(ClampedDelta) > MaxStep)
-			{
-				ClampedDelta = FMath::Sign(ClampedDelta) * MaxStep;
-			}
-
-			return ClampedDelta;
-		};
-
-	const float DeltaY = ApplyStrongSoftLimit(
-		CurrentCameraOffset.Y,
-		FinalYaw * CameraMoveSensitivity,
-		CameraOffsetLimitX);
-
-	const float DeltaZ = ApplyStrongSoftLimit(
-		CurrentCameraOffset.Z,
-		FinalPitch * CameraMoveSensitivity,
-		CameraOffsetLimitZ);
-
-	CurrentCameraOffset.Y = FMath::Clamp(CurrentCameraOffset.Y + DeltaY, -CameraOffsetLimitX, CameraOffsetLimitX);
-	CurrentCameraOffset.Z = FMath::Clamp(CurrentCameraOffset.Z + DeltaZ, -CameraOffsetLimitZ, CameraOffsetLimitZ);
-
-	if (CameraBoom)
+	// 软限位与区域限位由 RoomViewComponent 统一处理，这里只提交观察意图
+	if (RoomViewComponent)
 	{
-		CameraBoom->TargetOffset = CurrentCameraOffset;
+		RoomViewComponent->AddLookInput(FinalYaw * CameraMoveSensitivity, FinalPitch * CameraMoveSensitivity);
 	}
 }
 
@@ -1015,12 +967,13 @@ void AThe_AwakeningCharacter::CloseInventoryIfOpen()
 
 void AThe_AwakeningCharacter::ResetCameraForRespawn()
 {
-	CurrentCameraOffset = FVector::ZeroVector;
 	if (CameraBoom)
 	{
-		CameraBoom->TargetOffset = CurrentCameraOffset;
+		CameraBoom->TargetOffset = FVector::ZeroVector;
 		if (auto* ExemptBoom = Cast<UTAFreezeExemptSpringArm>(CameraBoom)) ExemptBoom->SkipLagOnce();
 	}
+	// 清零观察偏移，按复活点重新解析房间，镜头参数直接到位不插值
+	if (RoomViewComponent) RoomViewComponent->SnapToCurrentLocation();
 }
 
 void AThe_AwakeningCharacter::ClearMovementInput()

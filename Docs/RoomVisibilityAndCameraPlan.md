@@ -4,6 +4,22 @@
 
 **状态：需求与实现交接文档，功能尚未实现。** 本次只新增文档和索引，没有修改 C++、Blueprint、材质、碰撞配置或关卡。以下新类型、接口、参数资产和调试命令均为建议名称，不能当作仓库里已经存在的能力。
 
+**实现进度（2026-10-29）：** 阶段 A 已实现并通过 PIE 验收；阶段 B 已实现，待 PIE 验收。
+
+阶段 B：
+- `ATARoomRegion` 新增 `DetailActors`（实例上用吸管选家具）与 `BlackoutMaterial`（BP 默认 `/Game/Camera/RoomView/Materials/MI_RoomBlackout`）。黑场方式是把这些 Actor 上所有网格的材质换成黑场材质，退出黑场时恢复原材质；不隐藏、不改碰撞 / Tick / 交互。切换是瞬时的，没有渐变。
+- `ATARoomPortal`（关卡里放 `/Game/Blueprints/RoomView/BP_RoomPortal`）：门口的 Box，填 RoomA / RoomB。玩家脚下位置在 Box 内且其中一侧是当前房间时，两侧房间都正常显示；已在预览时用放大 `ExitMarginCm` 的范围判断离开。
+- 可见集合 = 当前房间 + 当前门口两侧；玩家不在任何区域时所有房间正常显示。
+- `M_RoomBlackout`：Unlit，Emissive = Tint × Lerp(ShadeMin, 1, saturate(dot(顶点法线, 固定方向)))，用固定方向的假光照保留立体感，不受房间灯光影响。
+- 尚未处理：被黑场房间内的灯光、粒子、Decal 不会变暗；交互 / 拾取 / 扫描过滤在阶段 D。
+- `Source/The_Awakening/Camera/TARoomCameraProfile.h`：`UTARoomCameraProfile`（DataAsset），字段为 ArmLengthCm、HeightOffsetCm、LookLeft/Right/Up/DownCm、BlendSeconds。
+- `Source/The_Awakening/Camera/TARoomRegion.h/.cpp`：可放置 `ATARoomRegion`（RoomId、Priority、CameraProfile；实例上可加 Box 组件拼接不规则区域，Box 无碰撞）与轻量登记表 `UTARoomRegistrySubsystem`。
+- `Source/The_Awakening/Camera/TARoomViewComponent.h/.cpp`：角色上的 `RoomViewComponent`，用胶囊底部位置解析区域，在 Boom 之前 Tick（FreezeExempt，世界时间），是唯一写入 Boom 长度、SocketOffset、TargetOffset 的地方。偏移仍写世界 Y/Z，左右限位按相机右向量判断屏幕方向。
+- 关卡里放置的一律用 BP：`/Game/Blueprints/RoomView/BP_RoomRegion`（默认 Profile 为 Room）。预置 Profile：`/Game/Camera/RoomView/Profiles/DA_RoomCamera_Room`（450 cm，左右 40，上下 15）、`DA_RoomCamera_Corridor`（750 cm，左右 100，上下 25，与角色蓝图一致）、`DA_RoomCamera_Outdoor`（1000 cm，左右 200，上下 50）。
+- 没有区域或区域未指定 Profile 时，使用角色蓝图上的 CameraDistance、CameraHeightOffset、CameraOffsetLimitX/Z 和 CameraDefaultBlendSeconds。
+
+已确认决定：镜头以 `BP_ThirdPersonCharacter` 为准（走廊 750，房间更近，室外更远，追逐沿用室外）；客厅与餐厅为同一开放空间；室内门常开且不可关闭；黑场为比背景稍亮的暗色立体轮廓；墙体切除在材质中按世界空间区域计算，不依赖模型拆分，半透明用固定噪声而非 DitherTemporalAA，断面与背面输出纯黑；扫描不能看到黑场房间内容。
+
 本文供同学及其 Claude 接手。实施时请先核对“现有代码”部分及实际 Blueprint 覆盖，保留已经验收的输入、扫描、暂停、跑酷、复活和自动对焦行为。不要直接用本文示意代码覆盖现有系统。
 
 ## 1. 用户要的最终效果

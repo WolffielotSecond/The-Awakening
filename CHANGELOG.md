@@ -4,6 +4,8 @@
 
 ### 新增
 
+- 房间黑场（阶段 B）：`BP_RoomRegion` 新增 DetailActors 与 BlackoutMaterial，玩家不在该房间时把登记 Actor 的网格换成黑场材质（暗色立体轮廓，碰撞 / 交互 / Tick 不变），回到房间恢复原材质。新增 `BP_RoomPortal` 门口预览区域：站在连接当前房间的门口时两侧都正常显示，离开判断带放大边距。新增 `M_RoomBlackout` / `MI_RoomBlackout`（Unlit，Tint 与 ShadeMin 可调）。玩家不在任何区域时全部正常显示。
+- 房间镜头区域（阶段 A）：新增可放置 `TARoomRegion`（RoomId、Priority、可多个 Box 拼接）与 `TARoomCameraProfile` 数据资产（Boom 长度、高度、左右上下不对称观察范围、过渡秒数）。角色新增 `RoomViewComponent`，按脚下位置选区域并平滑过渡；没有区域时沿用角色蓝图镜头参数；复活时镜头参数直接到位。关卡中放置 `Content/Blueprints/RoomView/BP_RoomRegion`；预置 `Content/Camera/RoomView/Profiles/DA_RoomCamera_Room / Corridor / Outdoor`（450 / 750 / 1000 cm）。
 - QTE 每段 Prompt Offset：以原 InteractPromptComponent 屏幕投影为基准，图标和圆环整体偏移；Details 和 Make QTE Step 均可配置，默认零偏移保留原显示位置。
 - 角色死亡演出与黑屏过渡 / 复活前演出 BlueprintNativeEvent：默认复用 DeathDelay / FadeOutTime 并以 Print String 显示占位文字；可按伤害来源覆写动画并异步回报完成，含旧回调隔离及超时保底，原复位和淡入流程保留。接入说明见 Docs/HealthAndRespawn.md。
 - QTE 每段可选限时及独立超时回调；超时终止整套序列，死亡取消不触发超时失败事件，仍保留两个通用结束通知用于蓝图收尾。
@@ -15,6 +17,7 @@
 
 ### 调整
 
+- `DoLook` 只提交观察输入，软限位移入 `RoomViewComponent`，由它统一写入 CameraBoom 的长度与偏移；`ResetCameraForRespawn` 改为重新解析当前区域。
 - QTE 随机交互池新增 IMC 管理的 Q 键 IA；呼吸幅度从 0.2 减为 0.1，频率保持 4 Hz。QTESequence 与示例模板使用 TimeSubsystem 的未缩放真实步长，忽略 Freeze/时缓，仅暂停时停止；本轮相关 38 项回归通过。
 - 日记本折叠纸靠近中缝右侧，画面内逆时针转 90 度、开口朝左；默认偏移 (-0.54, 0)、缩放 0.85。点击后共用原预览台，先取出并转向摄像机再展开；返回时复位手动旋转、折叠并归位，强制关闭时恢复书页并释放输入。
 - 3D 预览台主光强度改为 2、颜色 FFFEEEFF，补光强度改为 0.5。
