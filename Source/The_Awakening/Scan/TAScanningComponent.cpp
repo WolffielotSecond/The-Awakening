@@ -22,6 +22,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Camera/TARoomRegion.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Core/TAInputIconSubsystem.h"
@@ -1021,7 +1022,7 @@ void UTAScanningComponent::RefreshScanTargets()
 	{
 		AActor* Actor = Overlap.GetActor();
 		UTAScannableComponent* Target = Actor ? Actor->FindComponentByClass<UTAScannableComponent>() : nullptr;
-		if (!IsValid(Target) || !Target->CanBeScanned())
+		if (!IsValid(Target) || !Target->CanBeScanned() || UTARoomRegistrySubsystem::IsActorInBlackoutRoom(Actor))
 		{
 			continue;
 		}

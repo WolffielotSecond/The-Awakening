@@ -126,6 +126,9 @@ void UTARoomRegistrySubsystem::ApplyRoomVisibility(ATARoomRegion* ActiveRegion)
 		}
 	}
 
+	BlackedOutActors.Reset();
+	for (AActor* Actor : Actors) BlackedOutActors.Add(TObjectKey<AActor>(Actor));
+
 	// 先构建组件并集。共享 Actor / 组件只保存一次，跨区域仍被引用时保持原始快照。
 	TSet<UPrimitiveComponent*> DesiredComponents;
 	for (AActor* Actor : Actors)
@@ -168,6 +171,24 @@ void UTARoomRegistrySubsystem::ApplyRoomVisibility(ATARoomRegion* ActiveRegion)
 		Primitive->SetRenderCustomDepth(true);
 		Primitive->SetCustomDepthStencilValue(ATARoomRegion::BlackoutStencilValue);
 	}
+}
+
+bool UTARoomRegistrySubsystem::IsActorInBlackoutRoom(const AActor* Actor)
+{
+	const UTARoomRegistrySubsystem* Registry = Actor ? Get(Actor) : nullptr;
+	if (!Registry) return false;
+	if (Registry->BlackedOutActors.Contains(TObjectKey<AActor>(Actor))) return true;
+
+	// 玩家所在区域与被黑场区域的盒子可能在门口重叠，重叠处的物体算玩家这一侧
+	const FVector Location = Actor->GetActorLocation();
+	const ATARoomRegion* Active = Registry->CurrentRegion.Get();
+	if (Active && Active->ContainsPoint(Location)) return false;
+	for (const TWeakObjectPtr<ATARoomRegion>& Entry : Registry->Regions)
+	{
+		const ATARoomRegion* Region = Entry.Get();
+		if (Region && Region->IsBlackedOut() && Region->ContainsPoint(Location)) return true;
+	}
+	return false;
 }
 
 void UTARoomRegistrySubsystem::Deinitialize()

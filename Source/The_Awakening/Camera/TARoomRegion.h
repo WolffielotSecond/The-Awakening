@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "UObject/ObjectKey.h"
 #include "TARoomRegion.generated.h"
 
 class UBoxComponent;
@@ -131,11 +132,19 @@ public:
 
 	/** 当前区域指定的房间资产与额外 Actor 的并集进入黑场；nullptr 清除黑场。 */
 	void ApplyRoomVisibility(ATARoomRegion* ActiveRegion);
+
+	/**
+	 * Actor 当前是否处于隐藏房间：被登记进黑场，或位置落在被黑场的区域内（且不在玩家当前区域内）。
+	 * 交互、拾取和扫描用它过滤目标，物品不需要单独登记。
+	 */
+	static bool IsActorInBlackoutRoom(const AActor* Actor);
+
 	virtual void Deinitialize() override;
 
 private:
 	TArray<TWeakObjectPtr<ATARoomRegion>> Regions;
 	TWeakObjectPtr<ATARoomRegion> CurrentRegion;
+	TSet<TObjectKey<AActor>> BlackedOutActors;
 
 	UPROPERTY(Transient)
 	TArray<FTARoomSavedRenderState> SavedRenderStates;

@@ -10,8 +10,8 @@
 |---|---|---|
 | A | 按区域切换镜头距离与观察范围 | 已实现，已通过 PIE 验收 |
 | B | 当前区域显式指定房间 / Actor 黑场（stencil 底层渲染） | 已实现；本轮验证见文末 |
-| C | 墙体切除（世界空间区域 + 固定噪声半透明） | 未开始 |
-| D | 楼道防探看、交互 / 拾取 / 扫描过滤、QTE 与过场镜头覆盖 | 未开始 |
+| C | 墙体处理：挡视线的墙由 Room Region 黑场接管；只剩断面全黑 | 进行中 |
+| D | 楼道防探看、QTE 与过场镜头覆盖 | 未开始（隐藏房间的交互 / 拾取 / 扫描过滤已提前实现） |
 | E | 离家卸载住宅、医院过门 | 未开始，需先把白盒拆成子关卡 |
 
 ## 2. 资产一览
@@ -26,6 +26,7 @@
 | DA_RoomCamera_Corridor | /Game/Camera/RoomView/Profiles/ | 走廊：750 cm，左右 100，上下 25，过渡 0.6 秒（与角色蓝图一致） |
 | DA_RoomCamera_Outdoor | /Game/Camera/RoomView/Profiles/ | 室外 / 追逐：1000 cm，左右 200，上下 50，过渡 0.8 秒 |
 | M_RoomBlackoutPP / MI_RoomBlackoutPP | /Game/Camera/RoomView/Materials/ | 黑场后处理材质，代码自动挂到角色相机上 |
+| MF_BackfaceBlack | /Game/Materials/Common/ | 背面全黑材质函数，手动接入母材质，见第 5 节 |
 | M_RoomBlackout / MI_RoomBlackout | /Game/Camera/RoomView/Materials/ | 旧方案（材质替换），已停用，可删除 |
 
 三个镜头 Profile 的高度都是 175 cm，与 BP_ThirdPersonCharacter 一致。
@@ -120,18 +121,66 @@
 - M_RoomBlackoutPP 是 Post Process 材质（After Tonemapping）：像素 Stencil = 3 且 SceneDepth > BackgroundDepth 时，输出 Lerp(Tint, EdgeColor, Edge)，Edge 由 CustomDepth 四邻域拉普拉斯 × EdgeSensitivity 得到；其余像素输出原画面。所以黑场物品始终在所有可见物体之下，只从空白处露出暗色轮廓和描边。
 - 项目设置 `r.CustomDepth=3`（带 Stencil）已开启，不需要改。
 
+### 隐藏房间内的物体
+
+`UTARoomRegistrySubsystem::IsActorInBlackoutRoom(Actor)` 判断物体是否处于隐藏房间：Actor 属于当前黑场 Actor 集合，或其位置落在被黑场的区域盒子内。位置同时在玩家当前区域盒子内时算玩家这一侧，不过滤。物品不需要单独登记。
+
+三个入口都使用它，隐藏房间内的物体不可交互、不可拾取、不可扫描，房间恢复后自动恢复：
+
+- `FTAInteractionQuery::FindBestInteractable`：交互提示与实际执行共用这个查询。
+- `UTANearbyPickupComponent::IsEligible`：拾取列表。
+- `UTAScanningComponent::RefreshScanTargets`：扫描高亮候选；已高亮的物体在下次刷新时取消高亮。
+
+### 背面全黑（MF_BackfaceBlack）
+
+路径：`/Game/Materials/Common/MF_BackfaceBlack`。
+
+作用：让模型的背面完全变黑（看到模型内部或朝外的那一面时），不依赖具体模型和贴图。它是材质函数，需要在每个母材质里手动连接一次，同一母材质的材质实例会自动带上。
+
+原理：用 `TwoSidedSign` 判断像素是正面还是背面，得到 FrontFace（正面 1，背面 0），再把四个输入分别乘以它。背面的 BaseColor、Metallic、Specular、Emissive 全部为 0，所以不反光、不发光，显示纯黑。
+
+| 输入 | 类型 | 不连接时的默认值 | 连接什么 |
+|---|---|---|---|
+| BaseColor | Vector3 | (0.5, 0.5, 0.5) | 材质原来接到 Base Color 的节点 |
+| Metallic | Scalar | 0 | 材质原来接到 Metallic 的节点 |
+| Specular | Scalar | 0.5 | 材质原来接到 Specular 的节点 |
+| Emissive | Vector3 | (0, 0, 0) | 材质原来接到 Emissive Color 的节点 |
+
+| 输出 | 类型 | 含义 | 连接到 |
+|---|---|---|---|
+| BaseColor | Vector3 | 正面为输入值，背面为 0 | 材质的 Base Color |
+| Metallic | Scalar | 正面为输入值，背面为 0 | 材质的 Metallic |
+| Specular | Scalar | 正面为输入值，背面为 0 | 材质的 Specular |
+| Emissive | Vector3 | 正面为输入值，背面为 0 | 材质的 Emissive Color |
+| FrontFace | Scalar | 正面 1，背面 0 | 选用；其他要在背面关掉的效果可以乘以它 |
+
+连接方法：
+
+1. 打开母材质，在 Details 里勾选 **Two Sided**。这一步必须做，否则背面不渲染，函数没有效果。
+2. 添加 MF_BackfaceBlack 节点，把原来接到四个材质输出的连线改接到函数对应的输入。
+3. 把函数的四个输出接到材质对应的输出。原来这项没有连接的，函数输入和材质输出都可以不接。
+4. Roughness、Normal、Ambient Occlusion 保持原样，不用经过函数。
+
+注意事项：
+
+- 只影响模型真实存在的背面。封闭模型从外面看不到背面，这时切面要靠别的物体盖住（比如用 `M_Black` 的薄片）。
+- 开启 Two Sided 会增加渲染成本（两面都绘制），只给需要的母材质开启。
+- 背面不受光，但还会接收雾和后处理，所以最终画面会受这些效果影响。
+- 用于 Masked 材质时，Opacity Mask 保持原来的连接。
+
 ## 6. 已知限制
 
 - 黑场切换是瞬时的，没有渐变。
 - 黑场房间里的灯光、粒子、Decal 不会跟着变化。
 - 黑场物品被可见物体完全挡住时就完全看不见，这是预期效果。
 - 扫描在黑场期间也可能改写这些组件的 Stencil（序章不解锁扫描，暂未处理）。
-- 站在走廊仍可以与黑场房间里的物体交互 / 拾取，计划在阶段 D 处理。
+- 隐藏房间过滤看的是 Actor 的位置，物品必须在房间区域的盒子内，或被登记进黑场 Actor 集合，才会被过滤。
 - MCP 的材质工具连不上 PixelDepthOffset 输出，需要时请在材质编辑器里手动连接。
 
 ## 7. 后续阶段要点（已与需求方确认）
 
-- **阶段 C 墙体切除**：白盒墙由多块 Level Prototyping mesh 拼成，以后可能换成整块模型，所以切除在材质里按世界空间的“可切除区域”盒子计算，不依赖模型怎么拆分。离遮挡物远时完全切除（Opacity Mask = 0）；靠近时下半截用固定噪声图案半透明、上半截仍全透明，不用 DitherTemporalAA（会拖影）。断面和背面输出纯黑。需要切除的位置：厕所的墙、厨房门等。
+- **阶段 C 墙体处理**：挡视线的墙已改由 Room Region 的黑场规则处理（`BlackoutActors`），不再做切除盒子（BP_CutawayZone）、世界空间切除材质函数和 MPC 写入。Portal 已停用，逻辑全部由 Room Region 接管。断面全黑由材质函数 `MF_BackfaceBlack` 提供，需要手动接到墙的母材质上。
+- **暂缓的想法（暂不实现）**：靠近遮挡物时，墙的下半截用固定噪声图案半透明、上半截全透明，噪声用屏幕像素采样 `Textures/Noise` 这类固定贴图，不用 DitherTemporalAA（会拖影）。以后需要这个效果时再评估。
 - **阶段 D**：楼道往住宅方向的偏移用不对称限位（填 0），再在最终视图上做一层安全约束；交互、拾取、扫描候选按房间可见性过滤，扫描不能看到黑场房间内容；QTE、过场、追逐镜头通过带 Owner 的临时覆盖接入，不要直接写 Boom。
 - **阶段 E**：住宅目前都在 Persistent_Level 里，卸载前要先拆成子关卡；医院先在门后放一个占位平台。
 

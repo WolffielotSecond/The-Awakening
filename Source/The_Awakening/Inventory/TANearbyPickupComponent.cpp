@@ -1,6 +1,7 @@
 #include "Inventory/TANearbyPickupComponent.h"
 #include "Inventory/TAWorldItem.h"
 #include "Inventory/TAItemDefinition.h"
+#include "Camera/TARoomRegion.h"
 #include "Core/TAFreezeComponent.h"
 #include "Core/TALocalizeSubsystem.h"
 #include "The_AwakeningPlayerController.h"
@@ -34,7 +35,8 @@ bool UTANearbyPickupComponent::IsEligible(ATAWorldItem* Item) const
 {
     if (!IsValid(Item) || Item->IsActorBeingDestroyed() || !GetOwner() ||
         FVector::DistSquared(GetOwner()->GetActorLocation(), Item->GetActorLocation()) > FMath::Square(PickupRadius) ||
-        !ITAInteractable::Execute_CanInteract(Item, GetOwner())) return false;
+        !ITAInteractable::Execute_CanInteract(Item, GetOwner()) ||
+        UTARoomRegistrySubsystem::IsActorInBlackoutRoom(Item)) return false;
     if (bRequireLineOfSight)
     {
         FHitResult Hit;

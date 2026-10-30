@@ -2,6 +2,7 @@
 #include "Interaction/TAInteractable.h"
 #include "Interaction/TAInteractionBehaviorComponent.h"
 #include "Inventory/TAWorldItem.h"
+#include "Camera/TARoomRegion.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -30,6 +31,7 @@ AActor* FTAInteractionQuery::FindBestInteractable(const APawn* Pawn, float Radiu
 		{
 			continue;
 		}
+		if (UTARoomRegistrySubsystem::IsActorInBlackoutRoom(Actor)) continue;
 		if (const auto* Behavior = Actor->FindComponentByClass<UTAInteractionBehaviorComponent>(); Behavior && !Behavior->IsSelectable(const_cast<APawn*>(Pawn))) continue;
 		if (!ITAInteractable::Execute_CanInteract(Actor, const_cast<APawn*>(Pawn)))
 		{

@@ -4,6 +4,8 @@
 
 ### 新增
 
+- 材质函数 `MF_BackfaceBlack`：输入 BaseColor / Metallic / Specular / Emissive，用 TwoSidedSign 让背面输出全部归零显示纯黑，正面保持原值；另输出 FrontFace。由母材质手动连接，需开启 Two Sided，接法见 Docs/RoomViewHandover.md。
+- 隐藏房间内的物体不可交互、不可拾取、不可扫描：新增 `UTARoomRegistrySubsystem::IsActorInBlackoutRoom`，接入 `FindBestInteractable`、`TANearbyPickupComponent::IsEligible` 与扫描高亮候选；物体按黑场 Actor 集合或所在位置判定，房间恢复显示后自动恢复。
 - 房间黑场（阶段 B，2026-10-30 修订）：BP_RoomRegion 使用 Included Assets 登记归属，BlackoutRoomIds 显式指定进入本区域后要黑场的房间，Blackout Actors 指定额外 Actor。取消 Portal 预览与隐式邻房黑场；未被指定的房间正常显示。按组件统一去重管理原渲染状态，跨区域保留仍需黑场的共享对象，退出 / 卸载后还原。DetailActors 通过 PropertyRedirect 迁移；旧 Portal 仅保留停用兼容壳。新黑场数组默认空，不自动改写现有地图规则。镜头 Profile 行为与 Stencil 3 后处理方式保留。
 - 房间镜头区域（阶段 A）：新增可放置 `TARoomRegion`（RoomId、Priority、可多个 Box 拼接）与 `TARoomCameraProfile` 数据资产（Boom 长度、高度、左右上下不对称观察范围、过渡秒数）。角色新增 `RoomViewComponent`，按脚下位置选区域并平滑过渡；没有区域时沿用角色蓝图镜头参数；复活时镜头参数直接到位。关卡中放置 `Content/Blueprints/RoomView/BP_RoomRegion`；预置 `Content/Camera/RoomView/Profiles/DA_RoomCamera_Room / Corridor / Outdoor`（450 / 750 / 1000 cm）。
 - QTE 每段 Prompt Offset：以原 InteractPromptComponent 屏幕投影为基准，图标和圆环整体偏移；Details 和 Make QTE Step 均可配置，默认零偏移保留原显示位置。
