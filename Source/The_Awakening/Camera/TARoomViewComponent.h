@@ -9,6 +9,7 @@ class ATARoomRegion;
 class ATARoomPortal;
 class USpringArmComponent;
 class UCameraComponent;
+class UMaterialInterface;
 
 /**
  * 本地玩家的空间视图协调：根据角色脚下位置解析当前区域与门口，决定哪些房间黑场，混合镜头参数，
@@ -42,6 +43,10 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
+	/** 黑场后处理：在 Stencil 3 且没有其他物体覆盖的像素画暗色轮廓。初始化时挂到相机的后处理上。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera|Room View")
+	TSoftObjectPtr<UMaterialInterface> BlackoutPostProcessMaterial;
+
 	/** PIE 时在细节面板查看，方便调参。 */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Camera|Room View")
 	FName ActiveRoomId;

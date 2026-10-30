@@ -4,7 +4,7 @@
 
 ### 新增
 
-- 房间黑场（阶段 B）：`BP_RoomRegion` 新增 DetailActors 与 BlackoutMaterial，玩家不在该房间时把登记 Actor 的网格换成黑场材质（暗色立体轮廓，碰撞 / 交互 / Tick 不变），回到房间恢复原材质。新增 `BP_RoomPortal` 门口预览区域：站在连接当前房间的门口时两侧都正常显示，离开判断带放大边距。新增 `M_RoomBlackout` / `MI_RoomBlackout`（Unlit，Tint 与 ShadeMin 可调；沿相机射线把顶点推远 DepthPushScale 倍，屏幕位置不变但深度最靠后，黑场轮廓始终画在其他物体后面，阴影仍按原位置计算）。玩家不在任何区域时全部正常显示。
+- 房间黑场（阶段 B）：`BP_RoomRegion` 新增 DetailActors，玩家不在该房间时登记 Actor 的可见组件退出主渲染、只写 CustomDepth（Stencil 3），回到房间恢复原渲染设置；碰撞 / 交互 / Tick 不变。角色相机挂载 `MI_RoomBlackoutPP` 后处理（`M_RoomBlackoutPP`，Tint / EdgeColor / EdgeSensitivity / EdgeWidth / BackgroundDepth 可调），只在没有其他物体覆盖的像素画出暗色轮廓与描边，黑场物品始终处于画面最底层。新增 `BP_RoomPortal` 门口预览区域：站在连接当前房间的门口时两侧都正常显示，离开判断带放大边距。玩家不在任何区域时全部正常显示。
 - 房间镜头区域（阶段 A）：新增可放置 `TARoomRegion`（RoomId、Priority、可多个 Box 拼接）与 `TARoomCameraProfile` 数据资产（Boom 长度、高度、左右上下不对称观察范围、过渡秒数）。角色新增 `RoomViewComponent`，按脚下位置选区域并平滑过渡；没有区域时沿用角色蓝图镜头参数；复活时镜头参数直接到位。关卡中放置 `Content/Blueprints/RoomView/BP_RoomRegion`；预置 `Content/Camera/RoomView/Profiles/DA_RoomCamera_Room / Corridor / Outdoor`（450 / 750 / 1000 cm）。
 - QTE 每段 Prompt Offset：以原 InteractPromptComponent 屏幕投影为基准，图标和圆环整体偏移；Details 和 Make QTE Step 均可配置，默认零偏移保留原显示位置。
 - 角色死亡演出与黑屏过渡 / 复活前演出 BlueprintNativeEvent：默认复用 DeathDelay / FadeOutTime 并以 Print String 显示占位文字；可按伤害来源覆写动画并异步回报完成，含旧回调隔离及超时保底，原复位和淡入流程保留。接入说明见 Docs/HealthAndRespawn.md。

@@ -1,7 +1,6 @@
 #include "Camera/TARoomRegion.h"
 #include "Components/BoxComponent.h"
-#include "Components/MeshComponent.h"
-#include "Materials/MaterialInterface.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 
 namespace
@@ -49,43 +48,46 @@ void ATARoomRegion::SetBlackedOut(bool bInBlackedOut)
 
 	if (!bBlackedOut)
 	{
-		RestoreMaterials();
+		RestoreRenderState();
 		return;
 	}
-	if (!BlackoutMaterial) return;
 
-	// 只换材质，不隐藏、不关碰撞：暗色立体轮廓仍可读，交互 / 剧情 / 声音照常运行
+	// 不进主渲染、只写 CustomDepth：走廊等可见物体全部盖在上面，后处理只在空白处画出暗色轮廓。
+	// 不隐藏 Actor、不关碰撞，交互 / 剧情 / 声音照常运行
 	for (const AActor* Actor : DetailActors)
 	{
 		if (!Actor) continue;
-		TInlineComponentArray<UMeshComponent*> Meshes(Actor);
-		for (UMeshComponent* Mesh : Meshes)
+		TInlineComponentArray<UPrimitiveComponent*> Primitives(Actor);
+		for (UPrimitiveComponent* Primitive : Primitives)
 		{
-			if (!Mesh) continue;
-			FTARoomSavedMaterials& Saved = SavedMaterials.AddDefaulted_GetRef();
-			Saved.Component = Mesh;
-			const int32 Num = Mesh->GetNumMaterials();
-			for (int32 Index = 0; Index < Num; ++Index)
-			{
-				Saved.Materials.Add(Mesh->GetMaterial(Index));
-				Mesh->SetMaterial(Index, BlackoutMaterial);
-			}
+			if (!Primitive || !Primitive->IsVisible() || Primitive->bHiddenInGame) continue;
+			FTARoomSavedRenderState& Saved = SavedRenderStates.AddDefaulted_GetRef();
+			Saved.Component = Primitive;
+			Saved.bRenderInMainPass = Primitive->bRenderInMainPass;
+			Saved.bRenderInDepthPass = Primitive->bRenderInDepthPass;
+			Saved.bRenderCustomDepth = Primitive->bRenderCustomDepth;
+			Saved.CustomDepthStencilValue = Primitive->CustomDepthStencilValue;
+
+			Primitive->SetRenderInMainPass(false);
+			Primitive->SetRenderInDepthPass(false);
+			Primitive->SetRenderCustomDepth(true);
+			Primitive->SetCustomDepthStencilValue(BlackoutStencilValue);
 		}
 	}
 }
 
-void ATARoomRegion::RestoreMaterials()
+void ATARoomRegion::RestoreRenderState()
 {
-	for (const FTARoomSavedMaterials& Saved : SavedMaterials)
+	for (const FTARoomSavedRenderState& Saved : SavedRenderStates)
 	{
-		UMeshComponent* Mesh = Saved.Component.Get();
-		if (!Mesh) continue;
-		for (int32 Index = 0; Index < Saved.Materials.Num(); ++Index)
-		{
-			Mesh->SetMaterial(Index, Saved.Materials[Index]);
-		}
+		UPrimitiveComponent* Primitive = Saved.Component.Get();
+		if (!Primitive) continue;
+		Primitive->SetRenderInMainPass(Saved.bRenderInMainPass);
+		Primitive->SetRenderInDepthPass(Saved.bRenderInDepthPass);
+		Primitive->SetRenderCustomDepth(Saved.bRenderCustomDepth);
+		Primitive->SetCustomDepthStencilValue(Saved.CustomDepthStencilValue);
 	}
-	SavedMaterials.Reset();
+	SavedRenderStates.Reset();
 }
 
 void ATARoomRegion::BeginPlay()

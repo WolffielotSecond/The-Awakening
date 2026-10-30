@@ -1,6 +1,7 @@
 #include "Camera/TARoomViewComponent.h"
 #include "Camera/TARoomRegion.h"
 #include "Camera/CameraComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/TAFreezeExemptSpringArm.h"
 #include "GameFramework/Character.h"
@@ -51,14 +52,22 @@ UTARoomViewComponent::UTARoomViewComponent()
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 	// 扫描冻结会停掉角色上非豁免组件的 Tick，镜头构图不能跟着停
 	ComponentTags.AddUnique(TEXT("FreezeExempt"));
+	BlackoutPostProcessMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Camera/RoomView/Materials/MI_RoomBlackoutPP.MI_RoomBlackoutPP")));
 }
 
 void UTARoomViewComponent::Initialize(USpringArmComponent* InBoom, UCameraComponent* InCamera, const FTARoomCameraSettings& InFallback)
 {
 	if (Boom.IsValid()) Boom->RemoveTickPrerequisiteComponent(this);
 	Boom = InBoom;
-	Camera = InCamera;
 	FallbackSettings = InFallback;
+	if (InCamera && InCamera != Camera.Get())
+	{
+		if (UMaterialInterface* Blackout = BlackoutPostProcessMaterial.LoadSynchronous())
+		{
+			InCamera->PostProcessSettings.AddBlendable(Blackout, 1.f);
+		}
+	}
+	Camera = InCamera;
 	// 保证本组件先写参数，Boom 同帧再求解，避免差一帧
 	if (InBoom) InBoom->AddTickPrerequisiteComponent(this);
 	bInitialized = true;

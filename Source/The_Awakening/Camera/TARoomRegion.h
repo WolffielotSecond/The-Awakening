@@ -6,21 +6,22 @@
 #include "TARoomRegion.generated.h"
 
 class UBoxComponent;
-class UMeshComponent;
-class UMaterialInterface;
+class UPrimitiveComponent;
 class UTARoomCameraProfile;
 
-/** 黑场时被替换材质的组件及其原材质；强引用原材质，避免替换期间被 GC。 */
+/** 黑场前组件的渲染设置，退出黑场时原样还原。 */
 USTRUCT()
-struct FTARoomSavedMaterials
+struct FTARoomSavedRenderState
 {
 	GENERATED_BODY()
 
 	UPROPERTY()
-	TWeakObjectPtr<UMeshComponent> Component;
+	TWeakObjectPtr<UPrimitiveComponent> Component;
 
-	UPROPERTY()
-	TArray<TObjectPtr<UMaterialInterface>> Materials;
+	bool bRenderInMainPass = true;
+	bool bRenderInDepthPass = true;
+	bool bRenderCustomDepth = false;
+	int32 CustomDepthStencilValue = 0;
 };
 
 /**
@@ -49,15 +50,15 @@ public:
 	TObjectPtr<UTARoomCameraProfile> CameraProfile;
 
 	/**
-	 * 玩家不在本房间（也不在通向本房间的门口）时，这些 Actor 上的所有网格换成黑场材质。
-	 * 用吸管选家具、室内装饰等；与当前走廊共用的墙、地板、门框不要放进来。只换材质，碰撞、交互、Tick 不变。
+	 * 玩家不在本房间（也不在通向本房间的门口）时，这些 Actor 上的可见组件退出主渲染，只写 CustomDepth（Stencil 3），
+	 * 由相机上的 MI_RoomBlackoutPP 在没有其他物体覆盖的像素画成暗色轮廓，相当于画在所有可见物体下面。
+	 * 用吸管选家具、室内装饰等；与当前走廊共用的墙、地板、门框不要放进来。碰撞、交互、Tick 不变。
 	 */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Room|Blackout")
 	TArray<TObjectPtr<AActor>> DetailActors;
 
-	/** 黑场材质，BP_RoomRegion 默认是 MI_RoomBlackout。为空时不做黑场。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room|Blackout")
-	TObjectPtr<UMaterialInterface> BlackoutMaterial;
+	/** 黑场写入的 CustomDepth Stencil 值。0 / 1 / 2 被扫描特效占用。 */
+	static constexpr int32 BlackoutStencilValue = 3;
 
 	bool ContainsPoint(const FVector& WorldPoint) const;
 
@@ -75,10 +76,10 @@ protected:
 	TObjectPtr<UBoxComponent> RegionBox;
 
 private:
-	void RestoreMaterials();
+	void RestoreRenderState();
 
 	UPROPERTY(Transient)
-	TArray<FTARoomSavedMaterials> SavedMaterials;
+	TArray<FTARoomSavedRenderState> SavedRenderStates;
 
 	bool bBlackedOut = false;
 };
