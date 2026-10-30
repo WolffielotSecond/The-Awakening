@@ -50,21 +50,26 @@ public:
 	TObjectPtr<UTARoomCameraProfile> CameraProfile;
 
 	/**
-	 * 玩家不在本房间（也不在通向本房间的门口）时，这些 Actor 上的可见组件退出主渲染，只写 CustomDepth（Stencil 3），
-	 * 由相机上的 MI_RoomBlackoutPP 在没有其他物体覆盖的像素画成暗色轮廓，相当于画在所有可见物体下面。
-	 * 用吸管选家具、室内装饰等；与当前走廊共用的墙、地板、门框不要放进来。碰撞、交互、Tick 不变。
+	 * 本房间包含的 Actor。仅登记归属，不会自动黑场。
+	 * 当前区域的 BlackoutRoomIds 引用本 RoomId 时，这些 Actor 才进入黑场。
 	 */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Room|Included Assets")
+	TArray<TObjectPtr<AActor>> IncludedAssets;
+
+	/** 玩家进入本区域时，黑场这些 RoomId 对应区域的 Included Assets；不递归执行目标区域的规则。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room|Blackout")
+	TArray<FName> BlackoutRoomIds;
+
+	/** 玩家进入本区域时额外黑场的 Actor，例如墙；不要求登记在任何房间中。 */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Room|Blackout")
-	TArray<TObjectPtr<AActor>> DetailActors;
+	TArray<TObjectPtr<AActor>> BlackoutActors;
 
 	/** 黑场写入的 CustomDepth Stencil 值。0 / 1 / 2 被扫描特效占用。 */
 	static constexpr int32 BlackoutStencilValue = 3;
 
 	bool ContainsPoint(const FVector& WorldPoint) const;
 
-	/** 切换黑场；状态不变时不做任何事。 */
-	void SetBlackedOut(bool bInBlackedOut);
-
+	/** 本区域的 RoomId 是否被当前区域的 BlackoutRoomIds 指定。 */
 	UFUNCTION(BlueprintPure, Category = "Room|Blackout")
 	bool IsBlackedOut() const { return bBlackedOut; }
 
@@ -76,20 +81,14 @@ protected:
 	TObjectPtr<UBoxComponent> RegionBox;
 
 private:
-	void RestoreRenderState();
-
-	UPROPERTY(Transient)
-	TArray<FTARoomSavedRenderState> SavedRenderStates;
-
+	friend class UTARoomRegistrySubsystem;
 	bool bBlackedOut = false;
 };
 
 /**
- * 门口预览区域。玩家脚下位置进入这个 Box，且其中一侧是玩家当前所在房间时，两侧房间都正常显示。
- * 室内门常开，所以不判断门的开关。离开时用放大 ExitMarginCm 的范围判断，避免在门槛来回闪。
- * 关卡里请放 BP_RoomPortal。
+ * 旧 Portal 的兼容壳，保留以便已有 BP / 地图正常加载。已停用，不参与任何镜头或黑场判定。
  */
-UCLASS()
+UCLASS(NotPlaceable, meta = (DisplayName = "Room Portal (Legacy, Inactive)"))
 class THE_AWAKENING_API ATARoomPortal : public AActor
 {
 	GENERATED_BODY()
@@ -107,18 +106,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float ExitMarginCm = 30.f;
 
-	bool ContainsPoint(const FVector& WorldPoint, bool bUseExitMargin) const;
-	bool Connects(FName RoomId) const { return RoomId != NAME_None && (RoomA == RoomId || RoomB == RoomId); }
-
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
 	UPROPERTY(VisibleAnywhere, Category = "Portal")
 	TObjectPtr<UBoxComponent> PortalBox;
 };
 
-/** 已加载区域与门口的轻量登记表；在 BeginPlay / EndPlay 成对注册注销，子关卡卸载后自动消失。 */
+/** 已加载区域登记表，统一按组件去重管理黑场和原始渲染状态。 */
 UCLASS()
 class THE_AWAKENING_API UTARoomRegistrySubsystem : public UWorldSubsystem
 {
@@ -129,8 +122,6 @@ public:
 
 	void RegisterRegion(ATARoomRegion* Region);
 	void UnregisterRegion(ATARoomRegion* Region);
-	void RegisterPortal(ATARoomPortal* Portal);
-	void UnregisterPortal(ATARoomPortal* Portal);
 
 	/**
 	 * 返回包含该点的最高优先级区域。同优先级时保留 Previous（防止在重叠处来回切换），
@@ -138,13 +129,14 @@ public:
 	 */
 	ATARoomRegion* ResolveRegion(const FVector& WorldPoint, const ATARoomRegion* Previous) const;
 
-	/** 收集包含该点、且连接 ActiveRoomId 的门口；InOutActivePortals 为上一帧结果，用于离开时的放大范围。 */
-	void ResolvePortals(const FVector& WorldPoint, FName ActiveRoomId, TArray<TWeakObjectPtr<ATARoomPortal>>& InOutActivePortals) const;
-
-	/** bShowAll 为 true 时所有房间正常显示；否则不在 VisibleRooms 里的房间黑场。 */
-	void ApplyRoomVisibility(const TSet<FName>& VisibleRooms, bool bShowAll) const;
+	/** 当前区域指定的房间资产与额外 Actor 的并集进入黑场；nullptr 清除黑场。 */
+	void ApplyRoomVisibility(ATARoomRegion* ActiveRegion);
+	virtual void Deinitialize() override;
 
 private:
 	TArray<TWeakObjectPtr<ATARoomRegion>> Regions;
-	TArray<TWeakObjectPtr<ATARoomPortal>> Portals;
+	TWeakObjectPtr<ATARoomRegion> CurrentRegion;
+
+	UPROPERTY(Transient)
+	TArray<FTARoomSavedRenderState> SavedRenderStates;
 };

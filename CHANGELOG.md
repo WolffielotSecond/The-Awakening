@@ -4,7 +4,7 @@
 
 ### 新增
 
-- 房间黑场（阶段 B）：`BP_RoomRegion` 新增 DetailActors，玩家不在该房间时登记 Actor 的可见组件退出主渲染、只写 CustomDepth（Stencil 3），回到房间恢复原渲染设置；碰撞 / 交互 / Tick 不变。角色相机挂载 `MI_RoomBlackoutPP` 后处理（`M_RoomBlackoutPP`，Tint / EdgeColor / EdgeSensitivity / EdgeWidth / BackgroundDepth 可调），只在没有其他物体覆盖的像素画出暗色轮廓与描边，黑场物品始终处于画面最底层。新增 `BP_RoomPortal` 门口预览区域：站在连接当前房间的门口时两侧都正常显示，离开判断带放大边距。玩家不在任何区域时全部正常显示。
+- 房间黑场（阶段 B，2026-10-30 修订）：BP_RoomRegion 使用 Included Assets 登记归属，BlackoutRoomIds 显式指定进入本区域后要黑场的房间，Blackout Actors 指定额外 Actor。取消 Portal 预览与隐式邻房黑场；未被指定的房间正常显示。按组件统一去重管理原渲染状态，跨区域保留仍需黑场的共享对象，退出 / 卸载后还原。DetailActors 通过 PropertyRedirect 迁移；旧 Portal 仅保留停用兼容壳。新黑场数组默认空，不自动改写现有地图规则。镜头 Profile 行为与 Stencil 3 后处理方式保留。
 - 房间镜头区域（阶段 A）：新增可放置 `TARoomRegion`（RoomId、Priority、可多个 Box 拼接）与 `TARoomCameraProfile` 数据资产（Boom 长度、高度、左右上下不对称观察范围、过渡秒数）。角色新增 `RoomViewComponent`，按脚下位置选区域并平滑过渡；没有区域时沿用角色蓝图镜头参数；复活时镜头参数直接到位。关卡中放置 `Content/Blueprints/RoomView/BP_RoomRegion`；预置 `Content/Camera/RoomView/Profiles/DA_RoomCamera_Room / Corridor / Outdoor`（450 / 750 / 1000 cm）。
 - QTE 每段 Prompt Offset：以原 InteractPromptComponent 屏幕投影为基准，图标和圆环整体偏移；Details 和 Make QTE Step 均可配置，默认零偏移保留原显示位置。
 - 角色死亡演出与黑屏过渡 / 复活前演出 BlueprintNativeEvent：默认复用 DeathDelay / FadeOutTime 并以 Print String 显示占位文字；可按伤害来源覆写动画并异步回报完成，含旧回调隔离及超时保底，原复位和淡入流程保留。接入说明见 Docs/HealthAndRespawn.md。
@@ -23,6 +23,8 @@
 - 3D 预览台主光强度改为 2、颜色 FFFEEEFF，补光强度改为 0.5。
 
 ### 验证与文档
+
+- 更新 Docs/RoomViewHandover.md 配置步骤与显式黑场规则；Docs/RoomVisibilityAndCameraPlan.md 将旧 Portal 提案明确标为历史规划。新增房间黑场规则、共享对象还原及区域优先级回归测试，UE 5.8 Editor 编译通过，专项自动化 2/2 通过；现有地图加载验证确认姐姐房 9 个引用迁移完整。人工 PIE 画面待验收。
 
 - 新增 Docs/InteractableObjects.md、Docs/WorldInteractionSystem.md 与 Docs/QTEDebugTester.md，更新交互提示和存档说明。最新交互 / 输入 / Prompt 专项 31/31 通过，包含实际 Blueprint 节点连线编译；全量历史中的 3 项已知失败及待 PIE 范围在架构文档记录。
 - 新增纸张实际骨骼姿态及阅读过渡自动化测试，覆盖画面旋转方向、展开前面向相机、取出归位和强制关闭恢复；文档系统共 11 项测试通过。

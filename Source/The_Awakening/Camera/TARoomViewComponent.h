@@ -6,13 +6,12 @@
 #include "TARoomViewComponent.generated.h"
 
 class ATARoomRegion;
-class ATARoomPortal;
 class USpringArmComponent;
 class UCameraComponent;
 class UMaterialInterface;
 
 /**
- * 本地玩家的空间视图协调：根据角色脚下位置解析当前区域与门口，决定哪些房间黑场，混合镜头参数，
+ * 本地玩家的空间视图协调：根据角色脚下位置解析当前区域，执行该区域指定的黑场规则，混合镜头参数，
  * 并作为唯一写入 Camera Boom 的 TargetArmLength / SocketOffset / TargetOffset 的地方。
  * 在 Boom 之前 Tick，使用世界时间（扫描冻结不卡住，暂停时不推进）。
  */
@@ -43,6 +42,8 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	/** 黑场后处理：在 Stencil 3 且没有其他物体覆盖的像素画暗色轮廓。初始化时挂到相机的后处理上。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera|Room View")
 	TSoftObjectPtr<UMaterialInterface> BlackoutPostProcessMaterial;
@@ -69,7 +70,6 @@ private:
 	TWeakObjectPtr<USpringArmComponent> Boom;
 	TWeakObjectPtr<UCameraComponent> Camera;
 	TWeakObjectPtr<ATARoomRegion> ActiveRegion;
-	TArray<TWeakObjectPtr<ATARoomPortal>> ActivePortals;
 
 	FTARoomCameraSettings FallbackSettings;
 	FTARoomCameraSettings BlendFrom;

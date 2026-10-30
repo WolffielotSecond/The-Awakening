@@ -1,26 +1,18 @@
 # 房间显隐、动态镜头与墙体切除：实现规划
 
-更新时间：2026-10-28。
+更新时间：2026-10-30。
 
-**状态：需求与实现交接文档，功能尚未实现。** 本次只新增文档和索引，没有修改 C++、Blueprint、材质、碰撞配置或关卡。以下新类型、接口、参数资产和调试命令均为建议名称，不能当作仓库里已经存在的能力。
+**当前实现以 [RoomViewHandover.md](RoomViewHandover.md) 为准。** 阶段 A 的区域镜头逻辑保留。阶段 B 已于 2026-10-30 修订为显式黑场规则：
 
-**实现进度（2026-10-29）：** 阶段 A 已实现并通过 PIE 验收；阶段 B 已实现，待 PIE 验收。
+- `BP_RoomRegion` 保留 RoomId、Priority、CameraProfile。
+- 原 DetailActors 重命名为 Included Assets，登记房间包含的 Actor；PropertyRedirect 保留旧引用。
+- 当前区域的 BlackoutRoomIds 指定哪些房间的 Included Assets 黑场，Blackout Actors 指定额外黑场 Actor。
+- 黑场目标取并集，按组件去重保存 / 还原渲染状态；没有区域或两个列表为空时，不施加黑场。
+- 不限制正常显示的房间数量；不自动对称、不递归。Portal 的门口预览规则已取消，旧类和资产仅作停用兼容壳。
+- 现有黑场材质和 Stencil 3 机制复用，碰撞、交互和 Tick 不变。镜头仍按角色脚下位置和区域 Priority 选择 Profile。
+- 本次不自动给现有地图推断黑场关系；需要在实例上填写新数组。
 
-阶段 B：
-- `ATARoomRegion` 新增 `DetailActors`（实例上用吸管选家具）。黑场时这些 Actor 上可见的 Primitive 组件 `bRenderInMainPass` / `bRenderInDepthPass` 关闭、`bRenderCustomDepth` 打开、Stencil 设为 3（`ATARoomRegion::BlackoutStencilValue`；0/1/2 被扫描特效占用），退出黑场时还原原设置；不隐藏、不改碰撞 / Tick / 交互。切换是瞬时的。
-- `ATARoomPortal`（关卡里放 `/Game/Blueprints/RoomView/BP_RoomPortal`）：门口的 Box，填 RoomA / RoomB。玩家脚下位置在 Box 内且其中一侧是当前房间时，两侧房间都正常显示；已在预览时用放大 `ExitMarginCm` 的范围判断离开。
-- 可见集合 = 当前房间 + 当前门口两侧；玩家不在任何区域时所有房间正常显示。
-- `UTARoomViewComponent` 初始化时把 `BlackoutPostProcessMaterial`（默认 `/Game/Camera/RoomView/Materials/MI_RoomBlackoutPP`）加到角色相机的后处理 Blendables。`M_RoomBlackoutPP`（Post Process，After Tonemapping）：像素 Stencil = 3 且 SceneDepth > BackgroundDepth（默认 20000 cm，即该像素没有其他物体覆盖）时，输出 Lerp(Tint, EdgeColor, Edge)，Edge 由 CustomDepth 四邻域拉普拉斯 × EdgeSensitivity 得到（EdgeWidth 控制采样间距）；其余像素输出原画面。效果是黑场物品始终画在所有可见物体之下，只从空白处露出暗色轮廓和描边。旧的 `M_RoomBlackout` / `MI_RoomBlackout`（材质替换 + WPO 推远）已不再使用。
-- 尚未处理：被黑场房间内的灯光、粒子、Decal 不会变暗；交互 / 拾取 / 扫描过滤在阶段 D。
-- `Source/The_Awakening/Camera/TARoomCameraProfile.h`：`UTARoomCameraProfile`（DataAsset），字段为 ArmLengthCm、HeightOffsetCm、LookLeft/Right/Up/DownCm、BlendSeconds。
-- `Source/The_Awakening/Camera/TARoomRegion.h/.cpp`：可放置 `ATARoomRegion`（RoomId、Priority、CameraProfile；实例上可加 Box 组件拼接不规则区域，Box 无碰撞）与轻量登记表 `UTARoomRegistrySubsystem`。
-- `Source/The_Awakening/Camera/TARoomViewComponent.h/.cpp`：角色上的 `RoomViewComponent`，用胶囊底部位置解析区域，在 Boom 之前 Tick（FreezeExempt，世界时间），是唯一写入 Boom 长度、SocketOffset、TargetOffset 的地方。偏移仍写世界 Y/Z，左右限位按相机右向量判断屏幕方向。
-- 关卡里放置的一律用 BP：`/Game/Blueprints/RoomView/BP_RoomRegion`（默认 Profile 为 Room）。预置 Profile：`/Game/Camera/RoomView/Profiles/DA_RoomCamera_Room`（450 cm，左右 40，上下 15）、`DA_RoomCamera_Corridor`（750 cm，左右 100，上下 25，与角色蓝图一致）、`DA_RoomCamera_Outdoor`（1000 cm，左右 200，上下 50）。
-- 没有区域或区域未指定 Profile 时，使用角色蓝图上的 CameraDistance、CameraHeightOffset、CameraOffsetLimitX/Z 和 CameraDefaultBlendSeconds。
-
-已确认决定：镜头以 `BP_ThirdPersonCharacter` 为准（走廊 750，房间更近，室外更远，追逐沿用室外）；客厅与餐厅为同一开放空间；室内门常开且不可关闭；黑场为比背景稍亮的暗色立体轮廓；墙体切除在材质中按世界空间区域计算，不依赖模型拆分，半透明用固定噪声而非 DitherTemporalAA，断面与背面输出纯黑；扫描不能看到黑场房间内容。
-
-本文供同学及其 Claude 接手。实施时请先核对“现有代码”部分及实际 Blueprint 覆盖，保留已经验收的输入、扫描、暂停、跑酷、复活和自动对焦行为。不要直接用本文示意代码覆盖现有系统。
+**以下第 1 节起是历史需求与长期规划存档，并非当前功能清单。** 其中“当前房间 + 门口两侧”的可见集合、PortalId / 有向穿越、门开关控制等旧提案已被上面的显式规则取代，不应照旧实现。后续墙体材质切除、交互过滤、关卡卸载等仍是独立待办，不能当作已交付能力。最新配置步骤、限制与验证状态见交接说明。
 
 ## 1. 用户要的最终效果
 

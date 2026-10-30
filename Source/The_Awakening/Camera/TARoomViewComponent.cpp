@@ -111,22 +111,19 @@ void UTARoomViewComponent::ResolveRegion(bool bSnap)
 
 void UTARoomViewComponent::UpdateRoomVisibility()
 {
-	const UTARoomRegistrySubsystem* Registry = UTARoomRegistrySubsystem::Get(this);
-	if (!Registry) return;
-
-	// 只看玩家脚下位置：当前房间 + 正站在其门口的另一侧房间。不在任何区域时全部正常显示（未配置区域的地图不受影响）
-	Registry->ResolvePortals(GetProbeLocation(), ActiveRoomId, ActivePortals);
-	TSet<FName> VisibleRooms;
-	VisibleRooms.Add(ActiveRoomId);
-	for (const TWeakObjectPtr<ATARoomPortal>& Portal : ActivePortals)
+	if (UTARoomRegistrySubsystem* Registry = UTARoomRegistrySubsystem::Get(this))
 	{
-		if (const ATARoomPortal* P = Portal.Get())
-		{
-			VisibleRooms.Add(P->RoomA);
-			VisibleRooms.Add(P->RoomB);
-		}
+		Registry->ApplyRoomVisibility(ActiveRegion.Get());
 	}
-	Registry->ApplyRoomVisibility(VisibleRooms, !ActiveRegion.IsValid());
+}
+
+void UTARoomViewComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UTARoomRegistrySubsystem* Registry = UTARoomRegistrySubsystem::Get(this))
+	{
+		Registry->ApplyRoomVisibility(nullptr);
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void UTARoomViewComponent::SnapToCurrentLocation()
@@ -134,6 +131,7 @@ void UTARoomViewComponent::SnapToCurrentLocation()
 	if (!bInitialized) return;
 	LookOffset = FVector2D::ZeroVector;
 	ResolveRegion(true);
+	UpdateRoomVisibility();
 	bSnapOnNextTick = true;
 	ApplyToBoom();
 	if (auto* ExemptBoom = Cast<UTAFreezeExemptSpringArm>(Boom.Get())) ExemptBoom->SkipLagOnce();
