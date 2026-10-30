@@ -4,6 +4,7 @@
 
 ### 新增
 
+- 背包 UI 阶段交付完成，后续制作暂缓：平行四边形 Tab 与滑动换色、IMC 键盘 / 手柄提示及边界停止翻页；细胞 / 实际 HP 移入对称顶栏，宽度 2:3、两处间隔等长；Grid 着色与九宫格边框、深色背景及强度 0.4 的模糊。细胞 / HP 实时更新，旧细胞控件移除。见 Docs/InventoryTabs.md。
 - 材质函数 `MF_BackfaceBlack`：输入 BaseColor / Metallic / Specular / Emissive，用 TwoSidedSign 让背面输出全部归零显示纯黑，正面保持原值；另输出 FrontFace。由母材质手动连接，需开启 Two Sided，接法见 Docs/RoomViewHandover.md。
 - 隐藏房间内的物体不可交互、不可拾取、不可扫描：新增 `UTARoomRegistrySubsystem::IsActorInBlackoutRoom`，接入 `FindBestInteractable`、`TANearbyPickupComponent::IsEligible` 与扫描高亮候选；物体按黑场 Actor 集合或所在位置判定，房间恢复显示后自动恢复。
 - 房间黑场（阶段 B，2026-10-30 修订）：BP_RoomRegion 使用 Included Assets 登记归属，BlackoutRoomIds 显式指定进入本区域后要黑场的房间，Blackout Actors 指定额外 Actor。取消 Portal 预览与隐式邻房黑场；未被指定的房间正常显示。按组件统一去重管理原渲染状态，跨区域保留仍需黑场的共享对象，退出 / 卸载后还原。DetailActors 通过 PropertyRedirect 迁移；旧 Portal 仅保留停用兼容壳。新黑场数组默认空，不自动改写现有地图规则。镜头 Profile 行为与 Stencil 3 后处理方式保留。
@@ -26,6 +27,7 @@
 
 ### 验证与文档
 
+- 背包阶段文档整理，旧计划标记为历史记录；移除一次性资产生成 / 预览命令行工具，保留运行时资产及自动化回归。清理本机过期打包输出、试验截图和临时脚本，清单见 Docs/Maintenance20261031.md。
 - 更新 Docs/RoomViewHandover.md 配置步骤与显式黑场规则；Docs/RoomVisibilityAndCameraPlan.md 将旧 Portal 提案明确标为历史规划。新增房间黑场规则、共享对象还原及区域优先级回归测试，UE 5.8 Editor 编译通过，专项自动化 2/2 通过；现有地图加载验证确认姐姐房 9 个引用迁移完整。人工 PIE 画面待验收。
 
 - 新增 Docs/InteractableObjects.md、Docs/WorldInteractionSystem.md 与 Docs/QTEDebugTester.md，更新交互提示和存档说明。最新交互 / 输入 / Prompt 专项 31/31 通过，包含实际 Blueprint 节点连线编译；全量历史中的 3 项已知失败及待 PIE 范围在架构文档记录。

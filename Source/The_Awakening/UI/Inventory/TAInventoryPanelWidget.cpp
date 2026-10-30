@@ -1,10 +1,13 @@
 #include "UI/Inventory/TAInventoryPanelWidget.h"
+#include "UI/Inventory/TAInventoryTabBar.h"
 #include "UI/Inventory/TAInventorySlotWidget.h"
 #include "UI/Inventory/TAClothingPanelWidget.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Inventory/TAClothingDefinition.h"
 #include "Inventory/TAItemDefinition.h"
 #include "Core/TAPlayerState.h"
+#include "AbilitySystem/TAAttributeSet.h"
+#include "Health/TAHealthComponent.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
@@ -87,6 +90,11 @@ void UTAInventoryPanelWidget::NativeConstruct()
 	{
 		WidgetSwitcher->SetActiveWidgetIndex(0);
 	}
+	if (TabBar_Inventory)
+	{
+		TabBar_Inventory->OnTabRequested.AddUniqueDynamic(this, &UTAInventoryPanelWidget::SelectInventoryPage);
+		TabBar_Inventory->SetPage(0, false);
+	}
 	EnsureInventoryInputActions();
 	BuildActionPromptBar();
 
@@ -138,6 +146,10 @@ void UTAInventoryPanelWidget::NativeConstruct()
 
 void UTAInventoryPanelWidget::NativeDestruct()
 {
+	if (TabBar_Inventory)
+	{
+		TabBar_Inventory->OnTabRequested.RemoveDynamic(this, &UTAInventoryPanelWidget::SelectInventoryPage);
+	}
 	ReleaseInput();
 	CancelGamepadDragMode();
 	if (ItemInfoWidget)
@@ -178,6 +190,7 @@ void UTAInventoryPanelWidget::NativeDestruct()
 void UTAInventoryPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	RefreshHeaderStats();
 	if (MessageTimeLeft > 0.f)
 	{
 		MessageTimeLeft -= InDeltaTime;
@@ -317,24 +330,23 @@ void UTAInventoryPanelWidget::HandleInventoryUpdated()
 
 void UTAInventoryPanelWidget::OnClickInventoryTab()
 {
-	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
-	CancelGamepadDragMode();
-	HideItemInfo(HoveredItemSlot.Get());
-	if (WidgetSwitcher)
-	{
-		WidgetSwitcher->SetActiveWidgetIndex(0);
-	}
+	SelectInventoryPage(0);
 }
 
 void UTAInventoryPanelWidget::OnClickSkillsTab()
 {
+	SelectInventoryPage(1);
+}
+
+void UTAInventoryPanelWidget::SelectInventoryPage(int32 Page)
+{
 	if (!AllowsPlayerInput(ETAInputCapability::Navigate)) return;
+	if (!WidgetSwitcher || Page < 0 || Page >= WidgetSwitcher->GetChildrenCount()) return;
 	CancelGamepadDragMode();
 	HideItemInfo(HoveredItemSlot.Get());
-	if (WidgetSwitcher)
-	{
-		WidgetSwitcher->SetActiveWidgetIndex(1);
-	}
+	if (Page == WidgetSwitcher->GetActiveWidgetIndex()) return;
+	WidgetSwitcher->SetActiveWidgetIndex(Page);
+	if (TabBar_Inventory) TabBar_Inventory->SetPage(Page);
 }
 
 void UTAInventoryPanelWidget::EnsureInventoryInputActions()
@@ -354,12 +366,9 @@ void UTAInventoryPanelWidget::ChangePage(int32 Direction)
 	}
 	const int32 PageCount = WidgetSwitcher->GetChildrenCount();
 	const int32 CurrentPage = FMath::Clamp(WidgetSwitcher->GetActiveWidgetIndex(), 0, PageCount - 1);
-	const int32 NextPageIndex = (CurrentPage + Direction + PageCount) % PageCount;
-	if (NextPageIndex != CurrentPage)
-	{
-		CancelGamepadDragMode();
-	}
-	WidgetSwitcher->SetActiveWidgetIndex(NextPageIndex);
+	const int32 NextPageIndex = FMath::Clamp(CurrentPage + Direction, 0, PageCount - 1);
+	if (NextPageIndex == CurrentPage) return;
+	SelectInventoryPage(NextPageIndex);
 }
 
 void UTAInventoryPanelWidget::ToggleGamepadDragMode(const FInputActionValue& Value)
@@ -674,6 +683,12 @@ void UTAInventoryPanelWidget::RefreshInputIcons()
 {
 	if (InputIconSubsystem)
 	{
+		if (TabBar_Inventory)
+		{
+			TabBar_Inventory->SetInputIcons(
+				InputIconSubsystem->GetIconForActionForPlayer(PreviousPageAction, GetOwningLocalPlayer()),
+				InputIconSubsystem->GetIconForActionForPlayer(NextPageAction, GetOwningLocalPlayer()));
+		}
 		if (Image_PreviousPageKey)
 		{
 			FTAPromptWidgetUtils::ApplyKeyIcon(
@@ -717,33 +732,11 @@ void UTAInventoryPanelWidget::HandleInputPromptsChanged()
 
 void UTAInventoryPanelWidget::RefreshAll()
 {
+	RefreshHeaderStats();
 	EnsureDynamicChildren();
 	if (!Inventory)
 	{
 		return;
-	}
-
-	if (Text_Money)
-	{
-		int32 Money = 0;
-		if (APlayerController* PC = GetOwningPlayer())
-		{
-			if (ATAPlayerState* PS = PC->GetPlayerState<ATAPlayerState>())
-			{
-				Money = PS->GetMoney();
-			}
-		}
-
-		FString Line = FString::Printf(TEXT("细胞: %d"), Money);
-		if (UGameInstance* GI = GetGameInstance())
-		{
-			if (const UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
-			{
-				const FString Fmt = Loc->GetText(TEXT("UI_Cells")).ToString();
-				Line = Fmt.Replace(TEXT("{0}"), *FString::FromInt(Money));
-			}
-		}
-		Text_Money->SetText(FText::FromString(Line));
 	}
 
 	const TArray<FTAInventorySlot>& Stories = Inventory->GetStorySlots();
@@ -828,6 +821,38 @@ void UTAInventoryPanelWidget::RefreshLocalizedChrome()
 	Apply(Text_Inventory, TEXT("UI_Inventory"), TEXT("背包"));
 	Apply(Text_Skills, TEXT("UI_Skill"), TEXT("技能"));
 	Apply(Text_SkillsPlaceholder, TEXT("Common_UnavailableInThisVersion"), TEXT("当前版本中不可用"));
+	if (TabBar_Inventory && Text_Inventory && Text_Skills)
+	{
+		TabBar_Inventory->SetLabels(Text_Inventory->GetText(), Text_Skills->GetText(), Text_Inventory->GetFont());
+	}
+	RefreshHeaderStats(true);
+}
+
+void UTAInventoryPanelWidget::RefreshHeaderStats(bool bForce)
+{
+	if (!TabBar_Inventory) return;
+	APlayerController* PC = GetOwningPlayer();
+	const ATAPlayerState* PS = PC ? PC->GetPlayerState<ATAPlayerState>() : nullptr;
+	const int32 Cells = PS ? PS->GetMoney() : 0;
+	int32 Health = INDEX_NONE;
+	const UTAHealthComponent* HealthComponent = UTAHealthComponent::FindHealthComponent(GetOwningPlayerPawn());
+	if (HealthComponent && HealthComponent->GetAbilitySystemComponent())
+		Health = FMath::RoundToInt(FMath::Max(0.f, HealthComponent->GetHealth()));
+	else if (PS && PS->GetAttributeSet())
+		Health = FMath::RoundToInt(FMath::Max(0.f, PS->GetAttributeSet()->GetHealth()));
+	if (!bForce && bHeaderStatsInitialized && Cells == CachedHeaderCells && Health == CachedHeaderHealth) return;
+	CachedHeaderCells = Cells; CachedHeaderHealth = Health; bHeaderStatsInitialized = true;
+	FString CellsPattern = TEXT("细胞: {0}");
+	FString HealthPattern = TEXT("HP: {0}");
+	if (UGameInstance* GI = GetGameInstance())
+		if (const auto* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
+		{
+			CellsPattern = Loc->GetText(TEXT("UI_Cells")).ToString();
+			HealthPattern = Loc->GetText(TEXT("UI_Inventory_HP")).ToString();
+		}
+	TabBar_Inventory->SetStatusLabels(
+		FText::FromString(CellsPattern.Replace(TEXT("{0}"), *FString::FromInt(Cells))),
+		FText::FromString(HealthPattern.Replace(TEXT("{0}"), Health == INDEX_NONE ? TEXT("—") : *FString::FromInt(Health))));
 }
 
 void UTAInventoryPanelWidget::HandleLanguageChanged()

@@ -1,5 +1,7 @@
 # 背包系统改动清单（对齐新版设计文档）
 
+> 历史计划，不作为当前待办授权。最新阶段已完成，后续制作暂缓；见 [背包 UI 阶段交付](../InventoryTabs.md)。
+
 依据：[InventoryVsDesignDoc.md](InventoryVsDesignDoc.md)。按建议顺序排列，前面的是后面的基础。
 
 ## P0 数据层（`Inventory/`）

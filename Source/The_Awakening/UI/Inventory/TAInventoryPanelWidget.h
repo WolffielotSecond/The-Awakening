@@ -7,6 +7,7 @@
 #include "TAInventoryPanelWidget.generated.h"
 
 class UTAInventoryComponent;
+class UTAInventoryTabBar;
 class UTAInventorySlotWidget;
 class UTAClothingPanelWidget;
 class UBorder;
@@ -70,8 +71,12 @@ protected:
 	UFUNCTION()
 	void OnClickSkillsTab();
 
+	UFUNCTION()
+	void SelectInventoryPage(int32 Page);
+
 	void EnsureInventoryInputActions();
 	void RefreshInputIcons();
+	void RefreshHeaderStats(bool bForce = false);
 	UFUNCTION()
 	void HandleInputPromptsChanged();
 	void ToggleGamepadDragMode(const FInputActionValue& Value);
@@ -107,11 +112,11 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Dim;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> Text_Money;
-
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidgetSwitcher> WidgetSwitcher;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTAInventoryTabBar> TabBar_Inventory;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Inventory;
@@ -259,6 +264,9 @@ protected:
 	bool bGamepadDragModeActive = false;
 	bool bWasItemDragActive = false;
 private:
+	int32 CachedHeaderCells = INDEX_NONE;
+	int32 CachedHeaderHealth = INDEX_NONE;
+	bool bHeaderStatsInitialized = false;
 	FTAInputRouter::FHandle InputRequestHandle = 0;
 	TWeakObjectPtr<class AThe_AwakeningPlayerController> InputRequestController;
 	/** 背包打开期间时停（策划文档：背包打开时也会时停）。与输入请求一起申请、一起释放。 */

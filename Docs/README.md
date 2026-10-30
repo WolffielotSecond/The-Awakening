@@ -26,6 +26,7 @@
 - [路径解谜小游戏（C++ / UMG）](PathPuzzle.md)
 
 ## 背包、拾取与文本
+- [背包 UI 阶段交付（已完成，后续暂缓）](InventoryTabs.md)
 - [多物品拾取接入](NearbyPickup.md)
 - [背包物品交互菜单](InventoryItemActions.md)
 - [文本系统](DocumentSystem.md)
@@ -49,6 +50,7 @@
 
 ## 工程与版本
 - [版本号管理](VersionManagement.md)
+- [2026-10-31 阶段收尾与本机清理](Maintenance20261031.md)
 
 ## 策划、报告与指南
 - [游戏总览（策划文案）](Design/GameOverview.md)

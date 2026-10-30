@@ -187,6 +187,7 @@
 	"ST_Demo_Choice_A": "Give me something good",
 	"ST_Demo_Choice_B": "Goodbye",
 	"UI_Cells": "Cells: {0}",
+	"UI_Inventory_HP": "HP: {0}",
 	"UI_Dialogue_ChoiceDown": "Next Option",
 	"UI_Dialogue_ChoiceSelect": "Select",
 	"UI_Dialogue_ChoiceUp": "Previous Option",

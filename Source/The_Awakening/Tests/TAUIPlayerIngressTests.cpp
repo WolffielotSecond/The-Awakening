@@ -3,6 +3,7 @@
 #include "The_AwakeningPlayerController.h"
 #include "Core/TAPlayerInput.h"
 #include "UI/Inventory/TAInventoryPanelWidget.h"
+#include "UI/Inventory/TAInventoryTabBar.h"
 #include "UI/Inventory/TAClothingPanelWidget.h"
 #include "UI/Inventory/TAInventorySlotWidget.h"
 #include "Inventory/TAInventoryComponent.h"
@@ -26,6 +27,9 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SWindow.h"
 #include "Widgets/Layout/SBorder.h"
+#include "UObject/UnrealType.h"
+#include "Core/TAPlayerState.h"
+#include "AbilitySystem/TAAttributeSet.h"
 
 namespace
 {
@@ -81,6 +85,25 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	Inventory->Init(Data, Close); Inventory->NativeConstruct();
 	auto* Switcher = Cast<UWidgetSwitcher>(Inventory->GetWidgetFromName(TEXT("WidgetSwitcher")));
 	auto* Skills = Cast<UButton>(Inventory->GetWidgetFromName(TEXT("Button_Skills")));
+	auto* Tabs = Cast<UTAInventoryTabBar>(Inventory->GetWidgetFromName(TEXT("TabBar_Inventory")));
+	TestNotNull(TEXT("Animated inventory header is installed on the real Blueprint"), Tabs);
+	TestNull(TEXT("Old money display is removed from the Blueprint"), Inventory->GetWidgetFromName(TEXT("Text_Money")));
+	if (Tabs)
+	{
+		auto* State = World->SpawnActor<ATAPlayerState>(); PC->SetPlayerState(State);
+		State->GetAbilitySystemComponent()->AddAttributeSetSubobject(State->GetAttributeSet());
+		State->GetAbilitySystemComponent()->InitAbilityActorInfo(State, State);
+		State->AddMoney(128);
+		State->GetAbilitySystemComponent()->SetNumericAttributeBase(UTAAttributeSet::GetHealthAttribute(), 75.f);
+		Inventory->RefreshAll();
+		TestEqual(TEXT("Header uses the existing currency system"), Tabs->GetCellsLabel().ToString(), FString(TEXT("细胞: 128")));
+		TestEqual(TEXT("Header reads the existing GAS health"), Tabs->GetHealthLabel().ToString(), FString(TEXT("HP: 75")));
+		State->AddMoney(7);
+		State->GetAbilitySystemComponent()->SetNumericAttributeBase(UTAAttributeSet::GetHealthAttribute(), 44.f);
+		Inventory->NativeTick(FGeometry(), 0.016f);
+		TestEqual(TEXT("Currency changes refresh while inventory is open"), Tabs->GetCellsLabel().ToString(), FString(TEXT("细胞: 135")));
+		TestEqual(TEXT("Health changes refresh while inventory is open"), Tabs->GetHealthLabel().ToString(), FString(TEXT("HP: 44")));
+	}
 	auto* Container = Cast<UNamedSlot>(Inventory->GetWidgetFromName(TEXT("NamedSlot_InnerClothing")));
 	auto* ClothingUI = Container ? Cast<UTAClothingPanelWidget>(Container->GetContent()) : nullptr;
 	TestNotNull(TEXT("Actual clothing panel"), ClothingUI);
@@ -109,6 +132,12 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	const auto CoverHandle = PC->AcquireInputRequest(Cover);
 	Skills->OnClicked.Broadcast();
 	TestEqual(TEXT("Covered button cannot use new owner's Navigate"), Switcher->GetActiveWidgetIndex(), 0);
+	if (Tabs)
+	{
+		Tabs->OnTabRequested.Broadcast(1);
+		TestEqual(TEXT("Covered animated header cannot change pages"), Switcher->GetActiveWidgetIndex(), 0);
+		TestEqual(TEXT("Covered header retains selection"), Tabs->GetSelectedPage(), 0);
+	}
 	const FDragDropEvent Drop(Pointer, TSharedPtr<FDragDropOperation>());
 	TestFalse(TEXT("Covered Drop cannot mutate inventory"), Slots[1]->NativeOnDrop(Geometry, Drop, Drag));
 	TestTrue(TEXT("Denied Drop preserves item location"), !Data->GetSlots()[0].IsEmpty() && Data->GetSlots()[1].IsEmpty());
@@ -122,6 +151,44 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	TestTrue(TEXT("Drop works again after remaining winner restores"), Slots[1]->NativeOnDrop(Geometry, Drop, Drag));
 	TestTrue(TEXT("Authorized Drop moves the stack once"), Data->GetSlots()[0].IsEmpty() && Data->GetSlots()[1].Count == 1);
 	Skills->OnClicked.Broadcast(); TestEqual(TEXT("Authorized button changes page"), Switcher->GetActiveWidgetIndex(), 1);
+	if (Tabs)
+	{
+		TestEqual(TEXT("Existing button keeps animated header synchronized"), Tabs->GetSelectedPage(), 1);
+		Tabs->OnTabRequested.Broadcast(0);
+		TestEqual(TEXT("Animated header changes the actual content page"), Switcher->GetActiveWidgetIndex(), 0);
+		TestEqual(TEXT("Animated header restores inventory selection"), Tabs->GetSelectedPage(), 0);
+		Tabs->OnTabRequested.Broadcast(99);
+		TestEqual(TEXT("Invalid header page is ignored"), Switcher->GetActiveWidgetIndex(), 0);
+	}
+	// Use the actual WBP actions, remapped physical keys and gamepad buttons through an IMC.
+	auto GetPageAction = [Inventory](FName Name) -> UInputAction*
+	{
+		const auto* Property = FindFProperty<FObjectPropertyBase>(Inventory->GetClass(), Name);
+		return Property ? Cast<UInputAction>(Property->GetObjectPropertyValue_InContainer(Inventory)) : nullptr;
+	};
+	auto* PreviousPage = GetPageAction(TEXT("PreviousPageAction"));
+	auto* NextPage = GetPageAction(TEXT("NextPageAction"));
+	if (TestNotNull(TEXT("Configured previous-page action"), PreviousPage) && TestNotNull(TEXT("Configured next-page action"), NextPage))
+	{
+		Context->MapKey(PreviousPage, EKeys::U); Context->MapKey(NextPage, EKeys::I);
+		Context->MapKey(PreviousPage, EKeys::Gamepad_LeftShoulder); Context->MapKey(NextPage, EKeys::Gamepad_RightShoulder);
+		Mappings.RemoveMappingContext(Context, Options); Mappings.AddMappingContext(Context, 0, Options);
+		auto PressPage = [&](FKey Key, int32 ExpectedPage)
+		{
+			TestTrue(TEXT("IMC paging key reaches the inventory input owner"), PC->RoutePlayerInputKey(Key, false, User));
+			TestEqual(TEXT("Paging stops at the boundary and moves normally in range"), Switcher->GetActiveWidgetIndex(), ExpectedPage);
+			if (Tabs) TestEqual(TEXT("Paging keeps the animated header synchronized"), Tabs->GetSelectedPage(), ExpectedPage);
+		};
+		for (bool bGamepad : {false, true})
+		{
+			const FKey PreviousKey = bGamepad ? EKeys::Gamepad_LeftShoulder : EKeys::U;
+			const FKey NextKey = bGamepad ? EKeys::Gamepad_RightShoulder : EKeys::I;
+			PressPage(PreviousKey, 0); // no wrap from inventory to skills
+			PressPage(NextKey, 1);
+			PressPage(NextKey, 1); // no wrap from skills to inventory
+			PressPage(PreviousKey, 0);
+		}
+	}
 	PC->RecordHeldInput(EKeys::Tab, 1.f, User);
 	TestTrue(TEXT("Close key routed once"), PC->RoutePlayerInputKey(EKeys::Tab, false, User));
 	TestEqual(TEXT("Close releases the exact owner"), Inventory->GetPlayerInputRequestHandle(), uint64(0));

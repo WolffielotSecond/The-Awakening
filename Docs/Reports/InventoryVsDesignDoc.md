@@ -1,5 +1,7 @@
 # 背包系统：现有代码 vs 新版设计文档
 
+> 历史差异分析，部分缺失项后来已实现。当前状态见 [背包 UI 阶段交付](../InventoryTabs.md)，不依据此表自动继续开发。
+
 对照范围：新版《The Awakening Game Overview》PDF 第 4–13 页（扫描、背包、可收集物品、普通物品、剧情物品、外套设定）与 `Source/The_Awakening/Inventory`、`UI/Inventory`、`UI/Pickup`、角色的背包/拾取逻辑。只读检查，未改代码。
 
 ## 一、缺失（文档有，代码没有）

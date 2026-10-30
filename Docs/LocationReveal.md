@@ -147,6 +147,8 @@ Wwise 中创建 Event、生成 Windows SoundBanks、在 UE 生成对应 AkAudioE
 真实 UE 渲染：`Saved/LocationReveal/{Reveal,Holding,Erase,Tail,Interrupted,Holding720,Holding1440}.png`。
 1280×720、1920×1080、2560×1440 均生成并检查布局。
 
+2026-10-31 本机清理后仅保留自动化 JSON 摘要；上述 HTML、参考图和渲染截图已作为可再生成的临时文件删除。
+
 对 WBP_LocationReveal、TA_GlobalFont、GoogleSans_Medium 的显式包列表执行 Windows
 CookSinglePackage 成功，零错误、零警告；已核实三个包均输出到 Saved/Cooked/Windows。
 最初使用 NoGameAlwaysCook 的普通定向 Cook 遇到 Wwise 未初始化平台 cooker 的错误；

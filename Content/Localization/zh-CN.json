@@ -187,6 +187,7 @@
 	"ST_Demo_Choice_A": "给我来个好东西",
 	"ST_Demo_Choice_B": "再见",
 	"UI_Cells": "细胞: {0}",
+	"UI_Inventory_HP": "HP: {0}",
 	"UI_Dialogue_ChoiceDown": "下一个选项",
 	"UI_Dialogue_ChoiceSelect": "选择",
 	"UI_Dialogue_ChoiceUp": "上一个选项",
