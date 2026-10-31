@@ -13,6 +13,7 @@ class UVerticalBox;
 class UPanelWidget;
 class UTAInventorySlotWidget;
 class UTAItemDefinition;
+class UBorder;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTAClothingSlotHovered, UTAInventorySlotWidget*, Slot, UTAItemDefinition*, ItemDef);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTAClothingSlotUnhovered, UTAInventorySlotWidget*, Slot);
@@ -23,6 +24,9 @@ class THE_AWAKENING_API UTAClothingPanelWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** Set before attaching to the inventory named slot. The rack keeps its separate layout. */
+	void SetWornInventoryLayout() { bWornInventoryLayout = true; }
+	void BuildWornClothing(const FTAClothingInstance& Inner, const FTAClothingInstance& Outer);
 	/**
 	 * 按衣服实例生成口袋格子。DisplayOverride：穿着的外套开启了 bOverrideInnerPocketDisplay 时传入，
 	 * 用它的 InnerPocketDisplayOverrides 改写本面板（内衬）各口袋的摆放位置，只影响显示。
@@ -48,7 +52,11 @@ public:
 	TSubclassOf<UUserWidget> SlotWidgetClass;
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
+	void ArrangeWornClothing(FVector2D Size);
+	void CreateWornPocket(const FTAPocketRuntime& Runtime, const FTAPocketDef& Def, int32& FlatIndex);
 
 	void EnsureBindings();
 	void SetClothingIcon(UTAClothingDefinition* Def);
@@ -115,4 +123,13 @@ protected:
 
 	/** 只用于判断布局是否需要重建 */
 	TWeakObjectPtr<const UTAClothingDefinition> BuiltDisplayOverride;
+
+	bool bWornInventoryLayout = false;
+	int32 InnerPocketCount = 0;
+	FVector2D LastWornSize = FVector2D::ZeroVector;
+	TArray<FIntPoint> WornShapes;
+	UPROPERTY(Transient) TObjectPtr<UTAClothingDefinition> WornOuterDef;
+	UPROPERTY(Transient) TObjectPtr<UBorder> InnerFrame;
+	UPROPERTY(Transient) TObjectPtr<UBorder> OuterFrame;
+	UPROPERTY(Transient) TArray<TObjectPtr<USizeBox>> WornCells;
 };

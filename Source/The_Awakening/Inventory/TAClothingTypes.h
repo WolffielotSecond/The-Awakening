@@ -33,28 +33,28 @@ struct THE_AWAKENING_API FTAPocketDef
 	FName PocketId = TEXT("Main");
 
 	/**
-	 * 口袋形状：Columns x Rows 个格子（例如 1x2、2x4、2x2），格子数 = Columns * Rows。
+	 * 口袋形状：Columns（1–4 列）x Rows（1–2 行），格子数 = Columns * Rows。
 	 * 0 表示未设置（旧资产），此时回退到 SlotCount。
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket", meta = (ClampMin = "1", ClampMax = "4", UIMin = "1", UIMax = "4"))
 	int32 Columns = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket", meta = (ClampMin = "1", ClampMax = "2", UIMin = "1", UIMax = "2"))
 	int32 Rows = 0;
 
 	/** 已废弃：只在 Columns / Rows 未设置时使用，保证旧的衣服资产继续能读 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket", meta = (ClampMin = "1", DisplayName = "Slot Count (Deprecated)"))
+	UPROPERTY(BlueprintReadOnly, Category = "Pocket")
 	int32 SlotCount = 1;
 
 	/**
 	 * (0,0)=左上，(1,1)=右下，口袋位置
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket|UI",
+	UPROPERTY(BlueprintReadOnly, Category = "Pocket|UI",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FVector2D AnchorUV = FVector2D(0.5f, 0.5f);
 
 	/** 格子生成在衣服图的哪一侧 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket|UI")
+	UPROPERTY(BlueprintReadOnly, Category = "Pocket|UI")
 	ETAPocketSlotSide SlotSide = ETAPocketSlotSide::Right;
 
 	/** 是否配置了 Columns x Rows 形状 */
@@ -112,10 +112,10 @@ struct THE_AWAKENING_API FTAPocketDisplayOverride
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket|UI",
+	UPROPERTY(BlueprintReadOnly, Category = "Pocket|UI",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FVector2D AnchorUV = FVector2D(0.5f, 0.5f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket|UI")
+	UPROPERTY(BlueprintReadOnly, Category = "Pocket|UI")
 	ETAPocketSlotSide SlotSide = ETAPocketSlotSide::Right;
 };

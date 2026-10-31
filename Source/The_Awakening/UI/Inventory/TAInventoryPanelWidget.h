@@ -8,6 +8,7 @@
 
 class UTAInventoryComponent;
 class UTAInventoryTabBar;
+class UTexture2D;
 class UTAInventorySlotWidget;
 class UTAClothingPanelWidget;
 class UBorder;
@@ -53,6 +54,8 @@ public:
 	void RefreshInputPrompts();
 
 protected:
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
+		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& Style, bool bParentEnabled) const override;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	void EnsureDynamicChildren();
 
@@ -153,9 +156,6 @@ protected:
 	TArray<TObjectPtr<UTAInventorySlotWidget>> StorySlots;
 
 	UPROPERTY()
-	TObjectPtr<UTAClothingPanelWidget> OuterClothingPanel;
-
-	UPROPERTY()
 	TObjectPtr<UTAClothingPanelWidget> InnerClothingPanel;
 
 	UPROPERTY(EditAnywhere, Category = "InventoryUI")
@@ -163,6 +163,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "InventoryUI")
 	TSubclassOf<UTAInventorySlotWidget> SlotWidgetClass;
+
+	/** Only the worn-coat display slot uses this frame; pocket/story slots keep their own brush. */
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Appearance")
+	TObjectPtr<UTexture2D> OuterEquipBackgroundTexture;
 
 	/** 顶栏「背包」按钮上的文字 */
 	/** 可选：背包里的提示文字（例如“当前位置无法掉落物品”），显示 MessageDuration 秒后隐藏 */

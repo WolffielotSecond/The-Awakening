@@ -8,11 +8,14 @@
 #include "Core/TAPlayerState.h"
 #include "AbilitySystem/TAAttributeSet.h"
 #include "Health/TAHealthComponent.h"
+#include "Engine/Texture2D.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
 #include "Components/Button.h"
 #include "Components/NamedSlot.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/CanvasPanel.h"
 #include "Components/Image.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -43,6 +46,45 @@
 #include "UI/Document/TADiaryWidget.h"
 #include "Document/TADocumentSettings.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
+#include "Rendering/DrawElements.h"
+#include "Styling/CoreStyle.h"
+
+int32 UTAInventoryPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
+	FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const
+{
+	Layer = Super::NativePaint(Args, Geometry, CullingRect, Out, Layer, Style, bParentEnabled);
+	const FVector2D Size = Geometry.GetLocalSize();
+	const float Scale = FMath::Max(.5f, float(Size.Y / 1080.f));
+	const FLinearColor Color = FLinearColor(FColor(0x74, 0xB9, 0xB0)) * Style.GetColorAndOpacityTint();
+	auto Point = [&](float X, float Y) { return FVector2D(Size.X * X, Size.Y * Y); };
+	auto Line = [&](FVector2D From, FVector2D To, float Width)
+	{
+		const TArray<FVector2D> Points = { From, To };
+		FSlateDrawElement::MakeLines(Out, Layer + 1, Geometry.ToPaintGeometry(), Points,
+			ESlateDrawEffect::None, Color.CopyWithNewOpacity(Color.A * .06f), true, (Width + 5.f) * Scale);
+		FSlateDrawElement::MakeLines(Out, Layer + 2, Geometry.ToPaintGeometry(), Points,
+			ESlateDrawEffect::None, Color.CopyWithNewOpacity(Color.A * .12f), true, (Width + 2.f) * Scale);
+		FSlateDrawElement::MakeLines(Out, Layer + 3, Geometry.ToPaintGeometry(), Points,
+			ESlateDrawEffect::None, Color, true, Width * Scale);
+	};
+	auto Cap = [&](FVector2D At, FVector2D Extent)
+	{
+		FSlateDrawElement::MakeBox(Out, Layer + 2, Geometry.ToPaintGeometry(Extent + FVector2D(4.f * Scale),
+			FSlateLayoutTransform(At - FVector2D(2.f * Scale))), FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")),
+			ESlateDrawEffect::None, Color.CopyWithNewOpacity(Color.A * .08f));
+		FSlateDrawElement::MakeBox(Out, Layer + 3, Geometry.ToPaintGeometry(Extent, FSlateLayoutTransform(At)),
+			FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")), ESlateDrawEffect::None, Color);
+	};
+	// Normalized measurements from the reference: the sides intentionally start/end at different heights.
+	Line(Point(.041f, .140f), Point(.041f, .915f), 1.f);
+	Cap(Point(.041f, .133f), Point(.014f, .014f));
+	Cap(Point(.041f, .912f), Point(.003f, .005f));
+	Line(Point(.952f, .105f), Point(.952f, .950f), 1.f);
+	Cap(Point(.935f, .098f), Point(.017f, .014f));
+	Cap(Point(.944f, .947f), Point(.008f, .007f));
+	Line(Point(.209f, .952f), Point(.575f, .952f), 1.5f);
+	return Layer + 3;
+}
 
 FReply UTAInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
@@ -142,6 +184,8 @@ void UTAInventoryPanelWidget::NativeConstruct()
 			Time->RequestFreeze(this, 1.f);
 			bFreezeRequested = true;
 		}
+	// Child Slate trees may rebuild after Init; populate the final constructed tree.
+	RefreshAll();
 }
 
 void UTAInventoryPanelWidget::NativeDestruct()
@@ -191,6 +235,27 @@ void UTAInventoryPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDe
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	RefreshHeaderStats();
+	if (NamedSlot_OuterEquip && NamedSlot_Story0 && InnerClothingPanel && WidgetSwitcher && WidgetSwitcher->GetActiveWidgetIndex() == 0)
+	{
+		UWidget* InnerFrame = InnerClothingPanel->GetWidgetFromName(TEXT("InnerPocketFrame"));
+		auto* Placement = Cast<UCanvasPanelSlot>(NamedSlot_OuterEquip->Slot);
+		UWidget* Parent = NamedSlot_OuterEquip->GetParent();
+		const auto Story = NamedSlot_Story0->GetCachedGeometry();
+		if (InnerFrame && Placement && Parent && MyGeometry.GetLocalSize().X > 0.f && Story.GetLocalSize().X > 0.f && InnerFrame->GetCachedGeometry().GetLocalSize().Y > 0.f)
+		{
+			const FVector2D StoryTopLeft = MyGeometry.AbsoluteToLocal(Story.LocalToAbsolute(FVector2D::ZeroVector));
+			const FVector2D StorySize = MyGeometry.AbsoluteToLocal(Story.LocalToAbsolute(Story.GetLocalSize())) - StoryTopLeft;
+			const float Gap = FMath::Max(0.f, float(StoryTopLeft.X - MyGeometry.GetLocalSize().X * .041f));
+			const auto Inner = InnerFrame->GetCachedGeometry();
+			const float RowCenter = MyGeometry.AbsoluteToLocal(Inner.LocalToAbsolute(Inner.GetLocalSize() * .5f)).Y;
+			const FVector2D At(MyGeometry.GetLocalSize().X * .952f - Gap - StorySize.X, RowCenter - StorySize.Y * .5f);
+			const auto Canvas = Parent->GetCachedGeometry();
+			const FVector2D LocalAt = Canvas.AbsoluteToLocal(MyGeometry.LocalToAbsolute(At));
+			const FVector2D LocalSize = Canvas.AbsoluteToLocal(MyGeometry.LocalToAbsolute(At + StorySize)) - LocalAt;
+			if (!Placement->GetPosition().Equals(LocalAt, .1f)) Placement->SetPosition(LocalAt);
+			if (!Placement->GetSize().Equals(LocalSize, .1f)) Placement->SetSize(LocalSize);
+		}
+	}
 	if (MessageTimeLeft > 0.f)
 	{
 		MessageTimeLeft -= InDeltaTime;
@@ -247,6 +312,15 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 	{
 		// 外套只能在衣架换装界面穿脱，背包里的外套格只显示
 		OuterEquipSlot->SetDragEnabled(false);
+		if (OuterEquipBackgroundTexture)
+		{
+			if (auto* Frame = Cast<UBorder>(OuterEquipSlot->GetWidgetFromName(TEXT("Border"))))
+			{
+				FSlateBrush Brush = Frame->Background;
+				Brush.SetResourceObject(OuterEquipBackgroundTexture);
+				Frame->SetBrush(Brush); // Preserve the existing blue tint and nine-slice margins.
+			}
+		}
 	}
 
 	StorySlots.SetNum(4);
@@ -260,6 +334,7 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 		InnerClothingPanel = CreateWidget<UTAClothingPanelWidget>(this, ClothingPanelClass);
 		if (InnerClothingPanel)
 		{
+			InnerClothingPanel->SetWornInventoryLayout();
 			InnerClothingPanel->SlotWidgetClass = SlotWidgetClass;
 			InnerClothingPanel->SetInventoryComponent(Inventory);
 			InnerClothingPanel->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotHovered);
@@ -269,20 +344,40 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 		}
 	}
 
-	if (NamedSlot_OuterClothing && !OuterClothingPanel)
+	// The inventory now has one combined clothing/pocket presentation.
+	if (NamedSlot_OuterClothing) NamedSlot_OuterClothing->SetVisibility(ESlateVisibility::Collapsed);
+	if (NamedSlot_InnerClothing)
 	{
-		OuterClothingPanel = CreateWidget<UTAClothingPanelWidget>(this, ClothingPanelClass);
-		if (OuterClothingPanel)
+		for (UNamedSlot* Named : { NamedSlot_InnerClothing.Get(), NamedSlot_OuterEquip.Get() })
 		{
-			OuterClothingPanel->SlotWidgetClass = SlotWidgetClass;
-			OuterClothingPanel->SetInventoryComponent(Inventory);
-			OuterClothingPanel->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotHovered);
-			OuterClothingPanel->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAInventoryPanelWidget::HandleInventorySlotUnhovered);
-			NamedSlot_OuterClothing->ClearChildren();
-			NamedSlot_OuterClothing->AddChild(OuterClothingPanel);
-			OuterClothingPanel->SetVisibility(ESlateVisibility::Collapsed);
+			if (!Named || Cast<UCanvasPanelSlot>(Named->Slot)) continue;
+			// Keep the original page and story column; clothing and equipment use its canvas.
+			for (UWidget* Parent = Named->GetParent(); Parent; Parent = Parent->GetParent())
+			{
+				if (auto* PageCanvas = Cast<UCanvasPanel>(Parent))
+				{
+					Named->RemoveFromParent();
+					PageCanvas->AddChildToCanvas(Named)->SetZOrder(1);
+					break;
+				}
+			}
 		}
+		if (auto* Layout = Cast<UCanvasPanelSlot>(NamedSlot_InnerClothing->Slot))
+		{
+			Layout->SetAnchors(FAnchors(.19f, .16f, .912f, .91f));
+			Layout->SetAlignment(FVector2D::ZeroVector);
+			Layout->SetOffsets(FMargin(0.f));
+			Layout->SetAutoSize(false);
+		}
+		if (NamedSlot_OuterEquip)
+			if (auto* Layout = Cast<UCanvasPanelSlot>(NamedSlot_OuterEquip->Slot))
+			{
+				Layout->SetAnchors(FAnchors(0.f));
+				Layout->SetAlignment(FVector2D::ZeroVector);
+				Layout->SetAutoSize(false);
+			}
 	}
+
 }
 
 void UTAInventoryPanelWidget::Init(UTAInventoryComponent* InInventory, UInputAction* InCloseAction)
@@ -310,11 +405,6 @@ void UTAInventoryPanelWidget::Init(UTAInventoryComponent* InInventory, UInputAct
 	{
 		InnerClothingPanel->SetInventoryComponent(Inventory);
 	}
-	if (OuterClothingPanel)
-	{
-		OuterClothingPanel->SetInventoryComponent(Inventory);
-	}
-
 	if (Inventory)
 	{
 		Inventory->OnInventoryUpdated.AddDynamic(this, &UTAInventoryPanelWidget::HandleInventoryUpdated);
@@ -628,6 +718,25 @@ void UTAInventoryPanelWidget::SimulateLeftMouseClick()
 
 void UTAInventoryPanelWidget::BuildActionPromptBar()
 {
+	if (!HorizontalBox_Controls) HorizontalBox_Controls = Cast<UHorizontalBox>(GetWidgetFromName(TEXT("HorizontalBox_Controls")));
+	if (HorizontalBox_Controls)
+		if (auto* Root = Cast<UCanvasPanel>(GetRootWidget()))
+		{
+			if (HorizontalBox_Controls->GetParent() != Root)
+			{
+				HorizontalBox_Controls->RemoveFromParent();
+				Root->AddChildToCanvas(HorizontalBox_Controls);
+			}
+			if (auto* Placement = Cast<UCanvasPanelSlot>(HorizontalBox_Controls->Slot))
+			{
+				// Inside the 95.2% rails, with a 1.2% inset on both axes.
+				Placement->SetAnchors(FAnchors(.94f, .94f));
+				Placement->SetAlignment(FVector2D(1.f, 1.f));
+				Placement->SetOffsets(FMargin(0.f));
+				Placement->SetAutoSize(true);
+				Placement->SetZOrder(10);
+			}
+		}
 	if (!HorizontalBox_Controls || ActionPromptWidgets.Num() > 0)
 	{
 		return;
@@ -765,33 +874,9 @@ void UTAInventoryPanelWidget::RefreshAll()
 
 	if (InnerClothingPanel)
 	{
-		// 穿着的外套可以改写内衬口袋的显示位置
-		InnerClothingPanel->BuildFromClothing(Inventory->GetInnerClothing(), 0, WornOuter);
+		InnerClothingPanel->BuildWornClothing(Inventory->GetInnerClothing(), Inventory->GetOuterClothing());
 	}
 
-	if (OuterClothingPanel)
-	{
-		if (Inventory->HasOuterClothing())
-		{
-			OuterClothingPanel->SetVisibility(ESlateVisibility::Visible);
-			if (NamedSlot_OuterClothing)
-			{
-				NamedSlot_OuterClothing->SetVisibility(ESlateVisibility::Visible);
-			}
-
-			int32 InnerSlots = 0;
-			for (const FTAPocketRuntime& P : Inventory->GetInnerClothing().Pockets)
-			{
-				InnerSlots += P.Slots.Num();
-			}
-			OuterClothingPanel->BuildFromClothing(Inventory->GetOuterClothing(), InnerSlots);
-		}
-		else
-		{
-			OuterClothingPanel->ClearPanel();
-			OuterClothingPanel->SetVisibility(ESlateVisibility::Collapsed);
-		}
-	}
 }
 
 void UTAInventoryPanelWidget::RefreshLocalizedChrome()

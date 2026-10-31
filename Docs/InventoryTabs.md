@@ -1,6 +1,7 @@
 # 背包 UI 阶段交付（2026-10-31）
 
-**本阶段已完成。背包后续制作暂缓，不继续扩展下方布局、衣服样式或技能页。**
+**顶部 UI 与后续衣服/口袋布局阶段均已完成并收工，后续制作暂缓。**
+衣服数据、单图与自适应排版、装饰线、装备栏和按键提示定位见 [ClothingLayout.md](ClothingLayout.md)。
 
 本轮完成顶部 Tab、细胞 / HP 显示、基础格子贴图及背景，不代表整个背包的最终美术交付。
 
@@ -58,4 +59,15 @@ IMC 改绑键盘与手柄边界翻页、细胞 / GAS 血量变化刷新、旧文
 保留运行时控件、蓝图、贴图、材质和正式自动化回归。调整样式直接编辑上述资产或原生控件。
 本机最终预览和最近回归报告保留在 `Saved/`，其他成员应重新运行测试。
 
-尚未制作：下方最终排布、衣服美术与连线、角色展示、技能页内容。均暂缓，待新需求再继续。
+后续已继续制作单张衣服图与右侧口袋自适应排版，见 [ClothingLayout.md](ClothingLayout.md)。正式衣服美术、连线、角色展示和技能页内容尚未制作。
+
+## 外套状态调试准备
+
+外套装备栏单独使用 `/Game/Textures/Inventory/Grid_Solid`，源文件为同目录的 `Grid-Solid.png`。
+`WBP_InventoryPanel` 默认值 `OuterEquipBackgroundTexture` 指定该贴图；原有 `#799FA7` 调色和九宫格边距保留。
+普通口袋及剧情格继续使用原 `Grid`，不改共用格子蓝图。
+
+玩家角色蓝图 `BP_ThirdPersonCharacter` 的 `InventoryComponent.DefaultOuterClothing` 清空，
+`DefaultInnerClothing` 保持原配置；不删除外套定义或改写存档。新开局应只保留内衣容量，
+外套图和外套口袋隐藏，外套装备栏保留空框。加载已有存档仍会恢复其中保存的外套。
+衣服挂机制保留；衣服换装、口袋物品与新布局的自动化验证范围见 ClothingLayout.md。

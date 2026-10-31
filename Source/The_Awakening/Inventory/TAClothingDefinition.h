@@ -16,6 +16,12 @@ class THE_AWAKENING_API UTAClothingDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	virtual void PostInitProperties() override;
+	virtual void PostLoad() override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& Event) override;
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 	/** 内衬或外套 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing")
 	ETAClothingLayer Layer = ETAClothingLayer::Inner;
@@ -31,8 +37,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing")
 	TSoftObjectPtr<UTexture2D> Icon;
 
-	/** 口袋列表；格子总数 = 各口袋格子数（Columns * Rows，旧资产为 SlotCount）之和 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing")
+	/** 口袋数量；调整后自动增减下面的口袋配置。口袋按列表顺序从上到下显示。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing", meta = (ClampMin = "1", ClampMax = "3", UIMin = "1", UIMax = "3"))
+	int32 PocketCount = 1;
+
+	/** 每个口袋 1–2 行、1–4 列。数量由 PocketCount 控制；旧资产容量在加载时保留。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, EditFixedSize, Category = "Clothing", meta = (TitleProperty = "PocketId"))
 	TArray<FTAPocketDef> Pockets;
 
 	/**
@@ -47,11 +57,11 @@ public:
 	FGameplayTagContainer ExclusiveAbilityTags;
 
 	/** 仅外套：穿上后是否改写内衬（默认）口袋在界面上的位置 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing|UI", meta = (EditCondition = "Layer == ETAClothingLayer::Outer"))
+	UPROPERTY(BlueprintReadOnly, Category = "Clothing|UI")
 	bool bOverrideInnerPocketDisplay = false;
 
 	/** 按内衬口袋顺序一一对应；数量不够的口袋保持内衬自己的配置 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing|UI", meta = (EditCondition = "Layer == ETAClothingLayer::Outer && bOverrideInnerPocketDisplay"))
+	UPROPERTY(BlueprintReadOnly, Category = "Clothing|UI")
 	TArray<FTAPocketDisplayOverride> InnerPocketDisplayOverrides;
 
 	/** 总格子数 */

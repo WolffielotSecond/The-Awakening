@@ -4,6 +4,8 @@
 
 ### 新增
 
+- 背包新增参考效果图比例的左、右、底部装饰线，颜色 `#74B9B0`，保留实心端帽与轻微柔光；衣服装备栏跟随内衣口袋行居中，距右线的间距与剧情格距左线相等。
+- 衣服 DataAsset 可编辑 1–3 个口袋，每个 1–2 行、1–4 列；背包改为单张衣服图、右侧左边缘对齐的内衣/外套口袋分组，按最大 6 行×4 列自适应。内衣保留白色草图，外套使用 Common 占位贴图，衣架独立布局沿用；配置和存档边界见 Docs/ClothingLayout.md。
 - 背包 UI 阶段交付完成，后续制作暂缓：平行四边形 Tab 与滑动换色、IMC 键盘 / 手柄提示及边界停止翻页；细胞 / 实际 HP 移入对称顶栏，宽度 2:3、两处间隔等长；Grid 着色与九宫格边框、深色背景及强度 0.4 的模糊。细胞 / HP 实时更新，旧细胞控件移除。见 Docs/InventoryTabs.md。
 - 材质函数 `MF_BackfaceBlack`：输入 BaseColor / Metallic / Specular / Emissive，用 TwoSidedSign 让背面输出全部归零显示纯黑，正面保持原值；另输出 FrontFace。由母材质手动连接，需开启 Two Sided，接法见 Docs/RoomViewHandover.md。
 - 隐藏房间内的物体不可交互、不可拾取、不可扫描：新增 `UTARoomRegistrySubsystem::IsActorInBlackoutRoom`，接入 `FindBestInteractable`、`TANearbyPickupComponent::IsEligible` 与扫描高亮候选；物体按黑场 Actor 集合或所在位置判定，房间恢复显示后自动恢复。
@@ -27,6 +29,7 @@
 
 ### 验证与文档
 
+- 衣服/口袋布局与美化阶段收工：更新配置、装饰线、装备栏和框内右下角提示规格，标记后续美术/连线/技能页暂缓。清理 39 个临时文件约 10.23 MiB；Saved 约 353.65 MiB，保留最终预览、最新 8/8 回归记录与原资产备份，存档 SHA-256 未变。见 Docs/ClothingLayout.md、Docs/Maintenance20261031.md。
 - 背包阶段文档整理，旧计划标记为历史记录；移除一次性资产生成 / 预览命令行工具，保留运行时资产及自动化回归。清理本机过期打包输出、试验截图和临时脚本，清单见 Docs/Maintenance20261031.md。
 - 更新 Docs/RoomViewHandover.md 配置步骤与显式黑场规则；Docs/RoomVisibilityAndCameraPlan.md 将旧 Portal 提案明确标为历史规划。新增房间黑场规则、共享对象还原及区域优先级回归测试，UE 5.8 Editor 编译通过，专项自动化 2/2 通过；现有地图加载验证确认姐姐房 9 个引用迁移完整。人工 PIE 画面待验收。
 

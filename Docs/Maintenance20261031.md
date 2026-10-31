@@ -1,9 +1,10 @@
 # 2026-10-31 阶段收尾与本机清理
 
 背包 UI 本阶段已完成，后续制作暂缓。最终样式、数据来源和未制作范围见
-[InventoryTabs.md](InventoryTabs.md)。历史设计差异及实施计划保留，但已标记为历史记录。
+[InventoryTabs.md](InventoryTabs.md) 和 [ClothingLayout.md](ClothingLayout.md)。
+历史设计差异及实施计划保留，但已标记为历史记录。
 
-## 清理结果
+## 第一次收尾：顶部 UI
 
 | 指标 | 结果 |
 | --- | --- |
@@ -47,3 +48,38 @@
 
 `Saved` 是本机生成目录，不作为唯一交付位置。最终规格与结论放在 `Docs`，
 原始截图、旧日志及测试导出物可以在后续清理中移除；需要再次打包时重新生成 StagedBuilds。
+
+## 第二次收尾：衣服、口袋布局与美化
+
+本阶段完成衣服 DataAsset 编辑限制、单张衣服图切换、右侧口袋分组与左对齐、
+三条 `#74B9B0` 装饰线、衣服装备栏跟随内衣行且左右等距、框内右下角按键提示。
+后续正式美术、口袋连线/anchor 算法、角色展示与技能页暂缓。
+
+| 指标 | 本次快照 |
+| --- | --- |
+| 清理前 Saved | 362.58 MiB |
+| 清理后 Saved | 约 353.65 MiB |
+| 删除文件 | 39 个 |
+| 删除文件合计 | 10.23 MiB，含约 1.30 MiB 的工作区外临时检查输出 |
+| 存档校验 | `TA_Slot0.sav` 清理前后 SHA-256 一致 |
+
+清单位于本机 `Saved/Cleanup/20261031-clothing/manifest.json`，含删除路径、
+字节数与存档哈希。Saved 的差值只统计项目生成目录；删除合计另含本会话可写临时目录中的输出。
+运行中的编辑器仍会自动写入日志和截图，目录大小是收尾时快照。
+
+已删除：
+
+- 中间步骤的 Inventory 配色、Grid/Blur、外套贴图设置/检查和旧预览日志。
+- 引擎与 SDK 的重复备份日志、可重建 ShaderDebugInfo。
+- 被当前布局替代的 `InventoryTabsPreview/Page0.png`、旧报告 HTML 和一次性配置日志。
+- 临时衣服只读检查脚本、日志及三张 PDF 页面渲染；原始参考 PDF/图片保留。
+
+已保留：
+
+- 最新 `Saved/ClothingPreview/Validation.log` 与 `Report/index.json`，专项回归 8/8 通过。
+- 无外套、三个最大口袋、混合尺寸口袋三张最终预览，以及顶栏裁图 HeaderStats.png。
+- 衣服/顶栏/Grid 原资产备份、正式自动化源码及可重复使用的工具。
+- SaveGames、Autosaves、Config、正式 Content 资产；约 318 MiB LocalCaches 继续供构建使用。
+
+`Saved/Temp` 与 `Saved/Crashes` 当前无临时文件。未向正式关卡、资产或存档写入测试物品。
+本次只清理生成物并更新文档，代码沿用上一轮已通过的编译与 8 项回归结果。

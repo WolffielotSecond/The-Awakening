@@ -14,6 +14,181 @@
 #include "Components/UniformGridSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Texture2D.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/Border.h"
+#include "Components/ScaleBox.h"
+#include "UI/Inventory/TAWornClothingLayout.h"
+
+TSharedRef<SWidget> UTAClothingPanelWidget::RebuildWidget()
+{
+	if (bWornInventoryLayout)
+	{
+		if (!WidgetTree) WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"));
+		CanvasRoot = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("WornClothingCanvas"));
+		WidgetTree->RootWidget = CanvasRoot;
+		CanvasRoot->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		auto* Picture = WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), TEXT("WornClothingPicture"));
+		Picture->SetStretch(EStretch::ScaleToFit);
+		Picture->SetVisibility(ESlateVisibility::HitTestInvisible);
+		auto* PictureSlot = CanvasRoot->AddChildToCanvas(Picture);
+		PictureSlot->SetAnchors(FAnchors(0.f, 0.f, .52f, 1.f));
+		PictureSlot->SetOffsets(FMargin(0.f));
+		Image_Clothing = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_Clothing"));
+		Picture->AddChild(Image_Clothing);
+		auto MakeFrame = [&](const TCHAR* Name)
+		{
+			auto* Frame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
+			FSlateBrush Brush;
+			Brush.SetResourceObject(LoadObject<UTexture2D>(nullptr, TEXT("/Game/Textures/Inventory/Grid.Grid")));
+			Brush.DrawAs = ESlateBrushDrawType::Box;
+			Brush.ImageSize = FVector2D(512.f, 512.f);
+			Brush.Margin = FMargin(2.f / 512.f);
+			Frame->SetBrush(Brush);
+			Frame->SetBrushColor(FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("799FA7"))));
+			Frame->SetVisibility(ESlateVisibility::HitTestInvisible);
+			CanvasRoot->AddChildToCanvas(Frame);
+			return Frame;
+		};
+		InnerFrame = MakeFrame(TEXT("InnerPocketFrame"));
+		OuterFrame = MakeFrame(TEXT("OuterPocketFrame"));
+		BuiltDef = nullptr;
+		GeneratedGroups.Reset(); GeneratedSlots.Reset(); WornCells.Reset(); WornShapes.Reset();
+		LastWornSize = FVector2D::ZeroVector;
+	}
+	return Super::RebuildWidget();
+}
+
+void UTAClothingPanelWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	if (bWornInventoryLayout && !Geometry.GetLocalSize().Equals(LastWornSize))
+	{
+		ArrangeWornClothing(Geometry.GetLocalSize());
+	}
+}
+
+void UTAClothingPanelWidget::CreateWornPocket(const FTAPocketRuntime& Runtime, const FTAPocketDef& Def, int32& FlatIndex)
+{
+	int32 Columns, Rows;
+	Def.GetGridSize(Columns, Rows);
+	// Preserve every runtime slot if an old save predates a changed definition.
+	Rows = FMath::Max(Rows, FMath::DivideAndRoundUp(Runtime.Slots.Num(), FMath::Max(1, Columns)));
+	WornShapes.Add(FIntPoint(Columns, Rows));
+	auto* Grid = WidgetTree->ConstructWidget<UUniformGridPanel>();
+	CanvasRoot->AddChildToCanvas(Grid)->SetZOrder(1);
+	GeneratedGroups.Add(Grid);
+	for (int32 Index = 0; Index < Runtime.Slots.Num(); ++Index)
+	{
+		auto* Cell = WidgetTree->ConstructWidget<USizeBox>();
+		auto* SlotWidget = CreateWidget<UUserWidget>(this, SlotWidgetClass);
+		Cell->AddChild(SlotWidget);
+		Grid->AddChildToUniformGrid(Cell, Index / FMath::Max(1, Columns), Index % FMath::Max(1, Columns));
+		if (auto* InvSlot = Cast<UTAInventorySlotWidget>(SlotWidget))
+		{
+			InvSlot->SetInventoryComponent(Inventory);
+			InvSlot->SetInputOwner(GetTypedOuter<UTAInventoryPanelWidget>());
+			InvSlot->SetSlotData(Runtime.Slots[Index], FlatIndex);
+			InvSlot->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAClothingPanelWidget::HandleSlotHovered);
+			InvSlot->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAClothingPanelWidget::HandleSlotUnhovered);
+		}
+		GeneratedSlots.Add(SlotWidget);
+		WornCells.Add(Cell);
+		++FlatIndex;
+	}
+}
+
+void UTAClothingPanelWidget::BuildWornClothing(const FTAClothingInstance& Inner, const FTAClothingInstance& Outer)
+{
+	if (!bWornInventoryLayout) return;
+	TakeWidget(); // Build the native canvas before filling its groups (Init can precede Construct).
+	const bool bHasOuter = Outer.IsValid();
+	UTAClothingDefinition* Picture = bHasOuter ? Outer.Definition.Get() : Inner.Definition.Get();
+	SetClothingIcon(Picture);
+	TArray<FIntPoint> Shapes;
+	int32 TotalSlots = 0;
+	auto Collect = [&](const FTAClothingInstance& Instance)
+	{
+		for (int32 Index = 0; Index < Instance.Pockets.Num(); ++Index)
+		{
+			FTAPocketDef Def;
+			if (Instance.Definition && Instance.Definition->Pockets.IsValidIndex(Index)) Def = Instance.Definition->Pockets[Index];
+			int32 C, R; Def.GetGridSize(C, R);
+			R = FMath::Max(R, FMath::DivideAndRoundUp(Instance.Pockets[Index].Slots.Num(), FMath::Max(1, C)));
+			Shapes.Add(FIntPoint(C, R));
+			TotalSlots += Instance.Pockets[Index].Slots.Num();
+		}
+	};
+	Collect(Inner);
+	if (bHasOuter) Collect(Outer);
+	const bool bSame = BuiltDef == Inner.Definition && WornOuterDef == Outer.Definition &&
+		InnerPocketCount == Inner.Pockets.Num() && Shapes == WornShapes && GeneratedSlots.Num() == TotalSlots;
+	if (!bSame)
+	{
+		ClearPanel();
+		WornCells.Reset(); WornShapes.Reset();
+		BuiltDef = Inner.Definition;
+		WornOuterDef = Outer.Definition;
+		InnerPocketCount = Inner.Pockets.Num();
+		int32 FlatIndex = 0;
+		auto Build = [&](const FTAClothingInstance& Instance)
+		{
+			for (int32 Index = 0; Index < Instance.Pockets.Num(); ++Index)
+			{
+				FTAPocketDef Def;
+				if (Instance.Definition && Instance.Definition->Pockets.IsValidIndex(Index)) Def = Instance.Definition->Pockets[Index];
+				CreateWornPocket(Instance.Pockets[Index], Def, FlatIndex);
+			}
+		};
+		Build(Inner);
+		if (bHasOuter) Build(Outer);
+		LastWornSize = FVector2D::ZeroVector;
+	}
+	else
+	{
+		int32 Index = 0;
+		auto Update = [&](const FTAClothingInstance& Instance)
+		{
+			for (const FTAPocketRuntime& Pocket : Instance.Pockets)
+				for (const FTAInventorySlot& Slot : Pocket.Slots)
+				{
+					if (auto* UI = Cast<UTAInventorySlotWidget>(GeneratedSlots[Index])) UI->SetSlotData(Slot, Index);
+					++Index;
+				}
+		};
+		Update(Inner); if (bHasOuter) Update(Outer);
+	}
+	OuterFrame->SetVisibility(bHasOuter ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	ArrangeWornClothing(GetCachedGeometry().GetLocalSize());
+}
+
+void UTAClothingPanelWidget::ArrangeWornClothing(FVector2D Size)
+{
+	if (Size.X <= 0.f || Size.Y <= 0.f || !InnerFrame) return;
+	LastWornSize = Size;
+	TArray<FIntPoint> Inner, Outer;
+	for (int32 Index = 0; Index < WornShapes.Num(); ++Index)
+		(Index < InnerPocketCount ? Inner : Outer).Add(WornShapes[Index]);
+	const FVector2D Origin(Size.X * .60f, 0.f);
+	const auto Layout = TAWornClothingLayout::Calculate(FVector2D(Size.X * .40f, Size.Y), Inner, Outer);
+	auto Position = [&](UWidget* Widget, FVector2D At, FVector2D Extent)
+	{
+		auto* Slot = CastChecked<UCanvasPanelSlot>(Widget->Slot);
+		Slot->SetPosition(Origin + At); Slot->SetSize(Extent);
+	};
+	Position(InnerFrame, Layout.Inner.Position, Layout.Inner.Size);
+	Position(OuterFrame, Layout.Outer.Position, Layout.Outer.Size);
+	for (int32 Index = 0; Index < GeneratedGroups.Num(); ++Index)
+	{
+		const bool bInner = Index < InnerPocketCount;
+		const auto& Group = bInner ? Layout.Inner : Layout.Outer;
+		Position(GeneratedGroups[Index], Group.Position + Group.Pockets[bInner ? Index : Index - InnerPocketCount],
+			FVector2D(WornShapes[Index].X * Layout.Cell, WornShapes[Index].Y * Layout.Cell));
+	}
+	for (USizeBox* Cell : WornCells)
+	{
+		Cell->SetWidthOverride(Layout.Cell); Cell->SetHeightOverride(Layout.Cell);
+	}
+}
 
 void UTAClothingPanelWidget::NativeConstruct()
 {
