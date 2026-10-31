@@ -71,7 +71,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClothingRack|Mesh")
 	TObjectPtr<UStaticMesh> EmptyMesh;
 
-	/** 换装界面；为空时用 /Game/UI/Inventory/WBP_ClothingSwap，再没有时用 C++ 临时布局 */
+	/** 换装界面；为空时用 /Game/UI/Inventory/WBP_ClothingSwap，再没有时用同样的 C++ 布局 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClothingRack|UI")
 	TSubclassOf<UTAClothingSwapWidget> SwapWidgetClass;
 

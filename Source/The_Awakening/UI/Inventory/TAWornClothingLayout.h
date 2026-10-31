@@ -35,7 +35,7 @@ inline FLayout Calculate(FVector2D Area, const TArray<FIntPoint>& Inner, const T
 	const float WidthUnits = FMath::Max(4, FMath::Max(InnerSize.X, OuterSize.X)) + .3f;
 	const float InnerUnits = InnerSize.Y + FMath::Max(0, Inner.Num() - 1) * .22f + .3f;
 	const float OuterUnits = OuterSize.Y + FMath::Max(0, Outer.Num() - 1) * .22f + .3f;
-	const float HeightUnits = FMath::Max(InnerUnits + 6.f + .44f + .3f + .5f,
+	const float HeightUnits = FMath::Max(FMath::Max(1.3f, InnerUnits) + 6.f + .44f + .3f + .5f,
 		InnerUnits + OuterUnits + .5f);
 	Result.Cell = FMath::Max(1.f, FMath::Min(Area.X / WidthUnits, Area.Y / HeightUnits));
 	Result.Padding = Result.Cell * .15f;
@@ -53,7 +53,7 @@ inline FLayout Calculate(FVector2D Area, const TArray<FIntPoint>& Inner, const T
 	};
 	Arrange(Inner, Result.Inner, InnerSize);
 	Arrange(Outer, Result.Outer, OuterSize);
-	const float Gap = Outer.IsEmpty() ? 0.f : Result.Cell * .5f;
+	const float Gap = Outer.IsEmpty() || Inner.IsEmpty() ? 0.f : Result.Cell * .5f;
 	const float TotalHeight = Result.Inner.Size.Y + Result.Outer.Size.Y + Gap;
 	Result.Inner.Position = FVector2D(0.f, FMath::Max(0.f, (Area.Y - TotalHeight) * .5f));
 	Result.Outer.Position = Result.Inner.Position + FVector2D(0.f, Result.Inner.Size.Y + Gap);

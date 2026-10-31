@@ -24,9 +24,11 @@ class THE_AWAKENING_API UTAClothingPanelWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	/** Set before attaching to the inventory named slot. The rack keeps its separate layout. */
+	/** Set before attaching to a named slot. Both screens share the grouped pocket renderer. */
 	void SetWornInventoryLayout() { bWornInventoryLayout = true; }
+	void SetRackSwapLayout() { bWornInventoryLayout = true; bRackSwapLayout = true; }
 	void BuildWornClothing(const FTAClothingInstance& Inner, const FTAClothingInstance& Outer);
+	void BuildRackClothing(const FTAClothingInstance& Outer) { BuildWornClothing(FTAClothingInstance(), Outer); }
 	/**
 	 * 按衣服实例生成口袋格子。DisplayOverride：穿着的外套开启了 bOverrideInnerPocketDisplay 时传入，
 	 * 用它的 InnerPocketDisplayOverrides 改写本面板（内衬）各口袋的摆放位置，只影响显示。
@@ -125,6 +127,7 @@ protected:
 	TWeakObjectPtr<const UTAClothingDefinition> BuiltDisplayOverride;
 
 	bool bWornInventoryLayout = false;
+	bool bRackSwapLayout = false;
 	int32 InnerPocketCount = 0;
 	FVector2D LastWornSize = FVector2D::ZeroVector;
 	TArray<FIntPoint> WornShapes;

@@ -10,15 +10,13 @@
 #include "The_AwakeningPlayerController.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
-#include "Components/HorizontalBox.h"
-#include "Components/HorizontalBoxSlot.h"
 #include "Components/NamedSlot.h"
-#include "Components/Overlay.h"
-#include "Components/OverlaySlot.h"
 #include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
-#include "Components/VerticalBoxSlot.h"
-#include "Components/SizeBox.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/BackgroundBlur.h"
+#include "Engine/Texture2D.h"
+#include "Engine/Font.h"
 #include "Engine/GameInstance.h"
 #include "InputAction.h"
 #include "Misc/PackageName.h"
@@ -57,78 +55,81 @@ UTAClothingSwapWidget* UTAClothingSwapWidget::Open(APlayerController* PC, ATAClo
 void UTAClothingSwapWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	if (WidgetTree && !WidgetTree->RootWidget)
-	{
-		BuildFallbackLayout();
-	}
+	BuildSwapLayout();
 }
 
-void UTAClothingSwapWidget::BuildFallbackLayout()
+void UTAClothingSwapWidget::BuildSwapLayout()
 {
-	// 【临时】C++ 最简布局：半透明底 + 左右两列。WBP_ClothingSwap 建好后（需确认后再建）不再使用
-	UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Overlay_Root"));
+	// A separate runtime tree prevents the old centered Blueprint columns from
+	// reflowing when a coat/image disappears. Input and inventory ownership stay unchanged.
+	WidgetTree = NewObject<UWidgetTree>(this, TEXT("ClothingSwapLayoutTree"));
+	auto* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Canvas_ClothingSwap"));
+	Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	WidgetTree->RootWidget = Root;
-
-	UBorder* Dim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Dim"));
-	Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
-	if (UOverlaySlot* DimSlot = Root->AddChildToOverlay(Dim))
+	auto Fill = [&](UWidget* Widget)
 	{
-		DimSlot->SetHorizontalAlignment(HAlign_Fill);
-		DimSlot->SetVerticalAlignment(VAlign_Fill);
-	}
-
-	UHorizontalBox* Columns = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HorizontalBox_Columns"));
-	if (UOverlaySlot* ColumnsSlot = Root->AddChildToOverlay(Columns))
-	{
-		ColumnsSlot->SetHorizontalAlignment(HAlign_Center);
-		ColumnsSlot->SetVerticalAlignment(VAlign_Center);
-	}
-
-	auto AddColumn = [&](const TCHAR* Name, TObjectPtr<UTextBlock>& OutTitle) -> UVerticalBox*
-	{
-		UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), Name);
-		if (UHorizontalBoxSlot* ColumnSlot = Columns->AddChildToHorizontalBox(Column))
-		{
-			ColumnSlot->SetPadding(FMargin(48.f, 0.f));
-			ColumnSlot->SetVerticalAlignment(VAlign_Center);
-		}
-		OutTitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-		if (UVerticalBoxSlot* TitleSlot = Column->AddChildToVerticalBox(OutTitle))
-		{
-			TitleSlot->SetHorizontalAlignment(HAlign_Center);
-			TitleSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
-		}
-		return Column;
+		auto* Slot = Root->AddChildToCanvas(Widget);
+		Slot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		Slot->SetOffsets(FMargin(0.f));
 	};
-	auto AddNamedSlot = [&](UPanelWidget* Parent, const TCHAR* Name, TObjectPtr<UNamedSlot>& OutSlot)
+	auto* Blur = WidgetTree->ConstructWidget<UBackgroundBlur>(UBackgroundBlur::StaticClass(), TEXT("BackgroundBlur_Swap"));
+	Blur->SetBlurStrength(.4f);
+	Blur->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Fill(Blur);
+	auto* Dim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Dim"));
+	Dim->SetBrushColor(FLinearColor(FColor(0x10, 0x18, 0x20)).CopyWithNewOpacity(.5f));
+	Dim->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Fill(Dim);
+	auto Title = [&](const TCHAR* Name, float X)
 	{
-		OutSlot = WidgetTree->ConstructWidget<UNamedSlot>(UNamedSlot::StaticClass(), Name);
-		UPanelSlot* PanelSlot = Parent->AddChild(OutSlot);
-		if (UVerticalBoxSlot* VSlot = Cast<UVerticalBoxSlot>(PanelSlot))
-		{
-			VSlot->SetHorizontalAlignment(HAlign_Center);
-			VSlot->SetPadding(FMargin(0.f, 6.f));
-		}
-		else if (UHorizontalBoxSlot* HSlot = Cast<UHorizontalBoxSlot>(PanelSlot))
-		{
-			HSlot->SetVerticalAlignment(VAlign_Center);
-			HSlot->SetPadding(FMargin(12.f, 0.f));
-		}
+		auto* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
+		FSlateFontInfo Font = Text->GetFont();
+		Font.FontObject = LoadObject<UFont>(nullptr, TEXT("/Game/Fonts/TA_GlobalFont.TA_GlobalFont"));
+		Font.Size = 28;
+		Text->SetFont(Font);
+		Text->SetColorAndOpacity(FSlateColor(FLinearColor(FColor(0xB9, 0xD7, 0xD8))));
+		auto* Slot = Root->AddChildToCanvas(Text);
+		Slot->SetAnchors(FAnchors(X, .045f));
+		Slot->SetAlignment(FVector2D(.5f, 0.f));
+		Slot->SetAutoSize(true);
+		return Text;
 	};
-
-	UVerticalBox* RackColumn = AddColumn(TEXT("VerticalBox_Rack"), Text_RackTitle);
-	AddNamedSlot(RackColumn, TEXT("NamedSlot_RackCoat"), NamedSlot_RackCoat);
-	AddNamedSlot(RackColumn, TEXT("NamedSlot_RackClothing"), NamedSlot_RackClothing);
-
-	UVerticalBox* PlayerColumn = AddColumn(TEXT("VerticalBox_Player"), Text_PlayerTitle);
-	AddNamedSlot(PlayerColumn, TEXT("NamedSlot_PlayerCoat"), NamedSlot_PlayerCoat);
-	UHorizontalBox* PlayerClothing = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HorizontalBox_PlayerClothing"));
-	if (UVerticalBoxSlot* ClothingSlot = PlayerColumn->AddChildToVerticalBox(PlayerClothing))
+	Text_RackTitle = Title(TEXT("Text_RackTitle"), .25f);
+	Text_PlayerTitle = Title(TEXT("Text_PlayerTitle"), .75f);
+	auto Coat = [&](const TCHAR* Name, float X)
 	{
-		ClothingSlot->SetHorizontalAlignment(HAlign_Center);
-	}
-	AddNamedSlot(PlayerClothing, TEXT("NamedSlot_InnerClothing"), NamedSlot_InnerClothing);
-	AddNamedSlot(PlayerClothing, TEXT("NamedSlot_OuterClothing"), NamedSlot_OuterClothing);
+		auto* Named = WidgetTree->ConstructWidget<UNamedSlot>(UNamedSlot::StaticClass(), Name);
+		auto* Slot = Root->AddChildToCanvas(Named);
+		Slot->SetAnchors(FAnchors(X, .13f));
+		Slot->SetAlignment(FVector2D(.5f, 0.f));
+		Slot->SetSize(FVector2D(80.f, 80.f));
+		return Named;
+	};
+	NamedSlot_RackCoat = Coat(TEXT("NamedSlot_RackCoat"), .25f);
+	NamedSlot_PlayerCoat = Coat(TEXT("NamedSlot_PlayerCoat"), .75f);
+	auto Body = [&](const TCHAR* Name, float Left, float Right)
+	{
+		auto* Named = WidgetTree->ConstructWidget<UNamedSlot>(UNamedSlot::StaticClass(), Name);
+		auto* Slot = Root->AddChildToCanvas(Named);
+		Slot->SetAnchors(FAnchors(Left, .28f, Right, .91f));
+		Slot->SetOffsets(FMargin(0.f));
+		return Named;
+	};
+	NamedSlot_RackClothing = Body(TEXT("NamedSlot_RackClothing"), .035f, .485f);
+	NamedSlot_InnerClothing = Body(TEXT("NamedSlot_InnerClothing"), .515f, .965f);
+	NamedSlot_OuterClothing = nullptr; // The right side renders inner + outer in one panel.
+}
+
+void UTAClothingSwapWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	const FVector2D Size = Geometry.GetLocalSize();
+	if (Size.X <= 0.f || Size.Y <= 0.f) return;
+	const float Extent = FMath::Clamp(float(FMath::Min(Size.X * .06f, Size.Y * .09f)), 36.f, 100.f);
+	for (UNamedSlot* Named : { NamedSlot_RackCoat.Get(), NamedSlot_PlayerCoat.Get() })
+		if (Named)
+			if (auto* Placement = Cast<UCanvasPanelSlot>(Named->Slot))
+				if (!Placement->GetSize().Equals(FVector2D(Extent, Extent), .1f)) Placement->SetSize(FVector2D(Extent, Extent));
 }
 
 void UTAClothingSwapWidget::NativeConstruct()
@@ -311,6 +312,12 @@ void UTAClothingSwapWidget::EnsureChildren()
 			Named->ClearChildren();
 			Named->AddChild(OutSlot);
 			OutSlot->SetEmpty();
+			if (auto* Frame = Cast<UBorder>(OutSlot->GetWidgetFromName(TEXT("Border"))))
+			{
+				FSlateBrush Brush = Frame->Background;
+				Brush.SetResourceObject(LoadObject<UTexture2D>(nullptr, TEXT("/Game/Textures/Inventory/Grid_Solid.Grid_Solid")));
+				Frame->SetBrush(Brush);
+			}
 			OutSlot->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAClothingSwapWidget::HandleSlotHovered);
 			OutSlot->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAClothingSwapWidget::HandleSlotUnhovered);
 		}
@@ -327,6 +334,8 @@ void UTAClothingSwapWidget::EnsureChildren()
 		OutPanel = CreateWidget<UTAClothingPanelWidget>(this, ClothingPanelClass);
 		if (OutPanel)
 		{
+			if (Named == NamedSlot_RackClothing) OutPanel->SetRackSwapLayout();
+			else OutPanel->SetWornInventoryLayout();
 			OutPanel->SlotWidgetClass = SlotWidgetClass;
 			OutPanel->OnInventorySlotHovered.AddUniqueDynamic(this, &UTAClothingSwapWidget::HandleSlotHovered);
 			OutPanel->OnInventorySlotUnhovered.AddUniqueDynamic(this, &UTAClothingSwapWidget::HandleSlotUnhovered);
@@ -336,8 +345,7 @@ void UTAClothingSwapWidget::EnsureChildren()
 	};
 	SpawnPanelInto(NamedSlot_RackClothing, RackClothingPanel);
 	SpawnPanelInto(NamedSlot_InnerClothing, InnerClothingPanel);
-	SpawnPanelInto(NamedSlot_OuterClothing, OuterClothingPanel);
-	for (UTAClothingPanelWidget* Panel : {RackClothingPanel.Get(), InnerClothingPanel.Get(), OuterClothingPanel.Get()})
+	for (UTAClothingPanelWidget* Panel : {RackClothingPanel.Get(), InnerClothingPanel.Get()})
 	{
 		if (Panel)
 		{
@@ -373,25 +381,15 @@ void UTAClothingSwapWidget::Refresh()
 	// 衣架口袋的格子下标是衣架实例内的扁平下标（从 0 开始），不是背包下标；放下时由 ResolveSlot 区分
 	if (RackClothingPanel)
 	{
-		RackClothingPanel->BuildFromClothing(RackClothing, 0);
+		RackClothingPanel->BuildRackClothing(RackClothing);
 		ConfigurePanelSlots(RackClothingPanel);
 	}
 	if (InnerClothingPanel)
 	{
-		InnerClothingPanel->BuildFromClothing(Inventory->GetInnerClothing(), 0, WornOuter);
+		InnerClothingPanel->BuildWornClothing(Inventory->GetInnerClothing(), Inventory->GetOuterClothing());
 		ConfigurePanelSlots(InnerClothingPanel);
 	}
-	if (OuterClothingPanel)
-	{
-		int32 InnerSlots = 0;
-		for (const FTAPocketRuntime& Pocket : Inventory->GetInnerClothing().Pockets)
-		{
-			InnerSlots += Pocket.Slots.Num();
-		}
-		// 没穿外套时 BuildFromClothing 会清空并折叠面板
-		OuterClothingPanel->BuildFromClothing(Inventory->GetOuterClothing(), InnerSlots);
-		ConfigurePanelSlots(OuterClothingPanel);
-	}
+
 }
 
 void UTAClothingSwapWidget::ConfigureSlot(UTAInventorySlotWidget* InSlot)
@@ -463,7 +461,7 @@ UTAClothingSwapWidget::ESlotOwner UTAClothingSwapWidget::ResolveSlot(const UTAIn
 		}
 		return ESlotOwner::None;
 	}
-	if (Contains(InnerClothingPanel) || Contains(OuterClothingPanel))
+	if (Contains(InnerClothingPanel))
 	{
 		return ESlotOwner::PlayerPocket;
 	}

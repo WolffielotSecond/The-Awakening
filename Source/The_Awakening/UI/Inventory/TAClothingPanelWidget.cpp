@@ -31,7 +31,7 @@ TSharedRef<SWidget> UTAClothingPanelWidget::RebuildWidget()
 		Picture->SetStretch(EStretch::ScaleToFit);
 		Picture->SetVisibility(ESlateVisibility::HitTestInvisible);
 		auto* PictureSlot = CanvasRoot->AddChildToCanvas(Picture);
-		PictureSlot->SetAnchors(FAnchors(0.f, 0.f, .52f, 1.f));
+		PictureSlot->SetAnchors(bRackSwapLayout ? FAnchors(.48f, 0.f, 1.f, 1.f) : FAnchors(0.f, 0.f, .52f, 1.f));
 		PictureSlot->SetOffsets(FMargin(0.f));
 		Image_Clothing = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("Image_Clothing"));
 		Picture->AddChild(Image_Clothing);
@@ -157,6 +157,7 @@ void UTAClothingPanelWidget::BuildWornClothing(const FTAClothingInstance& Inner,
 		};
 		Update(Inner); if (bHasOuter) Update(Outer);
 	}
+	InnerFrame->SetVisibility(Inner.Pockets.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	OuterFrame->SetVisibility(bHasOuter ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	ArrangeWornClothing(GetCachedGeometry().GetLocalSize());
 }
@@ -168,7 +169,7 @@ void UTAClothingPanelWidget::ArrangeWornClothing(FVector2D Size)
 	TArray<FIntPoint> Inner, Outer;
 	for (int32 Index = 0; Index < WornShapes.Num(); ++Index)
 		(Index < InnerPocketCount ? Inner : Outer).Add(WornShapes[Index]);
-	const FVector2D Origin(Size.X * .60f, 0.f);
+	const FVector2D Origin(bRackSwapLayout ? 0.f : Size.X * .60f, 0.f);
 	const auto Layout = TAWornClothingLayout::Calculate(FVector2D(Size.X * .40f, Size.Y), Inner, Outer);
 	auto Position = [&](UWidget* Widget, FVector2D At, FVector2D Extent)
 	{
@@ -258,18 +259,18 @@ void UTAClothingPanelWidget::SetClothingIcon(UTAClothingDefinition* Def)
 	if (Def)
 	{
 		// TSoftObjectPtr：
-		if (!Def->Icon.IsNull())
+		const TSoftObjectPtr<UTexture2D>& Display = bRackSwapLayout ? Def->RackDisplayTexture : Def->DisplayTexture;
+		if (!Display.IsNull())
 		{
-			Icon = Def->Icon.LoadSynchronous();
+			Icon = Display.LoadSynchronous();
 		}
-		// TObjectPtr 则改为：Icon = Def->Icon.Get();
 		// 没有图标时用项目设置里的默认图标
 		Icon = UTAItemSettings::ResolveIcon(Icon);
 	}
 
 	if (Icon)
 	{
-		Image_Clothing->SetBrushFromTexture(Icon);
+		Image_Clothing->SetBrushFromTexture(Icon, true);
 		Image_Clothing->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
 	else

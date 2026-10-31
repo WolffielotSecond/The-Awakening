@@ -14,6 +14,19 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/Texture2D.h"
+
+void UTAActionPromptWidget::SetIconPalette(UMaterialInterface* Material, FLinearColor Dark, FLinearColor Light)
+{
+	if (!Material) return;
+	IconPaletteMaterial = UMaterialInstanceDynamic::Create(Material, this);
+	IconPaletteMaterial->SetVectorParameterValue(TEXT("DarkColor"), Dark);
+	IconPaletteMaterial->SetVectorParameterValue(TEXT("LightColor"), Light);
+	EnsureWidgetBindings();
+	if (Image_Icon) Image_Icon->SetColorAndOpacity(FLinearColor::White);
+	RefreshPrompt();
+}
 
 void UTAActionPromptWidget::NativeOnInitialized()
 {
@@ -155,6 +168,16 @@ void UTAActionPromptWidget::RefreshPrompt()
 			InputIconSubsystem->GetIconForActionForPlayer(PromptAction, GetOwningLocalPlayer()),
 			IconHeight,
 			SizeBox_Icon);
+	}
+	if (Image_Icon && IconPaletteMaterial)
+	{
+		if (auto* Texture = Cast<UTexture2D>(Image_Icon->GetBrush().GetResourceObject()))
+		{
+			IconPaletteMaterial->SetTextureParameterValue(TEXT("IconTexture"), Texture);
+			FSlateBrush Brush = Image_Icon->GetBrush();
+			Brush.SetResourceObject(IconPaletteMaterial);
+			Image_Icon->SetBrush(Brush);
+		}
 	}
 }
 

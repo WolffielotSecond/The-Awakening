@@ -48,6 +48,7 @@
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
+#include "Materials/MaterialInterface.h"
 
 int32 UTAInventoryPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
 	FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const
@@ -747,12 +748,16 @@ void UTAInventoryPanelWidget::BuildActionPromptBar()
 		{
 			return;
 		}
+		const FLinearColor Light = TabBar_Inventory ? TabBar_Inventory->LightColor : FLinearColor(FColor(0xB9, 0xD7, 0xD8));
+		const FLinearColor Dark = TabBar_Inventory ? TabBar_Inventory->DarkColor : FLinearColor(FColor(0x26, 0x34, 0x3A));
 		UTAActionPromptWidget* Prompt = FTAPromptWidgetUtils::AddActionPrompt(
-			this, HorizontalBox_Controls, ActionPromptWidgetClass, Action, TextId);
+			this, HorizontalBox_Controls, ActionPromptWidgetClass, Action, TextId, Light);
 		if (!Prompt)
 		{
 			return;
 		}
+		Prompt->SetIconPalette(LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/UI/Inventory/M_InventoryTabIcon.M_InventoryTabIcon")), Dark, Light);
 		Prompt->OnPromptClicked.AddDynamic(this, &UTAInventoryPanelWidget::OnActionPromptClicked);
 		ActionPromptWidgets.Add(Prompt);
 	};

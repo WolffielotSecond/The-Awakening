@@ -33,9 +33,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing")
 	FString DescriptionId;
 
-	/** UI 上的衣服图 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing")
+	/** 装备栏、衣架交换栏和拖拽预览使用的小图标。与衣服展示图独立。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing", meta = (DisplayName = "Equipment Icon"))
 	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** 背包和换衣界面右侧的完整穿着图。外套美术可包含露出的内衣；不读取 Equipment Icon。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing", meta = (DisplayName = "Clothing Display Texture"))
+	TSoftObjectPtr<UTexture2D> DisplayTexture;
+
+	/** 仅外套：衣架换衣界面左侧展示的外套单独立绘，不包含内衣。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing", meta = (DisplayName = "Rack Display Texture", EditCondition = "Layer == ETAClothingLayer::Outer", EditConditionHides))
+	TSoftObjectPtr<UTexture2D> RackDisplayTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/UI/Common/T_DefaultItemIcon.T_DefaultItemIcon")));
 
 	/** 口袋数量；调整后自动增减下面的口袋配置。口袋按列表顺序从上到下显示。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Clothing", meta = (ClampMin = "1", ClampMax = "3", UIMin = "1", UIMax = "3"))

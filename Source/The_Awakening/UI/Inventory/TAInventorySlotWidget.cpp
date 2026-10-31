@@ -204,7 +204,7 @@ void UTAInventorySlotWidget::RefreshVisuals()
 
 	if (Image_item && !bHasItem && DisplayClothing)
 	{
-		// 外套格：显示衣服图，没有时用默认图标
+		// 外套格只读取装备小图标，不读取完整衣服展示图。
 		UTexture2D* Icon = UTAItemSettings::ResolveIcon(DisplayClothing->Icon.IsNull() ? nullptr : DisplayClothing->Icon.LoadSynchronous());
 		Image_item->SetBrushFromTexture(Icon);
 		Image_item->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);

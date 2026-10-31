@@ -10,6 +10,8 @@ class USizeBox;
 class UTextBlock;
 class UTAInputIconSubsystem;
 class UTALocalizeSubsystem;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTAActionPromptClicked, class UTAActionPromptWidget*, Prompt);
 
@@ -47,6 +49,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "UI|Action Prompt")
 	void RefreshPrompt();
+
+	/** Optional per-prompt palette; input/device refreshes continue to resolve the source texture through IMC. */
+	void SetIconPalette(UMaterialInterface* Material, FLinearColor Dark, FLinearColor Light);
 
 	UPROPERTY(BlueprintAssignable, Category = "UI|Action Prompt")
 	FOnTAActionPromptClicked OnPromptClicked;
@@ -89,4 +94,7 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTALocalizeSubsystem> LocalizeSubsystem;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> IconPaletteMaterial;
 };

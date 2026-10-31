@@ -27,7 +27,7 @@
 
 ## 背包、拾取与文本
 - [背包顶部 UI 阶段交付](InventoryTabs.md)
-- [衣服 DataAsset 与背包口袋布局（阶段完成）](ClothingLayout.md)
+- [衣服数据、背包与衣架换衣布局（阶段完成）](ClothingLayout.md)
 - [多物品拾取接入](NearbyPickup.md)
 - [背包物品交互菜单](InventoryItemActions.md)
 - [文本系统](DocumentSystem.md)

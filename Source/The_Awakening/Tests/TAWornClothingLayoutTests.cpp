@@ -113,7 +113,7 @@ bool FTAWornPresentationTest::RunTest(const FString&)
 	TestNotNull(TEXT("Clothing placement is a canvas slot"), Placement);
 	if (Placement) TestTrue(TEXT("Combined panel spans the clothing and pocket regions"), FMath::IsNearlyEqual(Placement->GetAnchors().Maximum.X, .912f));
 	auto* Image = Cast<UImage>(Panel->GetWidgetFromName(TEXT("Image_Clothing")));
-	TestTrue(TEXT("Inner retains its existing placeholder texture"), Image && Image->GetBrush().GetResourceObject() == Data->DefaultInnerClothing->Icon.LoadSynchronous());
+	TestTrue(TEXT("Inner retains its existing placeholder texture"), Image && Image->GetBrush().GetResourceObject() == Data->DefaultInnerClothing->DisplayTexture.LoadSynchronous());
 	TestEqual(TEXT("Only inner cells initially"), Panel->GetGeneratedSlots().Num(), 2);
 	auto* OuterFrame = Panel->GetWidgetFromName(TEXT("OuterPocketFrame"));
 	TestTrue(TEXT("Outer frame hidden without a coat"), OuterFrame && OuterFrame->GetVisibility() == ESlateVisibility::Collapsed);
@@ -159,7 +159,8 @@ bool FTAWornPresentationTest::RunTest(const FString&)
 	};
 	Capture(TEXT("InnerOnly"));
 	auto* Coat = NewObject<UTAClothingDefinition>(); Coat->Layer = ETAClothingLayer::Outer;
-	Coat->Icon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/UI/Common/T_DefaultItemIcon.T_DefaultItemIcon")));
+	Coat->Icon = Data->DefaultInnerClothing->Icon;
+	Coat->DisplayTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/UI/Common/T_DefaultItemIcon.T_DefaultItemIcon")));
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		FTAPocketDef Pocket; Pocket.PocketId = FName(*FString::Printf(TEXT("P%d"), Index)); Pocket.Columns = 4; Pocket.Rows = 2; Coat->Pockets.Add(Pocket);
@@ -167,7 +168,12 @@ bool FTAWornPresentationTest::RunTest(const FString&)
 	FTAClothingInstance Rack; UTAInventoryComponent::BuildClothingInstance(Coat, Rack);
 	Data->EquipOuterInstance(Rack); UI->RefreshAll();
 	TestEqual(TEXT("All maximum-capacity coat cells generated"), Panel->GetGeneratedSlots().Num(), 26);
-	TestTrue(TEXT("Coat supplies the single displayed image"), Image && Image->GetBrush().GetResourceObject() == Coat->Icon.LoadSynchronous());
+	TestTrue(TEXT("Coat supplies the single displayed image"), Image && Image->GetBrush().GetResourceObject() == Coat->DisplayTexture.LoadSynchronous());
+	auto* EquipContainer = Cast<UNamedSlot>(UI->GetWidgetFromName(TEXT("NamedSlot_OuterEquip")));
+	auto* EquipWidget = EquipContainer ? Cast<UTAInventorySlotWidget>(EquipContainer->GetContent()) : nullptr;
+	auto* EquipImage = EquipWidget ? Cast<UImage>(EquipWidget->GetWidgetFromName(TEXT("Image_item"))) : nullptr;
+	TestTrue(TEXT("Equipment slot reads its separate small icon"), EquipImage && EquipImage->GetBrush().GetResourceObject() == Coat->Icon.LoadSynchronous());
+	TestTrue(TEXT("Equipment and full clothing images can differ"), EquipImage && Image && EquipImage->GetBrush().GetResourceObject() != Image->GetBrush().GetResourceObject());
 	TestTrue(TEXT("Outer frame visible with a coat"), OuterFrame->GetVisibility() == ESlateVisibility::HitTestInvisible);
 	for (int32 Index = 0; Index < Panel->GetGeneratedSlots().Num(); ++Index)
 	{
@@ -184,7 +190,7 @@ bool FTAWornPresentationTest::RunTest(const FString&)
 	Rack = {}; Data->SwapOuter(Rack); UI->RefreshAll();
 	TestEqual(TEXT("Removing coat restores inner capacity"), Panel->GetGeneratedSlots().Num(), 2);
 	TestEqual(TEXT("Inner item survives every layout change"), Data->GetItemCount(Item), 1);
-	TestTrue(TEXT("Removing coat restores inner image"), Image && Image->GetBrush().GetResourceObject() == Data->DefaultInnerClothing->Icon.LoadSynchronous());
+	TestTrue(TEXT("Removing coat restores inner image"), Image && Image->GetBrush().GetResourceObject() == Data->DefaultInnerClothing->DisplayTexture.LoadSynchronous());
 	auto* RackClass = LoadClass<UTAClothingPanelWidget>(nullptr, TEXT("/Game/UI/Inventory/WBP_ClothingPanel.WBP_ClothingPanel_C"));
 	auto* RackPanel = CreateWidget<UTAClothingPanelWidget>(PC, RackClass);
 	RackPanel->TakeWidget(); RackPanel->BuildFromClothing(Rack);

@@ -17,11 +17,11 @@ class UTextBlock;
 class UInputAction;
 
 /**
- * 衣架换装界面。左边：衣架上的外套格和它的口袋；右边：身上的外套格、内衬口袋和外套口袋（复用 TAClothingPanelWidget）。
+	 * 衣架换装界面。左边：衣架上的外套格、纯外套图和口袋；右边：身上的外套格、完整穿着图、内衬和外套口袋。
  * - 外套格之间拖拽：穿上 / 换下 / 互换外套，口袋里的物品跟着衣服走。
  * - 口袋格之间拖拽：衣架口袋 ↔ 身上口袋移动、合并、交换物品（剧情物品不能放进衣架）。
  * 打开期间时停（与背包相同）并无敌；ESC（共享 UI 返回键）关闭。
- * 布局在 WBP 中配置（控件名见下方 BindWidgetOptional）；没有 WBP 时用 C++ 临时布局。
+ * 固定左右半屏，衣架口袋在图左，穿着口袋在图右；复用背包的自适应大 Grid 框。
  */
 UCLASS()
 class THE_AWAKENING_API UTAClothingSwapWidget : public UUserWidget, public ITAPlayerInputReceiver
@@ -58,6 +58,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 
 	/** 格子属于哪一边 */
 	enum class ESlotOwner : uint8 { None, RackCoat, PlayerCoat, RackPocket, PlayerPocket };
@@ -66,8 +67,8 @@ protected:
 	void EnsureChildren();
 	void ConfigureSlot(UTAInventorySlotWidget* InSlot);
 	void ConfigurePanelSlots(UTAClothingPanelWidget* Panel);
-	/** 【临时】没有 WBP 时用 C++ 搭一个最简布局，方便 PIE 验收；有 WBP 后不再走这里 */
-	void BuildFallbackLayout();
+	/** Fixed canvas anchors keep coat slots in place even when an entire side is empty. */
+	void BuildSwapLayout();
 	void AcquireGuards();
 	void ReleaseGuards();
 	void SwapCoats();
@@ -147,9 +148,6 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTAClothingPanelWidget> InnerClothingPanel;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTAClothingPanelWidget> OuterClothingPanel;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTAInventoryComponent> Inventory;
