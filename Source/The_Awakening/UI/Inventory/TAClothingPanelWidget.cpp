@@ -18,6 +18,8 @@
 #include "Components/Border.h"
 #include "Components/ScaleBox.h"
 #include "UI/Inventory/TAWornClothingLayout.h"
+#include "UI/Inventory/TAPocketConnectionLayout.h"
+#include "Rendering/DrawElements.h"
 
 TSharedRef<SWidget> UTAClothingPanelWidget::RebuildWidget()
 {
@@ -65,6 +67,37 @@ void UTAClothingPanelWidget::NativeTick(const FGeometry& Geometry, float DeltaTi
 	{
 		ArrangeWornClothing(Geometry.GetLocalSize());
 	}
+}
+
+int32 UTAClothingPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
+	FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const
+{
+	Layer = Super::NativePaint(Args, Geometry, CullingRect, Out, Layer, Style, bParentEnabled);
+	if (!bWornInventoryLayout || PocketConnectionThickness <= 0.f || !Image_Clothing || !Image_Clothing->IsVisible()) return Layer;
+	// The Image geometry, rather than its ScaleBox, excludes ScaleToFit letterboxing.
+	const FGeometry& ImageGeometry = Image_Clothing->GetCachedGeometry();
+	if (ImageGeometry.GetLocalSize().IsNearlyZero()) return Layer;
+	const FVector2D ImageMin = Geometry.AbsoluteToLocal(ImageGeometry.LocalToAbsolute(FVector2D::ZeroVector));
+	const FVector2D ImageMax = Geometry.AbsoluteToLocal(ImageGeometry.LocalToAbsolute(ImageGeometry.GetLocalSize()));
+	const FLinearColor Color = FLinearColor::FromSRGBColor(FColor(0x74, 0xB9, 0xB0)) * Style.GetColorAndOpacityTint();
+	bool bDrewLine = false;
+	for (int32 Index = 0; Index < GeneratedGroups.Num(); ++Index)
+	{
+		const bool bInner = Index < InnerPocketCount;
+		const UTAClothingDefinition* Def = bInner ? BuiltDef.Get() : WornOuterDef.Get();
+		const int32 PocketIndex = bInner ? Index : Index - InnerPocketCount;
+		if (!Def || !Def->Pockets.IsValidIndex(PocketIndex) || !GeneratedGroups[Index]) continue;
+		const FGeometry& GridGeometry = GeneratedGroups[Index]->GetCachedGeometry();
+		if (GridGeometry.GetLocalSize().IsNearlyZero()) continue;
+		const FVector2D GridMin = Geometry.AbsoluteToLocal(GridGeometry.LocalToAbsolute(FVector2D::ZeroVector));
+		const FVector2D GridMax = Geometry.AbsoluteToLocal(GridGeometry.LocalToAbsolute(GridGeometry.GetLocalSize()));
+		const TArray<FVector2D> Points = TAPocketConnectionLayout::Calculate(ImageMin, ImageMax, GridMin, GridMax,
+			Def->Pockets[PocketIndex].PocketImageUV, bRackSwapLayout);
+		FSlateDrawElement::MakeLines(Out, Layer + 1, Geometry.ToPaintGeometry(), Points,
+			ESlateDrawEffect::None, Color, true, PocketConnectionThickness);
+		bDrewLine = true;
+	}
+	return Layer + (bDrewLine ? 1 : 0);
 }
 
 void UTAClothingPanelWidget::CreateWornPocket(const FTAPocketRuntime& Runtime, const FTAPocketDef& Def, int32& FlatIndex)

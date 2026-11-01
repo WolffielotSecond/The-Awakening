@@ -105,3 +105,20 @@
 
 本次仅整理生成物和文档，未修改运行时代码或重新启动测试；沿用上一轮已通过的
 UE 5.8 Development Editor 编译与 9 项回归结果。
+
+## 第四次收尾：口袋坐标与连线（2026-11-01）
+
+本阶段完成每个口袋的 Pocket Image UV（左下原点、默认 0,0）与两段式连线，
+两行格子终点在行间线、一行格子在行中心，水平至图片边缘后连接口袋标记。
+颜色 `#74B9B0`；`WBP_ClothingPanel` 类默认值中的 Pocket Connection Thickness 控制粗细，默认 1.5，0 隐藏。
+坐标目前在背包/衣架图片间共用，不同图片或合成图内衣口袋的独立覆盖尚未制作。
+
+- 删除 19 个文件，5,974,194 字节（约 5.70 MiB）：引擎/SDK 和旧验证备份日志、ShaderDebugInfo、冗余 720p 预览、报告 HTML。
+- Saved 由约 360.30 MiB 降至 354.60 MiB；此为清理时快照，编辑器可继续生成文件。
+- 保留六张主预览、Validation.log 与 Report/index.json、资产备份及全部正式自动化测试。
+- Saved/Temp、Saved/Crashes 未发现待清理脚本或转储。本轮未删除 Content 下用户导入的美术资产。
+- SaveGames 全部文件清理前后 SHA-256 一致，即存档内容未改变。
+
+清单：`Saved/Cleanup/20261101-pocket-connections/manifest.json`。
+沿用上一轮 UE 5.8 Development Editor 编译成功与 10/10 专项回归结果（9 成功、1 带警告成功、0 失败），
+包含连线端点、UV 转换、衣架镜像与实际界面渲染检查。本次仅整理生成物与文档，无需重新编译。

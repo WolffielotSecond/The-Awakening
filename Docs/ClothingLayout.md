@@ -1,9 +1,9 @@
 # 衣服 DataAsset、背包与衣架换衣布局
 
-**背包与衣架换衣布局这一阶段已完成并收工，后续制作暂缓。**
+**背包、衣架换衣布局与口袋坐标/连线阶段已完成并收工（2026-11-01）。**
 当前交付包含衣服的三张独立图片属性、可编辑口袋数据、背包单图切换与口袋排版、装饰线、
 装备栏对齐、框内右下角提示，以及换衣界面的左右半屏布局和固定外套栏。
-正式衣服美术、口袋连线与后续 anchor 算法、角色展示、技能页内容留待下一阶段。
+口袋连线已接入图片标记坐标；正式衣服美术、角色展示、技能页内容留待下一阶段。
 顶部 Tab、颜色、输入和背景规格见 [InventoryTabs.md](InventoryTabs.md)。
 
 ## 编辑衣服
@@ -21,10 +21,27 @@
 | Pockets → Pocket Id | 同一件衣服内唯一的口袋标识 |
 | Pockets → Columns | 横向列数，1–4 |
 | Pockets → Rows | 纵向行数，1–2 |
+| Pockets → Pocket Image UV | 衣服正方形图片内的口袋标记，Vector2D；左下 (0,0)、右上 (1,1)，默认 (0,0) |
 
 Pockets 顺序就是画面中从上到下的顺序。1 个口袋显示一个格子群，2 个上下排列，3 个上中下排列。
 每个口袋容量为 Columns × Rows；编辑器限制输入范围，资产验证同时检查数量、形状和重复 ID。
 新建资产从 1 个 1×1 口袋开始。更改衣服贴图不需要修改蓝图或背包代码。
+
+### 口袋图片坐标与连线
+
+衣服展示美术采用 1:1 正方形画布，衣服在画布内的位置和占比可各自调整。
+每个口袋独立填写 `Pocket Image UV`（`PocketImageUV`），标记以整张图片（包括透明留白）为基准：
+X 向右、Y 向上，左下 (0,0)、左上 (0,1)、右下 (1,0)、右上 (1,1)，中心 (0.5,0.5)。
+两个分量限制在 0–1；新建口袋和未设置此字段的已有资产均默认 (0,0)，该值是有效角点，不作为“未设置”哨兵。
+此字段通过所属口袋的 PocketId 对应格子群，与旧 `AnchorUV` 无关，不改变格子位置、容量或物品索引。
+连线按图片实际显示区域换算，排除 ScaleToFit 的外侧留白，UI 向下的 Y 使用 `1-Y`。
+每个口袋的终点为格子群靠图片一侧的边缘中心：两行落在行间分界线上，一行落在行高度中央。
+从终点水平延伸到图片边缘，再斜连到该口袋的 Pocket Image UV。衣架左侧格子在图片左边时自动镜像方向。
+线条颜色为 `#74B9B0`，在图片和格子绘制后叠加，不拦截输入。
+调整粗细：打开 `/Game/UI/Inventory/WBP_ClothingPanel` → Class Defaults（类默认值）→
+`ClothingUI | Pocket Connections` → `Pocket Connection Thickness`，默认 1.5 UI 单位，0 隐藏。
+背包与换衣界面通过各自的 ClothingPanelClass 共用此 WBP；无需修改格子 WBP 或两个主界面的 Designer。
+当前每个口袋只有一套标记，在背包和衣架展示图中共用；不同展示图及外套合成图中内衣口袋的额外标记配置尚未添加。
 
 当前内衣展示图继续使用原来的白色草图，容量 1 行 × 2 列。外套 `DisplayTexture` 占位使用
 `/Game/UI/Common/T_DefaultItemIcon`，`Icon` 小图标使用原衣服草图；目前外套仍有两个口袋，分别为 1 行 × 2 列、2 行 × 2 列。
@@ -43,7 +60,7 @@ Pockets 顺序就是画面中从上到下的顺序。1 个口袋显示一个格�
 - 根据实际行列数测量格子群和外框，口袋之间留相同间距，不生成占位空格。
 - 同屏格子同尺寸；按可用区域统一计算缩放，预留外套最大 6 行 × 4 列及内衣框、留白与间距。
 - 沿用 Grid 与 `#799FA7` 调色。原来的 AnchorUV、SlotSide、内衣位置覆盖字段保留旧数据兼容，新背包不使用，也不再作为可编辑排版参数。
-- 本阶段不生成口袋连线；顶栏、剧情格、外套装备栏保持各自功能。
+- 口袋连线使用每个口袋的 Pocket Image UV；顶栏、剧情格、外套装备栏保持各自功能。
 
 背包面板外侧装饰线参照效果图按整屏比例绘制：左线 x=4.1%、y=14%–91.5%，
 右线 x=95.2%、y=10.5%–95%，底线 y=95.2%、x=20.9%–57.5%。
@@ -98,8 +115,8 @@ Pockets 顺序就是画面中从上到下的顺序。1 个口袋显示一个格�
 空衣架/穿脱/两件外套互换，以及从衣架口袋拖到玩家内衣口袋。
 它会额外生成 `SwapRackOccupied.png`、`SwapRackEmpty.png`、`SwapBothCoats.png` 和 720p 预览。
 
-2026-10-31 最新验证：UE 5.8 Development Editor 编译通过；衣服专项与
-`TheAwakening.Input.UIPlayerIngress` 共 **9/9 通过**。覆盖无外套、三个最大口袋、混合尺寸口袋，
+2026-11-01 最新验证：UE 5.8 Development Editor 编译通过；衣服专项与
+`TheAwakening.Input.UIPlayerIngress` 共 **10/10 通过**（包含口袋连线路径测试）。覆盖无外套、三个最大口袋、混合尺寸口袋，
 背包装备栏与内衣行对齐/距两侧装饰线等距，以及换衣界面 1600×1000、1280×720 的边界与不重叠检查。
 穿上、脱下、两件外套交换和衣架口袋向内衣口袋移动均经实际控件入口验证。
 测试物品和最大容量外套只存在于临时运行实例，不写入正式关卡、衣服资产或存档。
@@ -111,9 +128,14 @@ Pockets 顺序就是画面中从上到下的顺序。1 个口袋显示一个格�
 
 - 背包：`InnerOnly.png`、`ThreePocketsMaximum.png`、`MixedPockets.png`。
 - 换衣：`SwapRackOccupied.png`、`SwapRackEmpty.png`、`SwapBothCoats.png`，分别对应衣架有外套、衣架取空和两边均有外套。
-- 最新 `Validation.log` 和 `Report/index.json`（9/9 通过）；720p 测试结果保留在验证记录，重复预览图已删除。
+- 最新 `Validation.log` 和 `Report/index.json`（10/10 通过）；含背包和衣架连线渲染预览。
 - `Before/DA_Clothing_Outer.uasset` 与 `Before/ClothingImageSplit/` 的迁移前备份和结果 JSON。
 
-正式 `TAClothingSwapLayoutTests.cpp` 和已有衣服/输入回归保留；本轮没有一次性工具源码需要移除。
+正式 `TAPocketConnectionTests.cpp`、`TAClothingSwapLayoutTests.cpp` 和已有衣服/输入回归保留；本轮没有一次性工具源码需要移除。
 不再保留旧报告 HTML、重复截图、调试日志备份与临时 PDF 页面渲染；清单见
 [Maintenance20261031.md](Maintenance20261031.md)。最终预览不作为资产配置来源。
+
+2026-11-01 连线阶段收尾删除 19 个重复日志、冗余 720p 预览、报告 HTML 和可重建 ShaderDebugInfo，
+约 5.70 MiB。保留六张主预览、10/10 验证日志与 JSON、原资产备份和正式测试。
+清单为 `Saved/Cleanup/20261101-pocket-connections/manifest.json`，存档清理前后内容校验一致。
+后续若不同图片中的口袋位置不同，需要再拆分坐标配置；当前每个口袋在两个界面共用同一个坐标。

@@ -53,10 +53,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClothingUI")
 	TSubclassOf<UUserWidget> SlotWidgetClass;
 
+	/** 连线宽度，单位为 UI Slate 单位；背包与衣架界面共用 WBP_ClothingPanel 的类默认值。0 隐藏连线。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClothingUI|Pocket Connections", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "10.0"))
+	float PocketConnectionThickness = 1.5f;
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
+	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
+		FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const override;
 	void ArrangeWornClothing(FVector2D Size);
 	void CreateWornPocket(const FTAPocketRuntime& Runtime, const FTAPocketDef& Def, int32& FlatIndex);
 

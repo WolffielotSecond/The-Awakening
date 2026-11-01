@@ -42,6 +42,11 @@ struct THE_AWAKENING_API FTAPocketDef
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket", meta = (ClampMin = "1", ClampMax = "2", UIMin = "1", UIMax = "2"))
 	int32 Rows = 0;
 
+	/** 衣服正方形图片内的口袋连线起点：左下 (0,0)，右上 (1,1)，X 向右、Y 向上。仅保存标记，暂不绘制连线。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pocket|UI",
+		meta = (DisplayName = "Pocket Image UV", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	FVector2D PocketImageUV = FVector2D::ZeroVector;
+
 	/** 已废弃：只在 Columns / Rows 未设置时使用，保证旧的衣服资产继续能读 */
 	UPROPERTY(BlueprintReadOnly, Category = "Pocket")
 	int32 SlotCount = 1;
