@@ -38,6 +38,11 @@ X 向右、Y 向上，左下 (0,0)、左上 (0,1)、右下 (1,0)、右上 (1,1)�
 每个口袋的终点为格子群靠图片一侧的边缘中心：两行落在行间分界线上，一行落在行高度中央。
 从终点水平延伸到图片边缘，再斜连到该口袋的 Pocket Image UV。衣架左侧格子在图片左边时自动镜像方向。
 线条颜色为 `#74B9B0`，在图片和格子绘制后叠加，不拦截输入。
+Standalone 窗口偏移修复：连线绘制时图片与格子统一读取 `GetPaintSpaceGeometry()`，
+与 NativePaint 的父几何使用同一空间，避免将 GetCachedGeometry 的桌面窗口偏移混入绘制坐标。
+渲染回归覆盖 100%/150% 缩放，以及桌面偏移 (0,0)、(120,180)、(360,420)；
+比较前景像素时关闭测试实例的 BackgroundBlur，避免离屏模糊历史残影，游戏实际模糊不变。
+此项是模拟窗口偏移的离屏验证，真实 Standalone 仍可手动复核。
 调整粗细：打开 `/Game/UI/Inventory/WBP_ClothingPanel` → Class Defaults（类默认值）→
 `ClothingUI | Pocket Connections` → `Pocket Connection Thickness`，默认 1.5 UI 单位，0 隐藏。
 背包与换衣界面通过各自的 ClothingPanelClass 共用此 WBP；无需修改格子 WBP 或两个主界面的 Designer。

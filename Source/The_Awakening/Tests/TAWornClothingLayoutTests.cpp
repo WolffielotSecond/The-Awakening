@@ -12,6 +12,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Border.h"
 #include "Components/Image.h"
+#include "Components/BackgroundBlur.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -19,6 +20,9 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "Slate/WidgetRenderer.h"
+#include "Widgets/SVirtualWindow.h"
+#include "Types/PaintArgs.h"
+#include "Input/HittestGrid.h"
 #include "ImageUtils.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -137,6 +141,53 @@ bool FTAWornPresentationTest::RunTest(const FString&)
 		const FString Dir = FPaths::ProjectSavedDir() / TEXT("ClothingPreview");
 		IFileManager::Get().MakeDirectory(*Dir, true);
 		TestTrue(TEXT("Preview written"), FFileHelper::SaveArrayToFile(PNG, *(Dir / (FString(Name) + TEXT(".png")))));
+		if (FString(Name) == TEXT("InnerOnly"))
+		{
+			// Offscreen background blur can sample the preceding render target and
+			// leave history-dependent ghosts. Isolate foreground geometry for comparison.
+			TArray<UWidget*> Widgets; UI->WidgetTree->GetAllWidgets(Widgets);
+			TArray<TPair<UBackgroundBlur*, float>> Blurs;
+			for (UWidget* Widget : Widgets)
+				if (auto* Blur = Cast<UBackgroundBlur>(Widget)) { Blurs.Emplace(Blur, Blur->GetBlurStrength()); Blur->SetBlurStrength(0.f); }
+			// Simulate Standalone's desktop-window translation independently of the
+			// paint geometry. Moving a window must not move lines relative to clothing.
+			const auto Window = SNew(SVirtualWindow).Size(FVector2D(1600, 1000));
+			Window->SetContent(Surface);
+			FHittestGrid HitGrid;
+			for (float Scale : { 1.f, 1.5f })
+			{
+				TArray<FColor> Baseline;
+				for (FVector2D DesktopOffset : { FVector2D::ZeroVector, FVector2D(120, 180), FVector2D(360, 420) })
+				{
+					const FGeometry PaintGeometry = FGeometry::MakeRoot(FVector2D(1600, 1000) / Scale, FSlateLayoutTransform(Scale));
+					for (int32 Pass = 0; Pass < 8; ++Pass)
+					{
+						++GFrameCounter;
+						const FPaintArgs PaintArgs(nullptr, HitGrid, DesktopOffset, FApp::GetCurrentTime(), 0.f);
+						Renderer->DrawWindow(PaintArgs, Target, Window, PaintGeometry, FSlateRect(0, 0, 1600, 1000), 0.f);
+						FlushRenderingCommands();
+					}
+					TArray<FColor> Moved; Target->GameThread_GetRenderTargetResource()->ReadPixels(Moved);
+					if (DesktopOffset.IsZero()) Baseline = MoveTemp(Moved);
+					else
+					{
+						int32 LargeDifferences = 0;
+						for (int32 Pixel = 0; Pixel < Baseline.Num(); ++Pixel)
+						{
+							const FColor A = Baseline[Pixel], B = Moved[Pixel];
+							if (FMath::Abs(int32(A.R)-B.R) > 4 || FMath::Abs(int32(A.G)-B.G) > 4 || FMath::Abs(int32(A.B)-B.B) > 4) ++LargeDifferences;
+						}
+						TestEqual(FString::Printf(TEXT("Window translation preserves foreground pixels (scale %.1f, offset %.0f,%.0f)"), Scale, DesktopOffset.X, DesktopOffset.Y), LargeDifferences, 0);
+					}
+				}
+			}
+			for (const auto& Blur : Blurs) Blur.Key->SetBlurStrength(Blur.Value);
+			// Restore the original preview geometry for the alignment checks below.
+			for (int32 Pass = 0; Pass < 4; ++Pass)
+			{
+				++GFrameCounter; Renderer->DrawWidget(Target, Surface, FVector2D(1600, 1000), 0.f); FlushRenderingCommands();
+			}
+		}
 		for (const TCHAR* WidgetName : { TEXT("NamedSlot_OuterEquip"), TEXT("NamedSlot_Story0") })
 		{
 			UWidget* W = UI->GetWidgetFromName(WidgetName);

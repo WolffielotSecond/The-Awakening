@@ -75,7 +75,9 @@ int32 UTAClothingPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometr
 	Layer = Super::NativePaint(Args, Geometry, CullingRect, Out, Layer, Style, bParentEnabled);
 	if (!bWornInventoryLayout || PocketConnectionThickness <= 0.f || !Image_Clothing || !Image_Clothing->IsVisible()) return Layer;
 	// The Image geometry, rather than its ScaleBox, excludes ScaleToFit letterboxing.
-	const FGeometry& ImageGeometry = Image_Clothing->GetCachedGeometry();
+	// NativePaint receives paint-space geometry. Cached/Tick geometry includes the
+	// desktop window offset and cannot be converted through this paint-space parent.
+	const FGeometry& ImageGeometry = Image_Clothing->GetPaintSpaceGeometry();
 	if (ImageGeometry.GetLocalSize().IsNearlyZero()) return Layer;
 	const FVector2D ImageMin = Geometry.AbsoluteToLocal(ImageGeometry.LocalToAbsolute(FVector2D::ZeroVector));
 	const FVector2D ImageMax = Geometry.AbsoluteToLocal(ImageGeometry.LocalToAbsolute(ImageGeometry.GetLocalSize()));
@@ -87,7 +89,7 @@ int32 UTAClothingPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometr
 		const UTAClothingDefinition* Def = bInner ? BuiltDef.Get() : WornOuterDef.Get();
 		const int32 PocketIndex = bInner ? Index : Index - InnerPocketCount;
 		if (!Def || !Def->Pockets.IsValidIndex(PocketIndex) || !GeneratedGroups[Index]) continue;
-		const FGeometry& GridGeometry = GeneratedGroups[Index]->GetCachedGeometry();
+		const FGeometry& GridGeometry = GeneratedGroups[Index]->GetPaintSpaceGeometry();
 		if (GridGeometry.GetLocalSize().IsNearlyZero()) continue;
 		const FVector2D GridMin = Geometry.AbsoluteToLocal(GridGeometry.LocalToAbsolute(FVector2D::ZeroVector));
 		const FVector2D GridMax = Geometry.AbsoluteToLocal(GridGeometry.LocalToAbsolute(GridGeometry.GetLocalSize()));
