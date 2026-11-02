@@ -99,3 +99,5 @@ shadertoolsconfig.json
 .claude/worktrees/
 .claude/settings.local.json
 .codex/config.toml
+Plugins/.DS_Store
+.DS_Store
