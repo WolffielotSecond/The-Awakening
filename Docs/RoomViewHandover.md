@@ -211,34 +211,24 @@ UnrealEditor.exe "C:\UnrealProjects\The-Awakening\The_Awakening.uproject" -Model
 
 地编摆放方法见 [CameraBarrierGuide.md](CameraBarrierGuide.md)，本节只记录实现。
 
+### 行为
+
+- 双面、只挡摄像机的碰撞体。摄像机被挡在玩家所在的一侧，碰到挡墙表面（加上 `CameraRadiusCm`）就停住。隔断墙本身挡住墙后的场景，所以画面看不到下一个场景。
+- 玩家所在的一侧按盒子厚度方向（本地 X）判断，并且有滞后：玩家在盒子厚度内时保持原来的一侧，完全走出另一面以后才换边。
+- 换边以后，摄像机在 `CrossSeconds`（默认 0.5 秒）内，按 SmoothStep 从“挡在旧一侧”插值到“挡在新一侧”，期间平滑穿过墙。如果中途往回走，过渡会从当前进度反向继续。
+- 摄像机在盒子的宽度（Y）和高度（Z）范围之外时，挡墙不起作用。挡墙没有房间归属，不依赖 RoomRegion。
+- 初版曾按视锥边缘计算“整个深度都看不到墙后”。实测在窄房间里需要把镜头推开将近 20 米，所以已改为现在这种碰撞方式。
+
 ### 代码位置
 
-- `Source/The_Awakening/Camera/TACameraBarrier.h/.cpp`：`ATACameraBarrier`（BP_CameraBarrier 的父类）、视锥 `FTACameraFrustum`、求解输入 `FTACameraBarrierInput`。BeginPlay / EndPlay 时在 `UTARoomRegistrySubsystem` 注册和注销（`RegisterBarrier` / `UnregisterBarrier` / `GetBarriers`）。
-- `TARoomViewComponent`：维护每面挡墙的过渡权重，收回朝墙方向多余的观察偏移，并提供最终视图约束 `ApplyCameraBarriers`。
+- `Source/The_Awakening/Camera/TACameraBarrier.h/.cpp`：`ATACameraBarrier`，是 BP_CameraBarrier 的父类。负责判断玩家在哪一侧（`ResolvePlayerSide`）、计算单侧推回量（`ComputePush`）和换边插值（`ComputeDisplacement`）。BeginPlay / EndPlay 时在 `UTARoomRegistrySubsystem` 里注册和注销（`RegisterBarrier` / `UnregisterBarrier` / `GetBarriers`），子关卡加载和卸载会自动处理。
+- `TARoomViewComponent`：保存每面挡墙的状态（玩家所在的一侧和过渡进度）；收回朝墙方向多余的观察偏移；在目标位置正被推回时，阻止继续朝墙方向推镜头；提供最终视图约束 `ApplyCameraBarriers`。`SnapToCurrentLocation`（初始化、复活、传送）时，过渡直接到位。
 - `TAAutoFocusCameraComponent::GetCameraView`：在 `Super` 之后、计算对焦之前调用 `ApplyCameraBarriers`。
-- 测试：`Tests/TACameraBarrierTests.cpp`，共 4 项，归在 `TheAwakening.Camera.Barrier.*`。
-
-### 求解
-
-- 挡住的矩形取盒子背向箭头的那一面（本地 -X 面），先沿箭头方向外扩 `SafetyMarginCm`。
-- 视锥由实际视图的位置、朝向、FOV 和视口宽高比构建，并遵守 LocalPlayer / View 的宽高比轴约束。正交投影不处理。
-- 判定条件：矩形四个角都在视锥某个侧面的外侧，就算看不到。所需推回量取能让任意一个侧面把矩形分开的最小距离，相机只沿箭头方向移动。这是保守判定，结果只会更严格，不会漏。
-- 多面挡墙时，与第一条推回同轴的挡墙按正 / 反两组，各取最强的一面。只有一组时，位移 = 权重 × 推回量。两组都需要推回时（过门交接，或房间比画面窄），按权重取加权平均：过门时在两种构图之间线性过渡，两面都满权重时取中点。不同轴的挡墙各自叠加。
-
-### 权重与过门
-
-- 挡墙生效条件：`bBarrierEnabled`，并且 `ActiveInRoomIds` 为空或包含当前 RoomId。
-- 线性进度在区域切换后按切入区域 Profile 的 `BlendSeconds` 匀速推进；显示权重为 SmoothStep。新加载的挡墙、`SnapToCurrentLocation`（初始化、复活、传送）都直接到位。
-- 区域切换前挡墙始终保持满权重，所以过门期间角色可以短暂出画，画面不会提前越墙。
-
-### 观察偏移
-
-- 每帧在写入 Boom 之后，按不含 Lag 的目标视图（与 SpringArm 求解相同）计算推回量。观察偏移与相机是 1:1 平移，所以朝墙方向的偏移按推回量收回；角色跟随造成的那部分越墙留给最终视图约束处理。
-- 目标视图正在被推回时，`AddLookInput` 不再累积朝墙方向的输入，所以往回推镜头没有死区。
-- `bCameraBarriersEnabled`（RoomViewComponent 上，默认开）为以后的过场镜头覆盖预留，可以临时关闭挡墙。
+- `bCameraBarriersEnabled`：在 RoomViewComponent 上，默认开启，留给以后的过场镜头覆盖临时关闭挡墙用。
+- 测试：`Tests/TACameraBarrierTests.cpp`，共 3 项，名称为 `TheAwakening.Camera.Barrier.*`。
 
 ### 验证
 
-- 2026-11-05：UE 5.8 Development Editor 编译通过；`TheAwakening.Camera` 共 8 项（Barrier 4 项、RoomVisibility 2 项、AutoFocus 2 项）全部通过，报告在 `Saved/Automation/CameraBarrier`。
-- `BP_CameraBarrier` 用无界面 Python 创建，没有改动任何地图。
-- 尚未进行人工 PIE 验收（检查清单见 CameraBarrierGuide.md 第 6 节）。
+- 2026-11-05：UE 5.8 Development Editor 编译通过。`TheAwakening.Camera` 共 7 项全部通过（Barrier 3 项、RoomVisibility 2 项、AutoFocus 2 项）。
+- Map_Chapter_0_02 里已经摆好的 BP_CameraBarrier 实例能正常加载。已删除的旧属性在加载时没有警告，MapCheck 为 0 错误、0 警告。
+- 人工 PIE 验收还没做，检查清单见 CameraBarrierGuide.md 第 4 节。

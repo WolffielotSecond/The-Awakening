@@ -2,8 +2,6 @@
 #include "Camera/TARoomRegion.h"
 #include "Camera/TACameraBarrier.h"
 #include "Camera/CameraTypes.h"
-#include "GameFramework/Pawn.h"
-#include "GameFramework/PlayerController.h"
 #include "Camera/CameraComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/CapsuleComponent.h"
@@ -111,8 +109,6 @@ void UTARoomViewComponent::ResolveRegion(bool bSnap)
 	BlendElapsed = 0.f;
 	BlendDuration = bSnap ? 0.f : Target.BlendSeconds;
 	if (BlendDuration <= 0.f) CurrentSettings = Target;
-	// 挡墙只在区域切换之后开始过渡，时长与镜头参数混合一致
-	BarrierBlendSeconds = Target.BlendSeconds;
 }
 
 void UTARoomViewComponent::UpdateRoomVisibility()
@@ -138,7 +134,7 @@ void UTARoomViewComponent::SnapToCurrentLocation()
 	LookOffset = FVector2D::ZeroVector;
 	ResolveRegion(true);
 	UpdateRoomVisibility();
-	UpdateBarrierWeights(0.f, true);
+	UpdateBarrierStates(0.f, true);
 	bSnapOnNextTick = true;
 	ApplyToBoom();
 	if (auto* ExemptBoom = Cast<UTAFreezeExemptSpringArm>(Boom.Get())) ExemptBoom->SkipLagOnce();
@@ -157,7 +153,7 @@ void UTARoomViewComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	ResolveRegion(bSnapThisTick);
 	bSnapOnNextTick = false;
 	UpdateRoomVisibility();
-	UpdateBarrierWeights(WorldDelta, bSnapThisTick);
+	UpdateBarrierStates(WorldDelta, bSnapThisTick);
 
 	if (BlendDuration > 0.f && BlendElapsed < BlendDuration)
 	{
@@ -216,66 +212,69 @@ void UTARoomViewComponent::ApplyToBoom()
 	Arm->TargetOffset = FVector(0.f, LookOffset.X * GetWorldYScreenSign(), LookOffset.Y);
 }
 
-const APlayerController* UTARoomViewComponent::GetOwningPlayerController() const
+int32 UTARoomViewComponent::GetBarrierSide(const ATACameraBarrier* Barrier) const
 {
-	const APawn* Pawn = Cast<APawn>(GetOwner());
-	return Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+	const FBarrierState* State = BarrierStates.Find(TWeakObjectPtr<ATACameraBarrier>(const_cast<ATACameraBarrier*>(Barrier)));
+	return State ? State->Side : 0;
 }
 
-float UTARoomViewComponent::GetBarrierWeight(const ATACameraBarrier* Barrier) const
+float UTARoomViewComponent::GetBarrierCrossAlpha(const ATACameraBarrier* Barrier) const
 {
-	const float* Alpha = BarrierAlpha.Find(TWeakObjectPtr<ATACameraBarrier>(const_cast<ATACameraBarrier*>(Barrier)));
-	return Alpha ? FMath::SmoothStep(0.f, 1.f, *Alpha) : 0.f;
+	const FBarrierState* State = BarrierStates.Find(TWeakObjectPtr<ATACameraBarrier>(const_cast<ATACameraBarrier*>(Barrier)));
+	return State ? FMath::SmoothStep(0.f, 1.f, State->Alpha) : 0.f;
 }
 
-void UTARoomViewComponent::UpdateBarrierWeights(float DeltaSeconds, bool bSnap)
+void UTARoomViewComponent::UpdateBarrierStates(float DeltaSeconds, bool bSnap)
 {
 	const UTARoomRegistrySubsystem* Registry = UTARoomRegistrySubsystem::Get(this);
-	TMap<TWeakObjectPtr<ATACameraBarrier>, float> Next;
-	if (Registry)
+	const AActor* Owner = GetOwner();
+	TMap<TWeakObjectPtr<ATACameraBarrier>, FBarrierState> Next;
+	if (Registry && Owner)
 	{
+		const FVector PlayerLocation = Owner->GetActorLocation();
 		for (const TWeakObjectPtr<ATACameraBarrier>& Entry : Registry->GetBarriers())
 		{
-			ATACameraBarrier* Barrier = Entry.Get();
+			const ATACameraBarrier* Barrier = Entry.Get();
 			if (!Barrier) continue;
-			const float Target = Barrier->IsActiveForRoom(ActiveRoomId) ? 1.f : 0.f;
-			const float* Previous = BarrierAlpha.Find(Entry);
-			float Alpha = Target;
-			// 新加载的挡墙直接到位；已有挡墙在区域切换后按 BarrierBlendSeconds 线性推进
-			if (Previous && !bSnap && BarrierBlendSeconds > KINDA_SMALL_NUMBER)
+			const FBarrierState* Previous = BarrierStates.Find(Entry);
+			FBarrierState State;
+			State.Side = Barrier->ResolvePlayerSide(PlayerLocation, Previous ? Previous->Side : 0);
+			if (Previous && !bSnap)
 			{
-				Alpha = FMath::FInterpConstantTo(*Previous, Target, DeltaSeconds, 1.f / BarrierBlendSeconds);
+				// 换边时从当前进度反向继续，来回走也不会跳
+				State.Alpha = State.Side == Previous->Side ? Previous->Alpha : 1.f - Previous->Alpha;
+				State.Alpha = Barrier->CrossSeconds > KINDA_SMALL_NUMBER
+					? FMath::Min(1.f, State.Alpha + DeltaSeconds / Barrier->CrossSeconds)
+					: 1.f;
 			}
-			Next.Add(Entry, Alpha);
+			Next.Add(Entry, State);
 		}
 	}
-	BarrierAlpha = MoveTemp(Next);
+	BarrierStates = MoveTemp(Next);
 }
 
-void UTARoomViewComponent::GatherBarrierInputs(TArray<FTACameraBarrierInput>& Out) const
+FVector UTARoomViewComponent::ComputeBarrierDisplacement(const FVector& CameraLocation) const
 {
-	Out.Reset();
-	for (const TPair<TWeakObjectPtr<ATACameraBarrier>, float>& Pair : BarrierAlpha)
+	FVector Displacement = FVector::ZeroVector;
+	for (const TPair<TWeakObjectPtr<ATACameraBarrier>, FBarrierState>& Pair : BarrierStates)
 	{
-		const ATACameraBarrier* Barrier = Pair.Key.Get();
-		const float Weight = FMath::SmoothStep(0.f, 1.f, Pair.Value);
-		if (Barrier && Weight > KINDA_SMALL_NUMBER) Out.Add(Barrier->MakeInput(Weight));
+		if (const ATACameraBarrier* Barrier = Pair.Key.Get())
+		{
+			Displacement += Barrier->ComputeDisplacement(CameraLocation + Displacement, Pair.Value.Side, FMath::SmoothStep(0.f, 1.f, Pair.Value.Alpha));
+		}
 	}
+	return Displacement;
 }
 
 void UTARoomViewComponent::ApplyCameraBarriers(FMinimalViewInfo& View)
 {
 	LastBarrierCorrection = FVector::ZeroVector;
-	if (!bInitialized || !bCameraBarriersEnabled) return;
-	TArray<FTACameraBarrierInput> Inputs;
-	GatherBarrierInputs(Inputs);
-	if (Inputs.IsEmpty()) return;
-	const FTACameraFrustum Frustum = FTACameraFrustum::FromView(View, GetOwningPlayerController());
-	LastBarrierCorrection = ATACameraBarrier::ComputeDisplacement(Frustum, Inputs);
+	if (!bInitialized || !bCameraBarriersEnabled || BarrierStates.IsEmpty()) return;
+	LastBarrierCorrection = ComputeBarrierDisplacement(View.Location);
 	View.Location += LastBarrierCorrection;
 }
 
-bool UTARoomViewComponent::BuildUnlaggedView(FMinimalViewInfo& OutView) const
+bool UTARoomViewComponent::BuildUnlaggedCameraLocation(FVector& OutLocation) const
 {
 	const USpringArmComponent* Arm = Boom.Get();
 	const UCameraComponent* Cam = Camera.Get();
@@ -284,26 +283,17 @@ bool UTARoomViewComponent::BuildUnlaggedView(FMinimalViewInfo& OutView) const
 	const FRotator ArmRotation = Arm->GetTargetRotation();
 	const FVector Origin = Arm->GetComponentLocation() + Arm->TargetOffset;
 	const FVector SocketLocation = Origin - ArmRotation.Vector() * Arm->TargetArmLength + FRotationMatrix(ArmRotation).TransformVector(Arm->SocketOffset);
-	const FTransform CameraWorld = Cam->GetRelativeTransform() * FTransform(ArmRotation, SocketLocation);
-	OutView.Location = CameraWorld.GetLocation();
-	OutView.Rotation = CameraWorld.Rotator();
-	OutView.FOV = Cam->FieldOfView;
-	OutView.AspectRatio = Cam->AspectRatio;
-	OutView.bConstrainAspectRatio = Cam->bConstrainAspectRatio;
-	OutView.ProjectionMode = Cam->ProjectionMode;
+	OutLocation = FTransform(ArmRotation, SocketLocation).TransformPosition(Cam->GetRelativeLocation());
 	return true;
 }
 
 void UTARoomViewComponent::AbsorbLookOffsetIntoBarriers()
 {
 	TargetBarrierPush = FVector::ZeroVector;
-	if (!bCameraBarriersEnabled) return;
-	TArray<FTACameraBarrierInput> Inputs;
-	GatherBarrierInputs(Inputs);
-	FMinimalViewInfo View;
-	if (Inputs.IsEmpty() || !BuildUnlaggedView(View)) return;
+	FVector CameraLocation;
+	if (!bCameraBarriersEnabled || BarrierStates.IsEmpty() || !BuildUnlaggedCameraLocation(CameraLocation)) return;
 
-	TargetBarrierPush = ATACameraBarrier::ComputeDisplacement(FTACameraFrustum::FromView(View, GetOwningPlayerController()), Inputs);
+	TargetBarrierPush = ComputeBarrierDisplacement(CameraLocation);
 	// 观察偏移 1:1 平移相机：推回量里属于偏移的部分直接从偏移中收回，属于角色跟随的部分留给最终视图约束
 	const float PushH = static_cast<float>(TargetBarrierPush.Y) * GetWorldYScreenSign();
 	const float PushV = static_cast<float>(TargetBarrierPush.Z);

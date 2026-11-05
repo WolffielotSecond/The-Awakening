@@ -7,9 +7,7 @@
 
 class ATARoomRegion;
 class ATACameraBarrier;
-class APlayerController;
 struct FMinimalViewInfo;
-struct FTACameraBarrierInput;
 class USpringArmComponent;
 class UCameraComponent;
 class UMaterialInterface;
@@ -40,7 +38,7 @@ public:
 	void SnapToCurrentLocation();
 
 	/**
-	 * 最终视图约束：按生效的镜头挡墙沿挡墙方向推回实际相机位置，使画面看不到挡墙后面。
+	 * 最终视图约束：镜头挡墙把实际相机位置挡在玩家所在的一侧，玩家换边时平滑穿过。
 	 * 由 UTAAutoFocusCameraComponent::GetCameraView 在计算对焦之前调用，Lag、区域混合和附加偏移都已包含在 View 里。
 	 */
 	void ApplyCameraBarriers(FMinimalViewInfo& View);
@@ -49,9 +47,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Camera|Room View")
 	FVector GetLastBarrierCorrection() const { return LastBarrierCorrection; }
 
-	/** 挡墙当前的过渡权重（0–1），未登记或不生效时为 0。 */
-	UFUNCTION(BlueprintPure, Category = "Camera|Room View")
-	float GetBarrierWeight(const ATACameraBarrier* Barrier) const;
+	/** 玩家相对挡墙的一侧（+1 箭头方向，-1 背面），未登记时为 0。 */
+	int32 GetBarrierSide(const ATACameraBarrier* Barrier) const;
+
+	/** 换边过渡进度（0–1，已平滑），1 表示已经完全挡在当前一侧。 */
+	float GetBarrierCrossAlpha(const ATACameraBarrier* Barrier) const;
 
 	/** 当前所在区域 ID，没有区域时为 None。 */
 	UFUNCTION(BlueprintPure, Category = "Camera|Room View")
@@ -91,22 +91,24 @@ private:
 	void ClampLookOffsetToCurrentLimits();
 	float GetWorldYScreenSign() const;
 	void ApplyToBoom();
-	void UpdateBarrierWeights(float DeltaSeconds, bool bSnap);
-	void GatherBarrierInputs(TArray<FTACameraBarrierInput>& Out) const;
-	/** 按不含 Lag 的目标视图计算挡墙推回量，把朝墙方向多余的观察偏移收回，避免往回推时出现死区。 */
+	void UpdateBarrierStates(float DeltaSeconds, bool bSnap);
+	FVector ComputeBarrierDisplacement(const FVector& CameraLocation) const;
+	/** 按不含 Lag 的目标相机位置计算挡墙推回量，把朝墙方向多余的观察偏移收回，避免往回推时出现死区。 */
 	void AbsorbLookOffsetIntoBarriers();
-	bool BuildUnlaggedView(FMinimalViewInfo& OutView) const;
-	const APlayerController* GetOwningPlayerController() const;
+	bool BuildUnlaggedCameraLocation(FVector& OutLocation) const;
 
 	TWeakObjectPtr<USpringArmComponent> Boom;
 	TWeakObjectPtr<UCameraComponent> Camera;
 	TWeakObjectPtr<ATARoomRegion> ActiveRegion;
 
-	/** 每面挡墙的线性过渡进度（0–1），显示权重为其 SmoothStep。 */
-	TMap<TWeakObjectPtr<ATACameraBarrier>, float> BarrierAlpha;
-	/** 挡墙过渡时长，取最近一次切入区域的 BlendSeconds。 */
-	float BarrierBlendSeconds = 0.6f;
-	/** 不含 Lag 的目标视图需要的推回量，用于阻止继续朝墙推镜头。 */
+	/** 每面挡墙：玩家所在一侧，以及换边过渡的线性进度（0–1）。 */
+	struct FBarrierState
+	{
+		int32 Side = 0;
+		float Alpha = 1.f;
+	};
+	TMap<TWeakObjectPtr<ATACameraBarrier>, FBarrierState> BarrierStates;
+	/** 不含 Lag 的目标相机位置需要的推回量，用于阻止继续朝墙推镜头。 */
 	FVector TargetBarrierPush = FVector::ZeroVector;
 
 	FTARoomCameraSettings FallbackSettings;
