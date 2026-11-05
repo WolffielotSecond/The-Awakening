@@ -32,6 +32,7 @@
 #include "UI/TAPromptWidgetUtils.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
+#include "EnhancedPlayerInput.h"
 #include "InputCoreTypes.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/GameInstance.h"
@@ -101,6 +102,8 @@ void UTAInventoryPanelWidget::NativeConstruct()
 	{
 		ItemActionsAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/UI/IA_ItemActions.IA_ItemActions"));
 	}
+	if (!ContextAction) ContextAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/Inventory/IA_Inventory_ContextAction.IA_Inventory_ContextAction"));
+	if (auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer())) BackAction = PC->GetUIBackAction();
 	if (Text_Message)
 	{
 		Text_Message->SetVisibility(ESlateVisibility::Collapsed);
@@ -177,6 +180,9 @@ void UTAInventoryPanelWidget::NativeConstruct()
 			Request.Presentation.FocusTarget = this;
 			InputRequestController = PC;
 			InputRequestHandle = PC->AcquireInputRequest(Request);
+			for (UInputAction* Action : {PreviousPageAction.Get(), NextPageAction.Get(), ConfirmAction.Get(),
+				GamepadDragModeAction.Get(), ItemActionsAction.Get(), ContextAction.Get(), CloseAction.Get(), BackAction.Get()})
+				PC->RegisterEnhancedUIAction(Action);
 		}
 	// 时停：只冻结挂了冻结组件的角色和敌人，UI 动画照常；扫描中打开时由背包接管，冻结不会出现空档
 	if (!bFreezeRequested)
@@ -384,6 +390,7 @@ void UTAInventoryPanelWidget::EnsureDynamicChildren()
 void UTAInventoryPanelWidget::Init(UTAInventoryComponent* InInventory, UInputAction* InCloseAction)
 {
 	CloseAction = InCloseAction;
+	if (auto* PC = InputRequestController.Get()) PC->RegisterEnhancedUIAction(CloseAction);
 	if (Inventory)
 	{
 		Inventory->OnInventoryUpdated.RemoveDynamic(this, &UTAInventoryPanelWidget::HandleInventoryUpdated);
@@ -765,6 +772,8 @@ void UTAInventoryPanelWidget::BuildActionPromptBar()
 	AddPrompt(NextPageAction, NextPagePromptTextId);
 	AddPrompt(ConfirmAction, ConfirmPromptTextId);
 	AddPrompt(GamepadDragModeAction, GamepadDragModePromptTextId);
+	AddPrompt(ContextAction, TEXT("UI_Inventory_ContextBack"));
+	AddPrompt(BackAction, TEXT("UI_Document_Back"));
 }
 
 void UTAInventoryPanelWidget::OnActionPromptClicked(UTAActionPromptWidget* Prompt)
@@ -774,7 +783,12 @@ void UTAInventoryPanelWidget::OnActionPromptClicked(UTAActionPromptWidget* Promp
 		return;
 	}
 	UInputAction* Action = Prompt->GetPromptAction();
-	if (Action == PreviousPageAction)
+	if (Action == BackAction)
+	{
+		if (AllowsPlayerInput(ETAInputCapability::Close)) RemoveFromParent();
+	}
+	else if (Action == ContextAction) HandleContextAction();
+	else if (Action == PreviousPageAction)
 	{
 		ChangePage(-1);
 	}
@@ -824,6 +838,11 @@ void UTAInventoryPanelWidget::RefreshInputIcons()
 	{
 		if (Prompt)
 		{
+			if (Prompt->GetPromptAction() == ContextAction)
+			{
+				const bool bGamepad = InputIconSubsystem && InputIconSubsystem->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
+				Prompt->SetVisibility(bGamepad ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+			}
 			if (Prompt->GetPromptAction() == GamepadDragModeAction)
 			{
 				const bool bIsGamepad = InputIconSubsystem
@@ -997,17 +1016,54 @@ TOptional<ETAInputCapability> UTAInventoryPanelWidget::ResolvePlayerInput(FKey K
 
 void UTAInventoryPanelWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
 {
-	if (!AllowsPlayerInput(Capability)) return;
-	const auto* PC = InputRequestController.Get();
-	if (Capability == ETAInputCapability::InventoryToggle)
+	// Physical keys execute only through evaluated IMC action events.
+}
+
+void UTAInventoryPanelWidget::ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance)
+{
+	if (!Action || Event != ETriggerEvent::Started) return;
+	auto* PC = InputRequestController.Get();
+	if (!PC) return;
+	if (Action == PC->GetUIBackAction())
 	{
-		if (InputRequestController->ConsumeInventoryTogglePress(CloseAction)) RemoveFromParent();
+		if (AllowsPlayerInput(ETAInputCapability::Close)) HandleMenuBackRequested();
 	}
-	else if (Capability == ETAInputCapability::Navigate) ChangePage(PC->IsKeyMappedToAction(Key, PreviousPageAction) ? -1 : 1);
-	else if (Capability == ETAInputCapability::Confirm && ItemActionsAction && PC->IsKeyMappedToAction(Key, ItemActionsAction))
-		OpenItemActionMenu(CurrentHoveredInventorySlot.Get());
-	else if (Capability == ETAInputCapability::Confirm) HandleConfirmPressed();
-	else if (Capability == ETAInputCapability::ToggleDrag) ToggleGamepadDragMode(FInputActionValue(true));
+	else if (Action == CloseAction && AllowsPlayerInput(ETAInputCapability::InventoryToggle))
+	{
+		if (PC->ConsumeInventoryTogglePress(CloseAction)) RemoveFromParent();
+	}
+	else if (Action == PreviousPageAction) ChangePage(-1);
+	else if (Action == NextPageAction) ChangePage(1);
+	else if (Action == ContextAction) HandleContextAction();
+	else if (Action == ItemActionsAction && AllowsPlayerInput(ETAInputCapability::Confirm))
+	{
+		// IMC maps right-click to both actions. Only the contextual action executes it.
+		const auto* Input = Cast<UEnhancedPlayerInput>(PC->PlayerInput);
+		if (Input && ContextAction && Input->GetActionValue(ContextAction).IsNonZero()) return;
+		if (bGamepadDragModeActive) CommitGamepadDragMode();
+		else OpenItemActionMenu(CurrentHoveredInventorySlot.Get());
+	}
+	else if (Action == ConfirmAction)
+	{
+		// Preserve ItemActions precedence when both actions share a button in IMC_UI.
+		// Read evaluated Enhanced Input state, rather than dispatching a physical key.
+		const auto* Input = Cast<UEnhancedPlayerInput>(PC->PlayerInput);
+		if (!Input || !ItemActionsAction || !Input->GetActionValue(ItemActionsAction).IsNonZero()) HandleConfirmPressed();
+	}
+	else if (Action == GamepadDragModeAction) ToggleGamepadDragMode(FInputActionValue(true));
+}
+
+void UTAInventoryPanelWidget::HandleContextAction()
+{
+	if (!AllowsPlayerInput(ETAInputCapability::Confirm) || UWidgetBlueprintLibrary::IsDragDropping()) return;
+	if (bGamepadDragModeActive)
+	{
+		CommitGamepadDragMode();
+		return;
+	}
+	UTAInventorySlotWidget* HoveredSlot = CurrentHoveredInventorySlot.Get();
+	if (HoveredSlot && !HoveredSlot->IsEmpty()) OpenItemActionMenu(HoveredSlot);
+	else if (AllowsPlayerInput(ETAInputCapability::Close)) RemoveFromParent();
 }
 
 // ==================== 物品交互菜单 / 日记本 ====================

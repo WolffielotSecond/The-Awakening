@@ -302,9 +302,10 @@ it actually implements; a capability does not itself bind a key or execute an ac
 | Parkour start/preview | CanPlayerParkourToMarker -> Parkour gate + domain CanParkourToMarker -> existing execution |
 | Scan press | Character ingress -> Scan gate -> StartScan; Release/Cancel remains lifecycle cleanup |
 | Inventory toggle | Character opens; winning Inventory receiver closes -> InventoryToggle gate -> open/remove |
-| Inventory pages/tabs | Receiver Q/E/shoulders or UMG click -> Navigate-authorized widget handlers |
-| Inventory Confirm | Receiver or prompt -> HandleConfirm gate -> existing synthetic pointer click -> target's authorized handler |
+| Inventory pages/tabs | IMC Enhanced Input Started or UMG click -> Navigate-authorized widget handlers |
+| Inventory Confirm | IMC Enhanced Input Started or prompt -> HandleConfirm gate -> existing synthetic pointer click -> target's authorized handler |
 | Inventory drag | Slot mouse/DragDetected/Drop or owner ToggleDrag handler -> exact Inventory authorization -> mutation |
+| Inventory / clothing swap placement | IMC IA_Inventory_Drag or IA_Inventory_Confirm Started -> authorized owner -> place selected item/coat; inventory IA_ItemActions takes precedence over shared Confirm bindings, places while dragging and opens its menu when idle |
 | Dialogue keys/gamepad | Receiver selects Confirm/Advance/Navigate/ToggleHistory -> authorized widget handler |
 | Dialogue pointer | UMG choice/button/prompt handler; unhandled background click bubbles to authorized Advance |
 | History close | Receiver shortcut or close button -> authorized HandleCloseClicked -> parent closes exact History instance |

@@ -2,6 +2,10 @@
 
 背包里光标停在物品上，按 `IA_ItemActions`（在 `IMC_UI` 里配置）弹出二级菜单，列出能对这个物品做的操作。文本、日记本见 [DocumentSystem.md](DocumentSystem.md)。
 
+手柄按 `IA_Inventory_Drag`（默认 △/Y）选取物品后，可以再次按该键，或按 ×/A 放置到光标所在格。×/A 在 `IMC_UI` 中同时映射到 `IA_Inventory_Confirm` 和 `IA_ItemActions`；背包保留物品交互优先，拖动时放置，未拖动时打开物品菜单，同一次按下只执行一次操作。背包和换装界面的按键操作通过 IMC 的 Enhanced Input Action 事件执行，原始 Slate 按键分发不执行这些命令；改键沿用 IMC。
+
+`IMC_UI` 的 `IA_Inventory_ContextAction` 默认绑定鼠标右键：背包中悬停非空物品格时仍打开一次物品菜单；悬停空格或未悬停物品时退出。它与原 `IA_ItemActions` 共用右键时，由 Enhanced Input 的已求值 Action 状态保证只执行上下文操作一次。携带物品时沿用放置/取消选取，鼠标拖拽期间不触发退出。右下角显示「退出界面」（英文为「Exit Interface」）的右键提示与共享返回提示；手柄 B/○ 继续使用 `IA_UIBack`。
+
 ## 选项
 
 | 物品 | 选项 |

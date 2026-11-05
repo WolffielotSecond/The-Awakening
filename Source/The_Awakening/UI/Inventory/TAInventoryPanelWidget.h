@@ -34,6 +34,8 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool UsesEnhancedUIActions() const override { return true; }
+	virtual void ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance) override;
 	virtual bool HandleMenuBackRequested() override { RemoveFromParent(); return true; }
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
 	virtual void RemoveFromParent() override;
@@ -84,6 +86,7 @@ protected:
 	void HandleInputPromptsChanged();
 	void ToggleGamepadDragMode(const FInputActionValue& Value);
 	void HandleConfirmPressed();
+	void HandleContextAction();
 	void BeginGamepadDragMode(UTAInventorySlotWidget* SourceSlot);
 	void CancelGamepadDragMode();
 	void CommitGamepadDragMode();
@@ -226,6 +229,11 @@ protected:
 	/** 光标停在物品上时打开它的交互菜单。为空时用 /Game/Input/Actions/UI/IA_ItemActions，按键（键鼠、手柄）都在 IMC_UI 中配置 */
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TObjectPtr<UInputAction> ItemActionsAction;
+	/** IMC contextual pointer action: item menu on occupied slots, Back on empty space. */
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
+	TObjectPtr<UInputAction> ContextAction;
+	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
+	TObjectPtr<UInputAction> BackAction;
 
 	UPROPERTY(EditAnywhere, Category = "InventoryUI|Input")
 	TSubclassOf<UTAActionPromptWidget> ActionPromptWidgetClass;

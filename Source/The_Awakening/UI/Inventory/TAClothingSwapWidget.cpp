@@ -20,6 +20,12 @@
 #include "Engine/GameInstance.h"
 #include "InputAction.h"
 #include "Misc/PackageName.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Core/TAInputIconSubsystem.h"
+#include "Components/HorizontalBox.h"
+#include "UI/TAActionPromptWidget.h"
+#include "UI/TAPromptWidgetUtils.h"
 
 UTAClothingSwapWidget* UTAClothingSwapWidget::Open(APlayerController* PC, ATAClothingRack* InRack, UTAInventoryComponent* InInventory,
 	TSubclassOf<UTAClothingSwapWidget> WidgetClass)
@@ -118,11 +124,18 @@ void UTAClothingSwapWidget::BuildSwapLayout()
 	NamedSlot_RackClothing = Body(TEXT("NamedSlot_RackClothing"), .035f, .485f);
 	NamedSlot_InnerClothing = Body(TEXT("NamedSlot_InnerClothing"), .515f, .965f);
 	NamedSlot_OuterClothing = nullptr; // The right side renders inner + outer in one panel.
+	ActionPromptBar = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HorizontalBox_Controls"));
+	auto* PromptPlacement = Root->AddChildToCanvas(ActionPromptBar);
+	PromptPlacement->SetAnchors(FAnchors(.965f, .96f));
+	PromptPlacement->SetAlignment(FVector2D(1.f, 1.f));
+	PromptPlacement->SetAutoSize(true);
+	PromptPlacement->SetZOrder(10);
 }
 
 void UTAClothingSwapWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	UpdateGamepadDragVisualPosition();
 	const FVector2D Size = Geometry.GetLocalSize();
 	if (Size.X <= 0.f || Size.Y <= 0.f) return;
 	const float Extent = FMath::Clamp(float(FMath::Min(Size.X * .06f, Size.Y * .09f)), 36.f, 100.f);
@@ -144,15 +157,27 @@ void UTAClothingSwapWidget::NativeConstruct()
 	{
 		GamepadDragModeAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/Inventory/IA_Inventory_Drag.IA_Inventory_Drag"));
 	}
+	if (!BackAction)
+	{
+		BackAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_UIBack.IA_UIBack"));
+	}
+	if (!ContextAction) ContextAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/Inventory/IA_Inventory_ContextAction.IA_Inventory_ContextAction"));
 	EnsureChildren();
 	AcquireGuards();
 	if (UGameInstance* GI = GetGameInstance())
 	{
+		InputIconSubsystem = GI->GetSubsystem<UTAInputIconSubsystem>();
+		if (InputIconSubsystem)
+		{
+			InputIconSubsystem->OnInputPromptsChanged.AddUniqueDynamic(this, &UTAClothingSwapWidget::RefreshInputPrompts);
+		}
 		if (UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
 		{
 			Loc->OnLanguageChanged.AddUniqueDynamic(this, &UTAClothingSwapWidget::RefreshLocalizedText);
 		}
 	}
+	BuildActionPromptBar();
+	RefreshInputPrompts();
 	RefreshLocalizedText();
 	Refresh();
 }
@@ -161,6 +186,11 @@ void UTAClothingSwapWidget::NativeDestruct()
 {
 	ReleaseGuards();
 	CancelGamepadSelect();
+	if (InputIconSubsystem)
+	{
+		InputIconSubsystem->OnInputPromptsChanged.RemoveDynamic(this, &UTAClothingSwapWidget::RefreshInputPrompts);
+		InputIconSubsystem = nullptr;
+	}
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UTALocalizeSubsystem* Loc = GI->GetSubsystem<UTALocalizeSubsystem>())
@@ -207,6 +237,8 @@ void UTAClothingSwapWidget::AcquireGuards()
 			Request.Presentation.FocusTarget = this;
 			InputRequestController = PC;
 			InputRequestHandle = PC->AcquireInputRequest(Request);
+			for (UInputAction* Action : {ConfirmAction.Get(), GamepadDragModeAction.Get(), ContextAction.Get(), BackAction.Get()})
+				PC->RegisterEnhancedUIAction(Action);
 		}
 	}
 	// 时停：与背包相同，只冻结挂了冻结组件的角色和敌人，UI 照常
@@ -356,6 +388,9 @@ void UTAClothingSwapWidget::EnsureChildren()
 
 void UTAClothingSwapWidget::Refresh()
 {
+	// Inventory updates may rebuild pocket widgets or replace the selected coat.
+	CancelGamepadSelect();
+	HoveredSlot.Reset();
 	EnsureChildren();
 	if (!Inventory)
 	{
@@ -568,6 +603,59 @@ void UTAClothingSwapWidget::RefreshLocalizedText()
 	};
 	Apply(Text_RackTitle, RackTitleTextId);
 	Apply(Text_PlayerTitle, PlayerTitleTextId);
+	for (UTAActionPromptWidget* Prompt : ActionPrompts)
+	{
+		if (Prompt) Prompt->RefreshPrompt();
+	}
+}
+
+void UTAClothingSwapWidget::BuildActionPromptBar()
+{
+	if (!ActionPromptBar || !ActionPrompts.IsEmpty()) return;
+	auto Add = [this](UInputAction* Action, const TCHAR* TextId)
+	{
+		if (auto* Prompt = FTAPromptWidgetUtils::AddActionPrompt(this, ActionPromptBar, nullptr, Action, TextId,
+			FLinearColor(FColor(0xB9, 0xD7, 0xD8))))
+		{
+			Prompt->OnPromptClicked.AddUniqueDynamic(this, &UTAClothingSwapWidget::HandleActionPromptClicked);
+			ActionPrompts.Add(Prompt);
+		}
+	};
+	Add(ConfirmAction, TEXT("UI_Inventory_Confirm"));
+	Add(GamepadDragModeAction, TEXT("UI_Inventory_DragMode"));
+	Add(ContextAction, TEXT("UI_Inventory_ContextBack"));
+	Add(BackAction, TEXT("UI_Document_Back"));
+}
+
+void UTAClothingSwapWidget::RefreshInputPrompts()
+{
+	const bool bGamepad = InputIconSubsystem && InputIconSubsystem->GetCurrentDeviceType() != EInputDeviceType::KeyboardMouse;
+	for (UTAActionPromptWidget* Prompt : ActionPrompts)
+	{
+		if (!Prompt) continue;
+		const bool bPointerAction = Prompt->GetPromptAction() == ConfirmAction || Prompt->GetPromptAction() == GamepadDragModeAction;
+		const bool bHide = (bPointerAction && !bGamepad) || (Prompt->GetPromptAction() == ContextAction && bGamepad);
+		Prompt->SetVisibility(bHide ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		Prompt->RefreshPrompt();
+	}
+}
+
+void UTAClothingSwapWidget::HandleActionPromptClicked(UTAActionPromptWidget* Prompt)
+{
+	if (!Prompt) return;
+	if (Prompt->GetPromptAction() == ContextAction) HandleContextAction();
+	else if (Prompt->GetPromptAction() == BackAction)
+	{
+		if (AllowsPlayerInput(ETAInputCapability::Close)) Close();
+	}
+	else if (Prompt->GetPromptAction() == ConfirmAction)
+	{
+		HandleConfirmPressed();
+	}
+	else if (Prompt->GetPromptAction() == GamepadDragModeAction)
+	{
+		if (AllowsPlayerInput(ETAInputCapability::ToggleDrag)) ToggleGamepadSelect();
+	}
 }
 
 bool UTAClothingSwapWidget::AllowsPlayerInput(ETAInputCapability Capability) const
@@ -596,30 +684,31 @@ TOptional<ETAInputCapability> UTAClothingSwapWidget::ResolvePlayerInput(FKey Key
 
 void UTAClothingSwapWidget::ExecutePlayerInput(FKey Key, ETAInputCapability Capability)
 {
-	if (!AllowsPlayerInput(Capability))
-	{
-		return;
-	}
-	if (Capability == ETAInputCapability::Confirm)
-	{
-		// 手柄确认与背包一致：模拟左键点击；选取中时直接放下
-		if (const auto* PC = InputRequestController.Get(); PC && PC->IsSimulatingSyntheticLeftMouseClick())
-		{
-			return;
-		}
-		if (GamepadSourceSlot.IsValid())
-		{
-			ToggleGamepadSelect();
-		}
-		else
-		{
-			SimulateLeftMouseClick();
-		}
-	}
-	else if (Capability == ETAInputCapability::ToggleDrag)
-	{
-		ToggleGamepadSelect();
-	}
+	// Physical keys execute only through evaluated IMC action events.
+}
+
+void UTAClothingSwapWidget::ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance)
+{
+	if (!Action || Event != ETriggerEvent::Started) return;
+	if (Action == BackAction && AllowsPlayerInput(ETAInputCapability::Close)) Close();
+	else if (Action == ContextAction) HandleContextAction();
+	else if (Action == ConfirmAction) HandleConfirmPressed();
+	else if (Action == GamepadDragModeAction && AllowsPlayerInput(ETAInputCapability::ToggleDrag)) ToggleGamepadSelect();
+}
+
+void UTAClothingSwapWidget::HandleContextAction()
+{
+	if (!AllowsPlayerInput(ETAInputCapability::Close) || GamepadSourceSlot.IsValid() || UWidgetBlueprintLibrary::IsDragDropping()) return;
+	const UTAInventorySlotWidget* CurrentSlot = HoveredSlot.Get();
+	if (!CurrentSlot || CurrentSlot->IsEmpty()) Close();
+}
+
+void UTAClothingSwapWidget::HandleConfirmPressed()
+{
+	if (!AllowsPlayerInput(ETAInputCapability::Confirm)) return;
+	if (const auto* PC = InputRequestController.Get(); PC && PC->IsSimulatingSyntheticLeftMouseClick()) return;
+	if (GamepadSourceSlot.IsValid()) ToggleGamepadSelect();
+	else SimulateLeftMouseClick();
 }
 
 void UTAClothingSwapWidget::ToggleGamepadSelect()
@@ -631,8 +720,16 @@ void UTAClothingSwapWidget::ToggleGamepadSelect()
 		// 第一次按：选中光标所在的非空格子
 		if (Target && !Target->IsEmpty() && !Target->IsStorySlot())
 		{
+			GamepadDragVisualWidget = CreateWidget<UTAInventorySlotWidget>(GetOwningPlayer(), SlotWidgetClass);
+			if (!GamepadDragVisualWidget) return;
+			GamepadDragVisualWidget->SetSlotData(Target->GetSlotData(), Target->GetFlatIndex());
+			GamepadDragVisualWidget->SetClothingDisplay(Target->GetClothingDisplay());
+			GamepadDragVisualWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+			GamepadDragVisualWidget->AddToViewport(1000001);
+			GamepadDragVisualWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
 			GamepadSourceSlot = Target;
 			Target->SetDraggingVisual(true);
+			UpdateGamepadDragVisualPosition();
 		}
 		return;
 	}
@@ -651,6 +748,26 @@ void UTAClothingSwapWidget::CancelGamepadSelect()
 		Source->SetDraggingVisual(false);
 	}
 	GamepadSourceSlot.Reset();
+	if (GamepadDragVisualWidget)
+	{
+		GamepadDragVisualWidget->RemoveFromParent();
+		GamepadDragVisualWidget = nullptr;
+	}
+}
+
+void UTAClothingSwapWidget::UpdateGamepadDragVisualPosition()
+{
+	if (!GamepadDragVisualWidget) return;
+	if (!GamepadSourceSlot.IsValid())
+	{
+		CancelGamepadSelect();
+		return;
+	}
+	auto* PC = Cast<AThe_AwakeningPlayerController>(GetOwningPlayer());
+	float X = 0.f, Y = 0.f;
+	if (!PC || !PC->GetPlayerCursorPosition(X, Y)) return;
+	const float Scale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(PC), KINDA_SMALL_NUMBER);
+	GamepadDragVisualWidget->SetPositionInViewport(FVector2D(X / Scale + 14.f, Y / Scale + 14.f), false);
 }
 
 void UTAClothingSwapWidget::SimulateLeftMouseClick()

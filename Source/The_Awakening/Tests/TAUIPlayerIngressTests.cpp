@@ -6,6 +6,11 @@
 #include "UI/Inventory/TAInventoryTabBar.h"
 #include "UI/Inventory/TAClothingPanelWidget.h"
 #include "UI/Inventory/TAInventorySlotWidget.h"
+#include "UI/Inventory/TAClothingSwapWidget.h"
+#include "UI/Inventory/TAItemActionMenuWidget.h"
+#include "UI/TAActionPromptWidget.h"
+#include "Inventory/TAClothingRack.h"
+#include "EnhancedInputComponent.h"
 #include "Inventory/TAInventoryComponent.h"
 #include "Inventory/TAClothingDefinition.h"
 #include "Inventory/TAItemDefinition.h"
@@ -20,6 +25,7 @@
 #include "Blueprint/DragDropOperation.h"
 #include "Components/Button.h"
 #include "Components/NamedSlot.h"
+#include "Components/HorizontalBox.h"
 #include "Components/WidgetSwitcher.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -28,6 +34,7 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/Layout/SBorder.h"
 #include "UObject/UnrealType.h"
+#include "UObject/UObjectIterator.h"
 #include "Core/TAPlayerState.h"
 #include "AbilitySystem/TAAttributeSet.h"
 
@@ -40,6 +47,13 @@ struct FUIIngressMappings : IEnhancedInputSubsystemInterface
 	virtual UEnhancedPlayerInput* GetPlayerInput() const override { return Input; }
 	virtual TMap<TObjectPtr<const UInputAction>, FInjectedInput>& GetContinuouslyInjectedInputs() override { return Injected; }
 };
+
+void EvaluateUIKey(AThe_AwakeningPlayerController* PC, FKey Key, EInputEvent Event)
+{
+	PC->InputKey(FInputKeyEventArgs(nullptr, FInputDeviceId::CreateFromInternalId(0), Key, Event,
+		Event == IE_Released ? 0.f : 1.f, false, 0u));
+	PC->PlayerInput->ProcessInputStack({PC->InputComponent}, 0.016f, false);
+}
 
 // Observe whether input reaches the UMG path at all; production routing remains unchanged.
 class SInventoryPreviewProbe : public SBorder
@@ -66,6 +80,7 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
 	World->AddController(PC);
 	PC->PlayerInput = NewObject<UTAPlayerInput>(PC);
+	PC->InputComponent = NewObject<UEnhancedInputComponent>(PC);
 	FUIIngressMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
 	FModifyContextOptions Options; Options.bForceImmediately = true;
 	const int32 User = Local->GetControllerId();
@@ -145,7 +160,7 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 	Slots[0]->NativeOnDragDetected(Geometry, Pointer, DeniedDrag);
 	TestNull(TEXT("Covered drag cannot start"), DeniedDrag);
 	Slots[0]->NativeOnDragCancelled(Drop, Drag); // cleanup remains callable while covered
-	Inventory->ExecutePlayerInput(EKeys::Tab, ETAInputCapability::InventoryToggle);
+	Inventory->ExecutePlayerAction(Close, ETriggerEvent::Started, FInputActionInstance(Close));
 	TestTrue(TEXT("Covered close retains original request"), Inventory->GetPlayerInputRequestHandle() != 0);
 	PC->ReleaseInputRequest(CoverHandle);
 	TestTrue(TEXT("Drop works again after remaining winner restores"), Slots[1]->NativeOnDrop(Geometry, Drop, Drag));
@@ -175,7 +190,8 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 		Mappings.RemoveMappingContext(Context, Options); Mappings.AddMappingContext(Context, 0, Options);
 		auto PressPage = [&](FKey Key, int32 ExpectedPage)
 		{
-			TestTrue(TEXT("IMC paging key reaches the inventory input owner"), PC->RoutePlayerInputKey(Key, false, User));
+			TestFalse(TEXT("Raw key routing cannot execute inventory actions"), PC->RoutePlayerInputKey(Key, false, User));
+			EvaluateUIKey(PC, Key, IE_Pressed); EvaluateUIKey(PC, Key, IE_Released);
 			TestEqual(TEXT("Paging stops at the boundary and moves normally in range"), Switcher->GetActiveWidgetIndex(), ExpectedPage);
 			if (Tabs) TestEqual(TEXT("Paging keeps the animated header synchronized"), Tabs->GetSelectedPage(), ExpectedPage);
 		};
@@ -190,7 +206,7 @@ bool FTAUIPlayerIngressTest::RunTest(const FString&)
 		}
 	}
 	PC->RecordHeldInput(EKeys::Tab, 1.f, User);
-	TestTrue(TEXT("Close key routed once"), PC->RoutePlayerInputKey(EKeys::Tab, false, User));
+	EvaluateUIKey(PC, EKeys::Tab, IE_Pressed); EvaluateUIKey(PC, EKeys::Tab, IE_Released);
 	TestEqual(TEXT("Close releases the exact owner"), Inventory->GetPlayerInputRequestHandle(), uint64(0));
 	Inventory->NativeDestruct(); PC->RecordHeldInput(EKeys::Tab, 0.f, User);
 
@@ -267,6 +283,7 @@ bool FTAInventoryRepeatRoutingTest::RunTest(const FString&)
 	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
 	World->AddController(PC);
 	PC->PlayerInput = NewObject<UTAPlayerInput>(PC);
+	PC->InputComponent = NewObject<UEnhancedInputComponent>(PC);
 	FUIIngressMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
 	FModifyContextOptions Options; Options.bForceImmediately = true;
 	auto* Close = NewObject<UInputAction>();
@@ -304,6 +321,7 @@ bool FTAInventoryRepeatRoutingTest::RunTest(const FString&)
 		TestEqual(TEXT("No Blueprint/UMG Preview path for mapped Repeat"), Probe->Previews, 0);
 		TestEqual(TEXT("Opening hold cannot close Inventory"), Inventory->GetPlayerInputRequestHandle(), OpenHandle);
 		TestTrue(TEXT("Duplicate non-repeat delivery is also latched"), Slate.ProcessKeyDownEvent(Down));
+		PC->PlayerInput->ProcessInputStack({PC->InputComponent}, 0.016f, false);
 		TestEqual(TEXT("Same opening Down cannot toggle twice"), Inventory->GetPlayerInputRequestHandle(), OpenHandle);
 		TestTrue(TEXT("Held remains observed while menu consumes input"), PC->ReadHeldKey(Key).X != 0.f);
 		if (Key == EKeys::K)
@@ -314,13 +332,16 @@ bool FTAInventoryRepeatRoutingTest::RunTest(const FString&)
 					Surface->OnPreviewKeyDown(FGeometry(), FKeyEvent(OldKey, FModifierKeysState(), User, true, 0, 0)).IsEventHandled());
 			}
 		TestTrue(TEXT("Up pairs consumed menu Down/Repeat"), Slate.ProcessKeyUpEvent(Down));
+		PC->PlayerInput->ProcessInputStack({PC->InputComponent}, 0.016f, false);
 		TestTrue(TEXT("Physical Release is observed as zero"), PC->ReadHeldKey(Key).IsNearlyZero());
-		TestTrue(TEXT("New Press routes authorized close"), Slate.ProcessKeyDownEvent(Down));
+		TestTrue(TEXT("New Press reaches Enhanced Input"), Slate.ProcessKeyDownEvent(Down));
+		PC->PlayerInput->ProcessInputStack({PC->InputComponent}, 0.016f, false);
 		TestEqual(TEXT("New Press closes exactly once"), Inventory->GetPlayerInputRequestHandle(), uint64(0));
 		Slate.ProcessKeyDownEvent(Repeat);
 		TestFalse(TEXT("Closing hold cannot reopen through Gameplay latch"), PC->ConsumeInventoryTogglePress(Close));
 		TestTrue(TEXT("Stale Widget stops Preview before Blueprint Super"), Surface->OnPreviewKeyDown(FGeometry(), Repeat).IsEventHandled());
 		TestTrue(TEXT("Closing Down's Up stays paired after Request release"), Slate.ProcessKeyUpEvent(Down));
+		PC->PlayerInput->ProcessInputStack({PC->InputComponent}, 0.016f, false);
 		TestFalse(TEXT("Base Down after Release remains Gameplay ingress"), Processor->HandleKeyDownEvent(Slate, Down));
 		TestTrue(TEXT("Release then Press rearms normal opening"), PC->ConsumeInventoryTogglePress(Close));
 		Inventory->NativeDestruct();
@@ -334,7 +355,7 @@ bool FTAInventoryRepeatRoutingTest::RunTest(const FString&)
 		const auto CoverHandle = PC->AcquireInputRequest(Cover);
 		TestFalse(TEXT("Covered Inventory cannot borrow winner Navigate"), Reopened->AllowsPlayerInput(ETAInputCapability::Navigate));
 		TestTrue(TEXT("Covered Preview stops before Blueprint Super"), ReopenedSurface->OnPreviewKeyDown(FGeometry(), Repeat).IsEventHandled());
-		Reopened->ExecutePlayerInput(Key, ETAInputCapability::InventoryToggle);
+		Reopened->ExecutePlayerAction(Close, ETriggerEvent::Started, FInputActionInstance(Close));
 		TestTrue(TEXT("Covered player behavior cannot close request"), Reopened->GetPlayerInputRequestHandle() != 0);
 		PC->ReleaseInputRequest(CoverHandle);
 		Reopened->RemoveFromParent(); Reopened->NativeDestruct();
@@ -343,6 +364,206 @@ bool FTAInventoryRepeatRoutingTest::RunTest(const FString&)
 	Slate.ClearUserFocus(User); Slate.UnregisterInputPreProcessor(Processor);
 	Slate.UnregisterVirtualWindow(Host);
 	if (PreviousFocus.IsValid()) Slate.SetUserFocus(User, PreviousFocus);
+	World->DestroyWorld(false);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAInventoryPlaceActionTest, "TheAwakening.Input.InventoryPlaceAction",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTAInventoryPlaceActionTest::RunTest(const FString&)
+{
+	auto* World = UWorld::CreateWorld(EWorldType::Game, false);
+	auto* PCClass = LoadClass<AThe_AwakeningPlayerController>(nullptr,
+		TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
+	auto* PC = PCClass ? World->SpawnActor<AThe_AwakeningPlayerController>(PCClass) : nullptr;
+	if (!TestNotNull(TEXT("Controller"), PC)) { World->DestroyWorld(false); return false; }
+	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
+	Local->SetControllerId(0); World->AddController(PC);
+	PC->PlayerInput = NewObject<UTAPlayerInput>(PC);
+	PC->InputComponent = NewObject<UEnhancedInputComponent>(PC);
+	FUIIngressMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
+	FModifyContextOptions Options; Options.bForceImmediately = true;
+	auto* Original = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_UI.IMC_UI"));
+	auto* Context = DuplicateObject<UInputMappingContext>(Original, GetTransientPackage());
+	Mappings.AddMappingContext(Context, 10, Options);
+	auto* Move = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/Inventory/IA_Inventory_Drag"));
+	auto* Place = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/Inventory/IA_Inventory_Confirm"));
+	auto* ItemActions = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/UI/IA_ItemActions"));
+	auto* Data = NewObject<UTAInventoryComponent>(PC); PC->AddInstanceComponent(Data); Data->RegisterComponent();
+	auto* Inner = NewObject<UTAClothingDefinition>();
+	FTAPocketDef Pocket; Pocket.SlotCount = 2; Inner->Pockets.Add(Pocket);
+	Data->DefaultInnerClothing = Inner; Data->BeginPlay();
+	auto* Item = NewObject<UTAItemDefinition>(); Data->TryAddItem(Item, 1);
+	auto* Class = LoadClass<UTAInventoryPanelWidget>(nullptr, TEXT("/Game/UI/Inventory/WBP_InventoryPanel.WBP_InventoryPanel_C"));
+	auto* UI = CreateWidget<UTAInventoryPanelWidget>(PC, Class);
+	if (!TestNotNull(TEXT("Inventory WBP"), UI)) { World->DestroyWorld(false); return false; }
+	UI->Init(Data); const auto InventorySurface = UI->TakeWidget();
+	auto* Named = Cast<UNamedSlot>(UI->GetWidgetFromName(TEXT("NamedSlot_InnerClothing")));
+	auto* Panel = Named ? Cast<UTAClothingPanelWidget>(Named->GetContent()) : nullptr;
+	if (!Panel || !TestEqual(TEXT("Two pocket slots"), Panel->GetGeneratedSlots().Num(), 2))
+	{ UI->RemoveFromParent(); World->DestroyWorld(false); return false; }
+	auto* Source = Cast<UTAInventorySlotWidget>(Panel->GetGeneratedSlots()[0]);
+	auto* Target = Cast<UTAInventorySlotWidget>(Panel->GetGeneratedSlots()[1]);
+	const FKey Y = EKeys::Gamepad_FaceButton_Top, ConfirmKey = EKeys::Gamepad_FaceButton_Bottom;
+	TestTrue(TEXT("Y/triangle comes from IMC"), PC->IsKeyMappedToAction(Y, Move));
+	TestTrue(TEXT("A/cross confirmation comes from IMC"), PC->IsKeyMappedToAction(ConfirmKey, Place));
+	auto Tap = [&](FKey Key) { EvaluateUIKey(PC, Key, IE_Pressed); EvaluateUIKey(PC, Key, IE_Released); };
+	auto Select = [&]() { Source->OnInventorySlotHovered.Broadcast(Source, Item); Tap(Y); Target->OnInventorySlotHovered.Broadcast(Target, nullptr); };
+	TestTrue(TEXT("Inventory owns input before selection"), UI->AllowsPlayerInput(ETAInputCapability::ToggleDrag));
+	Select();
+	// The cursor visual is the observable selection state.
+	const auto* PreviewField = FindFProperty<FObjectPropertyBase>(UI->GetClass(), TEXT("GamepadDragVisualWidget"));
+	TestTrue(TEXT("Y selects an item through evaluated action"), PreviewField && PreviewField->GetObjectPropertyValue_InContainer(UI) != nullptr);
+	TestFalse(TEXT("Slate raw routing cannot place the item"), PC->RoutePlayerInputKey(ConfirmKey, false, 0));
+	TestTrue(TEXT("Raw routing leaves the item in source"), !Data->GetSlots()[0].IsEmpty());
+	Tap(ConfirmKey);
+	TestTrue(TEXT("Evaluated A/cross places the stack"), Data->GetSlots()[0].IsEmpty() && Data->GetSlots()[1].Count == 1);
+	TestTrue(TEXT("Placement retains inventory ownership"), PC->GetInputWinner().Request.Owner == UI);
+	Data->MoveItemBetweenSlots(1, 0);
+	Select(); Tap(Y);
+	TestTrue(TEXT("Y/triangle still places the stack"), Data->GetSlots()[0].IsEmpty() && Data->GetSlots()[1].Count == 1);
+	Data->MoveItemBetweenSlots(1, 0);
+	// Both actions originally share A/cross; move both away to isolate the new binding.
+	Context->UnmapKey(Place, ConfirmKey); Context->UnmapKey(ItemActions, ConfirmKey);
+	Context->MapKey(Place, EKeys::J); Mappings.RequestRebuildControlMappings(Options);
+	Select(); Tap(ConfirmKey);
+	TestTrue(TEXT("Removed A/cross binding no longer places"), !Data->GetSlots()[0].IsEmpty());
+	FTAInputRequest Cover; Cover.Owner = PC; Cover.Priority = 400; Cover.Allowed = {ETAInputCapability::Confirm};
+	const auto Handle = PC->AcquireInputRequest(Cover);
+	UI->ExecutePlayerAction(Place, ETriggerEvent::Started, FInputActionInstance(Place));
+	TestTrue(TEXT("Covered inventory cannot place"), !Data->GetSlots()[0].IsEmpty());
+	PC->ReleaseInputRequest(Handle); Tap(EKeys::J);
+	TestTrue(TEXT("Rebound IMC key places"), Data->GetSlots()[0].IsEmpty() && Data->GetSlots()[1].Count == 1);
+	Context->MapKey(ItemActions, ConfirmKey); Mappings.RequestRebuildControlMappings(Options);
+	Target->OnInventorySlotHovered.Broadcast(Target, Item); Tap(ConfirmKey);
+	// This isolated world has no viewport; retain and construct the menu surface
+	// that AddToViewport would normally attach in-game.
+	UTAItemActionMenuWidget* Menu = nullptr;
+	for (TObjectIterator<UTAItemActionMenuWidget> It; It; ++It)
+		if (!It->IsTemplate() && It->GetOwningPlayer() == PC) { Menu = *It; break; }
+	TestNotNull(TEXT("Idle item action still opens its menu"), Menu);
+	if (Menu)
+	{
+		const auto MenuSurface = Menu->TakeWidget();
+		TestTrue(TEXT("Idle menu receives input ownership"), PC->GetInputWinner().Request.Owner.Get() == Menu);
+		Menu->RemoveFromParent();
+	}
+	UI->RemoveFromParent();
+	// The same action places whole coats in the swap UI through Enhanced Input.
+	auto* Coat = NewObject<UTAClothingDefinition>(); Coat->Layer = ETAClothingLayer::Outer; Coat->Pockets.Add(Pocket);
+	auto* Rack = World->SpawnActor<ATAClothingRack>(); UTAInventoryComponent::BuildClothingInstance(Coat, Rack->GetStoredClothingMutable());
+	auto* SwapClass = LoadClass<UTAClothingSwapWidget>(nullptr, TEXT("/Game/UI/Inventory/WBP_ClothingSwap.WBP_ClothingSwap_C"));
+	auto* Swap = CreateWidget<UTAClothingSwapWidget>(PC, SwapClass); Swap->Init(Rack, Data); const auto SwapSurface = Swap->TakeWidget();
+	auto* RackNamed = Cast<UNamedSlot>(Swap->GetWidgetFromName(TEXT("NamedSlot_RackCoat")));
+	auto* PlayerNamed = Cast<UNamedSlot>(Swap->GetWidgetFromName(TEXT("NamedSlot_PlayerCoat")));
+	auto* RackSlot = Cast<UTAInventorySlotWidget>(RackNamed->GetContent());
+	auto* PlayerSlot = Cast<UTAInventorySlotWidget>(PlayerNamed->GetContent());
+	RackSlot->OnInventorySlotHovered.Broadcast(RackSlot, nullptr); Tap(Y);
+	PlayerSlot->OnInventorySlotHovered.Broadcast(PlayerSlot, nullptr); Tap(EKeys::J);
+	TestTrue(TEXT("Remapped place action equips coat in swap UI"), Data->HasOuterClothing() && !Rack->HasClothing());
+	Tap(EKeys::Escape);
+	TestEqual(TEXT("IMC Back closes swap"), Swap->GetPlayerInputRequestHandle(), uint64(0));
+	Swap->RemoveFromParent(); World->DestroyWorld(false);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTAInventoryContextBackTest, "TheAwakening.Input.InventoryContextBack",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FTAInventoryContextBackTest::RunTest(const FString&)
+{
+	auto* World = UWorld::CreateWorld(EWorldType::Game, false);
+	auto* PCClass = LoadClass<AThe_AwakeningPlayerController>(nullptr,
+		TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C"));
+	auto* PC = PCClass ? World->SpawnActor<AThe_AwakeningPlayerController>(PCClass) : nullptr;
+	if (!TestNotNull(TEXT("Controller"), PC)) { World->DestroyWorld(false); return false; }
+	auto* Local = NewObject<ULocalPlayer>(GEngine); Local->PlayerController = PC; PC->Player = Local;
+	Local->SetControllerId(0); World->AddController(PC);
+	PC->PlayerInput = NewObject<UTAPlayerInput>(PC); PC->InputComponent = NewObject<UEnhancedInputComponent>(PC);
+	FUIIngressMappings Mappings; Mappings.Input = Cast<UTAPlayerInput>(PC->PlayerInput);
+	FModifyContextOptions Options; Options.bForceImmediately = true;
+	auto* Context = DuplicateObject<UInputMappingContext>(LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_UI")), GetTransientPackage());
+	Mappings.AddMappingContext(Context, 10, Options);
+	auto* ContextAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/Inventory/IA_Inventory_ContextAction"));
+	auto* BackAction = PC->GetUIBackAction();
+	TestTrue(TEXT("Right-click contextual action is authored in IMC"), PC->IsKeyMappedToAction(EKeys::RightMouseButton, ContextAction));
+	TestTrue(TEXT("B/circle Back is authored in IMC"), PC->IsKeyMappedToAction(EKeys::Gamepad_FaceButton_Right, BackAction));
+	auto Tap = [&](FKey Key) { EvaluateUIKey(PC, Key, IE_Pressed); EvaluateUIKey(PC, Key, IE_Released); };
+	auto* Data = NewObject<UTAInventoryComponent>(PC); PC->AddInstanceComponent(Data); Data->RegisterComponent();
+	auto* Inner = NewObject<UTAClothingDefinition>(); FTAPocketDef Pocket; Pocket.SlotCount = 2; Inner->Pockets.Add(Pocket);
+	Data->DefaultInnerClothing = Inner; Data->BeginPlay();
+	auto* Item = NewObject<UTAItemDefinition>(); Data->TryAddItem(Item, 1);
+	auto* InventoryClass = LoadClass<UTAInventoryPanelWidget>(nullptr, TEXT("/Game/UI/Inventory/WBP_InventoryPanel.WBP_InventoryPanel_C"));
+	TArray<TSharedPtr<SWidget>> Surfaces;
+	auto OpenInventory = [&]()
+	{
+		auto* UI = CreateWidget<UTAInventoryPanelWidget>(PC, InventoryClass); UI->Init(Data); Surfaces.Add(UI->TakeWidget()); return UI;
+	};
+	auto Slot = [](UUserWidget* UI, const TCHAR* PanelName, int32 Index)
+	{
+		auto* Named = Cast<UNamedSlot>(UI->GetWidgetFromName(PanelName));
+		auto* Panel = Named ? Cast<UTAClothingPanelWidget>(Named->GetContent()) : nullptr;
+		return Panel && Panel->GetGeneratedSlots().IsValidIndex(Index) ? Cast<UTAInventorySlotWidget>(Panel->GetGeneratedSlots()[Index]) : nullptr;
+	};
+	auto CheckPrompts = [&](UUserWidget* UI)
+	{
+		auto* Bar = Cast<UHorizontalBox>(UI->GetWidgetFromName(TEXT("HorizontalBox_Controls")));
+		bool bHasContext = false, bHasBack = false;
+		if (Bar) for (UWidget* Child : Bar->GetAllChildren()) if (auto* Prompt = Cast<UTAActionPromptWidget>(Child))
+		{
+			bHasContext |= Prompt->GetPromptAction() == ContextAction;
+			bHasBack |= Prompt->GetPromptAction() == BackAction;
+		}
+		TestTrue(TEXT("Bottom-right contains contextual right-click hint"), bHasContext);
+		TestTrue(TEXT("Bottom-right contains gamepad Back hint"), bHasBack);
+	};
+	auto* UI = OpenInventory(); CheckPrompts(UI);
+	auto* Occupied = Slot(UI, TEXT("NamedSlot_InnerClothing"), 0);
+	auto* Empty = Slot(UI, TEXT("NamedSlot_InnerClothing"), 1);
+	if (!TestNotNull(TEXT("Occupied slot"), Occupied) || !TestNotNull(TEXT("Empty slot"), Empty))
+	{ UI->RemoveFromParent(); World->DestroyWorld(false); return false; }
+	Occupied->OnInventorySlotHovered.Broadcast(Occupied, Item); Tap(EKeys::RightMouseButton);
+	UTAItemActionMenuWidget* Menu = nullptr; int32 MenuCount = 0;
+	for (TObjectIterator<UTAItemActionMenuWidget> It; It; ++It)
+		if (!It->IsTemplate() && It->GetOwningPlayer() == PC) { Menu = *It; ++MenuCount; }
+	TestEqual(TEXT("Right-click on item creates exactly one menu"), MenuCount, 1);
+	TestTrue(TEXT("Item right-click does not close inventory"), UI->GetPlayerInputRequestHandle() != 0);
+	if (Menu) { Surfaces.Add(Menu->TakeWidget()); Menu->RemoveFromParent(); }
+	Empty->OnInventorySlotHovered.Broadcast(Empty, nullptr);
+	FTAInputRequest Cover; Cover.Owner = PC; Cover.Priority = 400; Cover.Allowed = {ETAInputCapability::Close, ETAInputCapability::Confirm};
+	const auto CoverHandle = PC->AcquireInputRequest(Cover);
+	UI->ExecutePlayerAction(ContextAction, ETriggerEvent::Started, FInputActionInstance(ContextAction));
+	TestTrue(TEXT("Covered inventory cannot close"), UI->GetPlayerInputRequestHandle() != 0);
+	PC->ReleaseInputRequest(CoverHandle); Tap(EKeys::RightMouseButton);
+	TestEqual(TEXT("Empty-slot right-click closes inventory"), UI->GetPlayerInputRequestHandle(), uint64(0));
+	UI = OpenInventory(); Tap(EKeys::RightMouseButton);
+	TestEqual(TEXT("Background right-click closes inventory"), UI->GetPlayerInputRequestHandle(), uint64(0));
+	UI = OpenInventory(); Tap(EKeys::Gamepad_FaceButton_Right);
+	TestEqual(TEXT("B/circle closes inventory"), UI->GetPlayerInputRequestHandle(), uint64(0));
+	// Remap only the context action; right-click continues to mean item actions.
+	Context->UnmapKey(ContextAction, EKeys::RightMouseButton); Context->MapKey(ContextAction, EKeys::J); Mappings.RequestRebuildControlMappings(Options);
+	UI = OpenInventory(); Tap(EKeys::RightMouseButton);
+	TestTrue(TEXT("Removing the IMC binding removes background right-click Back"), UI->GetPlayerInputRequestHandle() != 0);
+	Tap(EKeys::J); TestEqual(TEXT("Rebound context action closes inventory"), UI->GetPlayerInputRequestHandle(), uint64(0));
+	Context->UnmapKey(ContextAction, EKeys::J); Context->MapKey(ContextAction, EKeys::RightMouseButton); Mappings.RequestRebuildControlMappings(Options);
+	UI = OpenInventory(); Occupied = Slot(UI, TEXT("NamedSlot_InnerClothing"), 0);
+	Occupied->OnInventorySlotHovered.Broadcast(Occupied, Item); Tap(EKeys::Gamepad_FaceButton_Top);
+	Occupied->OnInventorySlotUnhovered.Broadcast(Occupied); Tap(EKeys::RightMouseButton);
+	TestTrue(TEXT("Right-click while carrying an item cannot also close inventory"), UI->GetPlayerInputRequestHandle() != 0);
+	UI->RemoveFromParent();
+	auto* Coat = NewObject<UTAClothingDefinition>(); Coat->Layer = ETAClothingLayer::Outer; Coat->Pockets.Add(Pocket);
+	auto* Rack = World->SpawnActor<ATAClothingRack>(); UTAInventoryComponent::BuildClothingInstance(Coat, Rack->GetStoredClothingMutable());
+	auto* SwapClass = LoadClass<UTAClothingSwapWidget>(nullptr, TEXT("/Game/UI/Inventory/WBP_ClothingSwap.WBP_ClothingSwap_C"));
+	auto OpenSwap = [&]() { auto* Swap = CreateWidget<UTAClothingSwapWidget>(PC, SwapClass); Swap->Init(Rack, Data); Surfaces.Add(Swap->TakeWidget()); return Swap; };
+	auto* Swap = OpenSwap(); CheckPrompts(Swap);
+	auto* CoatNamed = Cast<UNamedSlot>(Swap->GetWidgetFromName(TEXT("NamedSlot_RackCoat")));
+	auto* CoatSlot = Cast<UTAInventorySlotWidget>(CoatNamed->GetContent());
+	CoatSlot->OnInventorySlotHovered.Broadcast(CoatSlot, nullptr); Tap(EKeys::RightMouseButton);
+	TestTrue(TEXT("Right-click on a displayed coat does not close swap"), Swap->GetPlayerInputRequestHandle() != 0);
+	CoatSlot->OnInventorySlotUnhovered.Broadcast(CoatSlot); Tap(EKeys::RightMouseButton);
+	TestEqual(TEXT("Background right-click closes swap"), Swap->GetPlayerInputRequestHandle(), uint64(0));
+	Swap = OpenSwap(); auto* EmptyPocket = Slot(Swap, TEXT("NamedSlot_RackClothing"), 0);
+	if (EmptyPocket) EmptyPocket->OnInventorySlotHovered.Broadcast(EmptyPocket, nullptr);
+	Tap(EKeys::RightMouseButton); TestEqual(TEXT("Empty pocket right-click closes swap"), Swap->GetPlayerInputRequestHandle(), uint64(0));
+	Swap = OpenSwap(); Tap(EKeys::Gamepad_FaceButton_Right);
+	TestEqual(TEXT("B/circle closes swap"), Swap->GetPlayerInputRequestHandle(), uint64(0));
 	World->DestroyWorld(false);
 	return true;
 }

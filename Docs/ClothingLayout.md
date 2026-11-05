@@ -103,6 +103,8 @@ Standalone 窗口偏移修复：连线绘制时图片与格子统一读取 `GetP
 布局由 `UTAClothingSwapWidget::BuildSwapLayout` 的运行时 Canvas 管理；旧 WBP 居中列不再控制排版。
 外套栏互拖仍负责穿上、脱下和交换整件外套；口袋物品继续支持衣架与玩家之间移动，物品随衣服保留。
 
+换装界面通过 `IMC_UI` 的 `IA_Inventory_ContextAction` 支持鼠标右键退出：未悬停物品或悬停空格时返回，悬停外套/非空口袋与拖动物品期间不退出。右下角同时包含键鼠下的「退出界面」（英文为「Exit Interface」）提示，以及 `IA_UIBack` 的返回提示（手柄 B/○）。
+
 ## 存档与调试
 
 加载旧衣服资产不会自动裁剪原口袋容量，旧 SlotCount 数据仍可读取。

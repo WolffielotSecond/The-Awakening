@@ -15,6 +15,9 @@ class UTAItemDefinition;
 class UNamedSlot;
 class UTextBlock;
 class UInputAction;
+class UHorizontalBox;
+class UTAActionPromptWidget;
+class UTAInputIconSubsystem;
 
 /**
 	 * 衣架换装界面。左边：衣架上的外套格、纯外套图和口袋；右边：身上的外套格、完整穿着图、内衬和外套口袋。
@@ -46,6 +49,8 @@ public:
 	virtual FTAInputRouter::FHandle GetPlayerInputRequestHandle() const override { return InputRequestHandle; }
 	virtual TOptional<ETAInputCapability> ResolvePlayerInput(FKey Key) const override;
 	virtual void ExecutePlayerInput(FKey Key, ETAInputCapability Capability) override;
+	virtual bool UsesEnhancedUIActions() const override { return true; }
+	virtual void ExecutePlayerAction(const UInputAction* Action, ETriggerEvent Event, const FInputActionInstance& Instance) override;
 	virtual bool HandleMenuBackRequested() override { Close(); return true; }
 	bool AllowsPlayerInput(ETAInputCapability Capability) const;
 
@@ -74,7 +79,15 @@ protected:
 	void SwapCoats();
 	void ToggleGamepadSelect();
 	void CancelGamepadSelect();
+	void UpdateGamepadDragVisualPosition();
+	void BuildActionPromptBar();
+	UFUNCTION()
+	void RefreshInputPrompts();
+	UFUNCTION()
+	void HandleActionPromptClicked(UTAActionPromptWidget* Prompt);
 	void SimulateLeftMouseClick();
+	void HandleConfirmPressed();
+	void HandleContextAction();
 
 	UFUNCTION()
 	void HandleInventoryUpdated();
@@ -130,6 +143,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "ClothingSwap|Input")
 	TObjectPtr<UInputAction> GamepadDragModeAction;
 
+	UPROPERTY(EditAnywhere, Category = "ClothingSwap|Input")
+	TObjectPtr<UInputAction> BackAction;
+	UPROPERTY(EditAnywhere, Category = "ClothingSwap|Input")
+	TObjectPtr<UInputAction> ContextAction;
+
 	UPROPERTY(EditAnywhere, Category = "ClothingSwap")
 	FString RackTitleTextId = TEXT("UI_ClothingRack_Rack");
 
@@ -155,6 +173,14 @@ protected:
 	TWeakObjectPtr<ATAClothingRack> Rack;
 	TWeakObjectPtr<UTAInventorySlotWidget> HoveredSlot;
 	TWeakObjectPtr<UTAInventorySlotWidget> GamepadSourceSlot;
+	UPROPERTY(Transient)
+	TObjectPtr<UTAInventorySlotWidget> GamepadDragVisualWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> ActionPromptBar;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTAActionPromptWidget>> ActionPrompts;
+	UPROPERTY(Transient)
+	TObjectPtr<UTAInputIconSubsystem> InputIconSubsystem;
 
 private:
 	FTAInputRouter::FHandle InputRequestHandle = 0;
