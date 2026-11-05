@@ -1,4 +1,5 @@
 #include "Camera/TARoomRegion.h"
+#include "Camera/TACameraBarrier.h"
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
@@ -191,9 +192,20 @@ bool UTARoomRegistrySubsystem::IsActorInBlackoutRoom(const AActor* Actor)
 	return false;
 }
 
+void UTARoomRegistrySubsystem::RegisterBarrier(ATACameraBarrier* Barrier)
+{
+	if (Barrier) Barriers.AddUnique(Barrier);
+}
+
+void UTARoomRegistrySubsystem::UnregisterBarrier(ATACameraBarrier* Barrier)
+{
+	Barriers.RemoveAll([Barrier](const TWeakObjectPtr<ATACameraBarrier>& Entry) { return !Entry.IsValid() || Entry.Get() == Barrier; });
+}
+
 void UTARoomRegistrySubsystem::Deinitialize()
 {
 	ApplyRoomVisibility(nullptr);
 	Regions.Reset();
+	Barriers.Reset();
 	Super::Deinitialize();
 }

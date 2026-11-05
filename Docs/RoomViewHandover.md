@@ -11,7 +11,7 @@
 | A | 按区域切换镜头距离与观察范围 | 已实现，已通过 PIE 验收 |
 | B | 当前区域显式指定房间 / Actor 黑场（stencil 底层渲染） | 已实现；本轮验证见文末 |
 | C | 墙体处理：挡视线的墙由 Room Region 黑场接管；只剩断面全黑 | 进行中 |
-| D | 楼道防探看、QTE 与过场镜头覆盖 | 未开始（隐藏房间的交互 / 拾取 / 扫描过滤已提前实现） |
+| D | 区域边缘镜头防穿模、QTE 与过场镜头覆盖 | 镜头挡墙已实现（2026-11-05，自动化通过，待 PIE 验收）；QTE / 过场覆盖未开始。隐藏房间的交互 / 拾取 / 扫描过滤已提前实现 |
 | E | 离家卸载住宅、医院过门 | 未开始，需先把白盒拆成子关卡 |
 
 ## 2. 资产一览
@@ -21,6 +21,7 @@
 | 资产 | 路径 | 用途 |
 |---|---|---|
 | BP_RoomRegion | /Game/Blueprints/RoomView/ | 划定一个房间、走廊或室外区域，决定镜头参数和黑场 |
+| BP_CameraBarrier | /Game/Blueprints/RoomView/ | 镜头挡墙，地编放在区域最左 / 最右的边缘墙上，玩家在房间内时画面看不到墙后。用法见 [CameraBarrierGuide.md](CameraBarrierGuide.md) |
 | BP_RoomPortal | /Game/Blueprints/RoomView/ | 旧资产兼容壳，已停用，不再放置；现有实例不会影响显示 |
 | DA_RoomCamera_Room | /Game/Camera/RoomView/Profiles/ | 小房间：450 cm，左右 40，上下 15，过渡 0.6 秒 |
 | DA_RoomCamera_Corridor | /Game/Camera/RoomView/Profiles/ | 走廊：750 cm，左右 100，上下 25，过渡 0.6 秒（与角色蓝图一致） |
@@ -181,7 +182,7 @@
 
 - **阶段 C 墙体处理**：挡视线的墙已改由 Room Region 的黑场规则处理（`BlackoutActors`），不再做切除盒子（BP_CutawayZone）、世界空间切除材质函数和 MPC 写入。Portal 已停用，逻辑全部由 Room Region 接管。断面全黑由材质函数 `MF_BackfaceBlack` 提供，需要手动接到墙的母材质上。
 - **暂缓的想法（暂不实现）**：靠近遮挡物时，墙的下半截用固定噪声图案半透明、上半截全透明，噪声用屏幕像素采样 `Textures/Noise` 这类固定贴图，不用 DitherTemporalAA（会拖影）。以后需要这个效果时再评估。
-- **阶段 D**：楼道往住宅方向的偏移用不对称限位（填 0），再在最终视图上做一层安全约束；交互、拾取、扫描候选按房间可见性过滤，扫描不能看到黑场房间内容；QTE、过场、追逐镜头通过带 Owner 的临时覆盖接入，不要直接写 Boom。
+- **阶段 D**：地图设计师在区域最左／最右的边缘墙上放镜头挡墙（BP_CameraBarrier，已实现，见第 10 节），在最终视图上按画面边缘约束相机位置，玩家在房间内时看不见下一个场景（例如玄关看不到门外走廊）；穿门进入相邻区域后挡墙平滑失效、镜头自然过渡。交互、拾取、扫描候选按房间可见性过滤，扫描不能看到黑场房间内容；QTE、过场、追逐镜头通过带 Owner 的临时覆盖接入，不要直接写 Boom。
 - **阶段 E**：住宅目前都在 Persistent_Level 里，卸载前要先拆成子关卡；医院先在门后放一个占位平台。
 
 ## 8. 在编辑器里使用 MCP
@@ -205,3 +206,39 @@ UnrealEditor.exe "C:\UnrealProjects\The-Awakening\The_Awakening.uproject" -Model
 - 无界面加载现有 `Persistent_Level` 和两个 BP 成功；姐姐房原来的 9 个家具 / 物体引用全部读入 Included Assets，两个新数组默认空，旧 Portal 实例可加载。未保存地图或蓝图。
 - 检查报告：`Saved/Automation/RoomVisibility/index.json`、`Saved/RoomVisibilityValidation/assets.json`。日志：`Saved/Logs/RoomVisibilityTests.log`、`Saved/Logs/RoomVisibilityAssets.log`。
 - 人工 PIE 画面验收尚未执行；上述无界面检查不验证最终后处理画面。
+
+## 10. 镜头挡墙（2026-11-05）
+
+地编摆放方法见 [CameraBarrierGuide.md](CameraBarrierGuide.md)，本节只记录实现。
+
+### 代码位置
+
+- `Source/The_Awakening/Camera/TACameraBarrier.h/.cpp`：`ATACameraBarrier`（BP_CameraBarrier 的父类）、视锥 `FTACameraFrustum`、求解输入 `FTACameraBarrierInput`。BeginPlay / EndPlay 时在 `UTARoomRegistrySubsystem` 注册和注销（`RegisterBarrier` / `UnregisterBarrier` / `GetBarriers`）。
+- `TARoomViewComponent`：维护每面挡墙的过渡权重，收回朝墙方向多余的观察偏移，并提供最终视图约束 `ApplyCameraBarriers`。
+- `TAAutoFocusCameraComponent::GetCameraView`：在 `Super` 之后、计算对焦之前调用 `ApplyCameraBarriers`。
+- 测试：`Tests/TACameraBarrierTests.cpp`，共 4 项，归在 `TheAwakening.Camera.Barrier.*`。
+
+### 求解
+
+- 挡住的矩形取盒子背向箭头的那一面（本地 -X 面），先沿箭头方向外扩 `SafetyMarginCm`。
+- 视锥由实际视图的位置、朝向、FOV 和视口宽高比构建，并遵守 LocalPlayer / View 的宽高比轴约束。正交投影不处理。
+- 判定条件：矩形四个角都在视锥某个侧面的外侧，就算看不到。所需推回量取能让任意一个侧面把矩形分开的最小距离，相机只沿箭头方向移动。这是保守判定，结果只会更严格，不会漏。
+- 多面挡墙时，与第一条推回同轴的挡墙按正 / 反两组，各取最强的一面。只有一组时，位移 = 权重 × 推回量。两组都需要推回时（过门交接，或房间比画面窄），按权重取加权平均：过门时在两种构图之间线性过渡，两面都满权重时取中点。不同轴的挡墙各自叠加。
+
+### 权重与过门
+
+- 挡墙生效条件：`bBarrierEnabled`，并且 `ActiveInRoomIds` 为空或包含当前 RoomId。
+- 线性进度在区域切换后按切入区域 Profile 的 `BlendSeconds` 匀速推进；显示权重为 SmoothStep。新加载的挡墙、`SnapToCurrentLocation`（初始化、复活、传送）都直接到位。
+- 区域切换前挡墙始终保持满权重，所以过门期间角色可以短暂出画，画面不会提前越墙。
+
+### 观察偏移
+
+- 每帧在写入 Boom 之后，按不含 Lag 的目标视图（与 SpringArm 求解相同）计算推回量。观察偏移与相机是 1:1 平移，所以朝墙方向的偏移按推回量收回；角色跟随造成的那部分越墙留给最终视图约束处理。
+- 目标视图正在被推回时，`AddLookInput` 不再累积朝墙方向的输入，所以往回推镜头没有死区。
+- `bCameraBarriersEnabled`（RoomViewComponent 上，默认开）为以后的过场镜头覆盖预留，可以临时关闭挡墙。
+
+### 验证
+
+- 2026-11-05：UE 5.8 Development Editor 编译通过；`TheAwakening.Camera` 共 8 项（Barrier 4 项、RoomVisibility 2 项、AutoFocus 2 项）全部通过，报告在 `Saved/Automation/CameraBarrier`。
+- `BP_CameraBarrier` 用无界面 Python 创建，没有改动任何地图。
+- 尚未进行人工 PIE 验收（检查清单见 CameraBarrierGuide.md 第 6 节）。

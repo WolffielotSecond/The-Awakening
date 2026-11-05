@@ -6,6 +6,10 @@
 #include "TARoomViewComponent.generated.h"
 
 class ATARoomRegion;
+class ATACameraBarrier;
+class APlayerController;
+struct FMinimalViewInfo;
+struct FTACameraBarrierInput;
 class USpringArmComponent;
 class UCameraComponent;
 class UMaterialInterface;
@@ -35,6 +39,20 @@ public:
 	/** 复活 / 传送后调用：清零观察偏移，立即按新位置解析区域，镜头参数直接到位不插值。 */
 	void SnapToCurrentLocation();
 
+	/**
+	 * 最终视图约束：按生效的镜头挡墙沿挡墙方向推回实际相机位置，使画面看不到挡墙后面。
+	 * 由 UTAAutoFocusCameraComponent::GetCameraView 在计算对焦之前调用，Lag、区域混合和附加偏移都已包含在 View 里。
+	 */
+	void ApplyCameraBarriers(FMinimalViewInfo& View);
+
+	/** 最近一次最终视图约束施加的位移（世界坐标，cm）。 */
+	UFUNCTION(BlueprintPure, Category = "Camera|Room View")
+	FVector GetLastBarrierCorrection() const { return LastBarrierCorrection; }
+
+	/** 挡墙当前的过渡权重（0–1），未登记或不生效时为 0。 */
+	UFUNCTION(BlueprintPure, Category = "Camera|Room View")
+	float GetBarrierWeight(const ATACameraBarrier* Barrier) const;
+
 	/** 当前所在区域 ID，没有区域时为 None。 */
 	UFUNCTION(BlueprintPure, Category = "Camera|Room View")
 	FName GetActiveRoomId() const { return ActiveRoomId; }
@@ -47,6 +65,13 @@ protected:
 	/** 黑场后处理：在 Stencil 3 且没有其他物体覆盖的像素画暗色轮廓。初始化时挂到相机的后处理上。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera|Room View")
 	TSoftObjectPtr<UMaterialInterface> BlackoutPostProcessMaterial;
+
+	/** 关闭后不应用镜头挡墙（以后的过场镜头覆盖可临时关闭）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Room View")
+	bool bCameraBarriersEnabled = true;
+
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Camera|Room View")
+	FVector LastBarrierCorrection = FVector::ZeroVector;
 
 	/** PIE 时在细节面板查看，方便调参。 */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Camera|Room View")
@@ -66,10 +91,23 @@ private:
 	void ClampLookOffsetToCurrentLimits();
 	float GetWorldYScreenSign() const;
 	void ApplyToBoom();
+	void UpdateBarrierWeights(float DeltaSeconds, bool bSnap);
+	void GatherBarrierInputs(TArray<FTACameraBarrierInput>& Out) const;
+	/** 按不含 Lag 的目标视图计算挡墙推回量，把朝墙方向多余的观察偏移收回，避免往回推时出现死区。 */
+	void AbsorbLookOffsetIntoBarriers();
+	bool BuildUnlaggedView(FMinimalViewInfo& OutView) const;
+	const APlayerController* GetOwningPlayerController() const;
 
 	TWeakObjectPtr<USpringArmComponent> Boom;
 	TWeakObjectPtr<UCameraComponent> Camera;
 	TWeakObjectPtr<ATARoomRegion> ActiveRegion;
+
+	/** 每面挡墙的线性过渡进度（0–1），显示权重为其 SmoothStep。 */
+	TMap<TWeakObjectPtr<ATACameraBarrier>, float> BarrierAlpha;
+	/** 挡墙过渡时长，取最近一次切入区域的 BlendSeconds。 */
+	float BarrierBlendSeconds = 0.6f;
+	/** 不含 Lag 的目标视图需要的推回量，用于阻止继续朝墙推镜头。 */
+	FVector TargetBarrierPush = FVector::ZeroVector;
 
 	FTARoomCameraSettings FallbackSettings;
 	FTARoomCameraSettings BlendFrom;

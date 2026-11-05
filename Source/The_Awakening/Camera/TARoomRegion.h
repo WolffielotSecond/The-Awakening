@@ -9,6 +9,7 @@
 class UBoxComponent;
 class UPrimitiveComponent;
 class UTARoomCameraProfile;
+class ATACameraBarrier;
 
 /** 黑场前组件的渲染设置，退出黑场时原样还原。 */
 USTRUCT()
@@ -139,10 +140,16 @@ public:
 	 */
 	static bool IsActorInBlackoutRoom(const AActor* Actor);
 
+	/** 镜头挡墙在 BeginPlay / EndPlay 成对注册注销，子关卡卸载后自动移除。 */
+	void RegisterBarrier(ATACameraBarrier* Barrier);
+	void UnregisterBarrier(ATACameraBarrier* Barrier);
+	const TArray<TWeakObjectPtr<ATACameraBarrier>>& GetBarriers() const { return Barriers; }
+
 	virtual void Deinitialize() override;
 
 private:
 	TArray<TWeakObjectPtr<ATARoomRegion>> Regions;
+	TArray<TWeakObjectPtr<ATACameraBarrier>> Barriers;
 	TWeakObjectPtr<ATARoomRegion> CurrentRegion;
 	TSet<TObjectKey<AActor>> BlackedOutActors;
 

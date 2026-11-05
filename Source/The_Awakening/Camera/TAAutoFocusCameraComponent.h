@@ -4,6 +4,8 @@
 #include "Camera/CameraComponent.h"
 #include "TAAutoFocusCameraComponent.generated.h"
 
+class UTARoomViewComponent;
+
 /** Character focus evaluated when the current camera view is requested, after spring-arm movement. */
 UCLASS(ClassGroup = Camera, meta = (BlueprintSpawnableComponent))
 class THE_AWAKENING_API UTAAutoFocusCameraComponent : public UCameraComponent
@@ -38,4 +40,5 @@ public:
 
 private:
 	bool bFocusInitialized = false;
+	TWeakObjectPtr<UTARoomViewComponent> RoomView;
 };

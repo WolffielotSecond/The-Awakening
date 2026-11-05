@@ -1,8 +1,14 @@
 #include "Camera/TAAutoFocusCameraComponent.h"
+#include "Camera/TARoomViewComponent.h"
+#include "GameFramework/Actor.h"
 
 void UTAAutoFocusCameraComponent::GetCameraView(float DeltaTime, FMinimalViewInfo& DesiredView)
 {
 	Super::GetCameraView(DeltaTime, DesiredView);
+
+	// 镜头挡墙在对焦之前修正实际视图位置，对焦与渲染使用同一个位置
+	if (!RoomView.IsValid() && GetOwner()) RoomView = GetOwner()->FindComponentByClass<UTARoomViewComponent>();
+	if (UTARoomViewComponent* View = RoomView.Get()) View->ApplyCameraBarriers(DesiredView);
 
 	if (!bAutoFocusEnabled || !IsValid(FocusPoint))
 	{
